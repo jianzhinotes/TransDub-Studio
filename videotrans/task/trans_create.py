@@ -1263,8 +1263,8 @@ class TransCreate(BaseTask):
 
         # 最终需嵌入视频的音频，可能是配音后文件，也可能是原始音频(未配音)
         target_m4a = self.cfg.cache_folder + "/will_embed.m4a"
-        # 用于判断输出原始音频是否结束，is True是结束，
-        output_source_output = True
+        # 单独输出原始音频的线程句柄，None=无需输出
+        output_thread = None
         # 视频时长
         duration_ms = int(get_video_duration(self.cfg.novoice_mp4))
         # 如果视频时长大于音频时长，音频末尾加静音
@@ -1273,7 +1273,6 @@ class TransCreate(BaseTask):
             self._get_origin_audio(target_m4a,duration_ms)
         else:
             # 单独输出一个高质量 原始音频输出到目标目录，单独线程执行，不影响继续运行
-            output_source_output = False
             cmd = [
                 "-y",
                 "-i",
@@ -1286,14 +1285,13 @@ class TransCreate(BaseTask):
             ]
 
             def _output():
-                nonlocal output_source_output
                 try:
                     runffmpeg(cmd)
                 except Exception as e:
                     logger.exception(f'单独输出原始视频中音频文件到目标文件夹失败，跳过{e}', exc_info=True)
-                finally:
-                    output_source_output = True
-            threading.Thread(target=_output, daemon=True).start()
+            # 非守护线程：解释器退出时会等待写入完成，避免输出的音频文件被截断
+            output_thread = threading.Thread(target=_output)
+            output_thread.start()
 
 
             # 手动添加的背景音乐嵌入
@@ -1362,6 +1360,7 @@ class TransCreate(BaseTask):
         try:
             protxt = self.cfg.cache_folder + f"/compose{time.time()}.txt"
             protxt_basename = os.path.basename(protxt)
+            # 只读进度文件并上报 UI，不写任何数据，故保留 daemon（退出时可安全被杀，不能阻塞退出）
             threading.Thread(target=self._hebing_pro, args=(protxt,), daemon=True).start()
 
             novoice_mp4_basename = os.path.basename(self.cfg.novoice_mp4)
@@ -1502,9 +1501,10 @@ class TransCreate(BaseTask):
                     raise VideoTransError(tr('Translation successful but transfer failed.', tmp_target_mp4)) from e
 
         # 有可能输出原始音频到目标文件夹的程序仍在执行，但不影响
-        while output_source_output is not True:
-            if app_cfg.exit_soft:return
-            time.sleep(1)
+        # exit_soft 时提前返回；非守护线程保证解释器退出前写入仍会完成
+        while output_thread is not None and output_thread.is_alive():
+            if app_cfg.exit_soft: return
+            output_thread.join(timeout=1)
         return
 
     def _get_origin_audio(self, output,duration_ms=0):
@@ -1671,8 +1671,11 @@ class TransCreate(BaseTask):
                 text=True,
                 capture_output=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-                cwd=self.cfg.cache_folder
+                cwd=self.cfg.cache_folder,
+                timeout=int(settings.get('ffmpeg_timeout_sec', 4 * 3600))
             )
             return True
+        except subprocess.TimeoutExpired as e:
+            raise FFmpegError(f"ffmpeg 执行超时(超过 {settings.get('ffmpeg_timeout_sec', 4 * 3600)} 秒)，已强制终止: {' '.join(cmd)}") from e
         except subprocess.CalledProcessError as e:
             raise FFmpegError(f"尝试使用硬件执行命令出错[CalledProcessError]:{e.stderr}\n{e.stdout},{e}") from e

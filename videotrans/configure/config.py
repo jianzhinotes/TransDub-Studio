@@ -70,12 +70,30 @@ def _set_env():
     os.environ['PATH'] = ROOT_DIR + os.pathsep + f'{ROOT_DIR}/ffmpeg' + os.pathsep + f'{ROOT_DIR}/ffmpeg/sox' + os.pathsep + os.environ.get(
         "PATH", "")
 
+def _prune_old_logs(logs_dir, days=30):
+    # 删除超过保留期限的日志文件，避免 logs 目录无限增长
+    cutoff = time.time() - days * 86400
+    try:
+        for f in Path(logs_dir).glob('*.log*'):
+            try:
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 def _set_logs():
     # 日志初始化
+    from logging.handlers import RotatingFileHandler
+    _prune_old_logs(f'{ROOT_DIR}/logs')
     logger = logging.getLogger('VideoTrans')
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter('[%(levelname)s] %(message)s')
-    _file_handler = logging.FileHandler(f'{ROOT_DIR}/logs/{datetime.datetime.now().strftime("%Y%m%d")}.log',
+    # 按日文件名保留检索习惯，RotatingFileHandler 限制单日日志体积上限
+    _file_handler = RotatingFileHandler(f'{ROOT_DIR}/logs/{datetime.datetime.now().strftime("%Y%m%d")}.log',
+                                        maxBytes=50 * 1024 * 1024, backupCount=2,
                                         encoding='utf-8')
     _file_handler.setLevel(logging.DEBUG)
     _file_handler.setFormatter(formatter)
@@ -347,6 +365,8 @@ class AppSettings:
             "hw_decode":False,# ffmpeg尝试硬件解码视频
             "preset": "medium",
             "ffmpeg_cmd": "",
+            # 单次 ffmpeg 执行超时秒数，防止进程挂起导致任务永久卡死；长视频编码需要宽松上限
+            "ffmpeg_timeout_sec": 4 * 3600,
             "aisendsrt": True,
             "dont_notify": False,
             "video_codec": 264,

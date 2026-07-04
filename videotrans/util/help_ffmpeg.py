@@ -63,11 +63,19 @@ def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
             check=True,
             text=True,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-            cwd=cmd_dir
+            cwd=cmd_dir,
+            timeout=int(settings.get('ffmpeg_timeout_sec', 4 * 3600))
         )
         if noextname:
             app_cfg.queue_novice[noextname] = "end"
         return True
+    except subprocess.TimeoutExpired as e:
+        err = f"ffmpeg 执行超时(超过 {settings.get('ffmpeg_timeout_sec', 4 * 3600)} 秒)，已强制终止"
+        logger.error(f"{err}。\n命令: {' '.join(cmd)}")
+        if noextname:
+            app_cfg.queue_novice[noextname] = f"error:{err}"
+        from videotrans.configure.excepts import FFmpegError
+        raise FFmpegError(err) from e
     except FileNotFoundError as e:
         logger.error(f"命令未找到: {cmd[0]}。请确保 ffmpeg 已安装并在系统 PATH 中。")
         if noextname:

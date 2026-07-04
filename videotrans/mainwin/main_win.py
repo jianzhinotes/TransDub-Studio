@@ -449,8 +449,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Windows平台 - 使用taskkill
             try:
                 result = subprocess.run(
-                    f'taskkill /F /FI "USERNAME eq {current_user}" /IM ffmpeg.exe',
-                    shell=True,
+                    ['taskkill', '/F', '/FI', f'USERNAME eq {current_user}', '/IM', 'ffmpeg.exe'],
                     capture_output=True,
                     text=True
                 )
@@ -479,8 +478,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         os.chdir(ROOT_DIR)
         self.cleanup_and_accept()
 
-        # 暂停等待可能的 faster-whisper 独立进程退出
-        time.sleep(4)
+        # 有界等待可能的 faster-whisper 独立进程退出：子进程清空即提前结束，
+        # 期间持续处理事件循环，避免阻塞 UI 线程出现卡死假象
+        import psutil
+        _deadline = time.time() + 4
+        _me = psutil.Process()
+        while time.time() < _deadline:
+            try:
+                if not [c for c in _me.children(recursive=True) if c.is_running()]:
+                    break
+            except psutil.Error:
+                break
+            QApplication.processEvents()
+            time.sleep(0.2)
         try:
             shutil.rmtree(TEMP_ROOT, ignore_errors=True)
         except OSError:

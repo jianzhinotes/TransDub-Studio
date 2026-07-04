@@ -55,7 +55,8 @@ class AsyncResultFutureWrapper:
                 return False
             # 只要有一个工作进程是存活的，就认为池还在工作
             return any(w.is_alive() for w in workers)
-        except:
+        except Exception as e:
+            logger.debug(f'检查进程池健康状态失败: {e}')
             return False
 
     def done(self):
