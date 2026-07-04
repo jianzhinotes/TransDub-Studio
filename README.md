@@ -1,179 +1,148 @@
-
-> Sponsors: **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans) - Meeting Transcription API**
->
-> If you’re looking for a transcription API for meetings, consider checking out **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans)** , an API that works with Zoom, Google Meet, Microsoft Teams, and more
-
-
-
-
 # TransDub Studio
 
 <div align="center">
 
-**A Powerful Open Source Video Translation / Audio Transcription / AI Dubbing / Subtitle Translation Tool**
+**A customized AI video translation and dubbing studio based on pyVideoTrans**
 
-[中文](docs/README_CN.md) | [**Documentation**](https://pyvideotrans.com) | [**Online Q&A**](https://bbs.pyvideotrans.com)
-
-[![License](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)   [![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://www.python.org/)   [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+[中文说明](docs/README_CN.md) · [Upstream pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [License: GPL-3.0](LICENSE)
 
 </div>
 
-**TransDub Studio** is a customized build based on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans). It keeps the original open-source video translation workflow and adds local macOS deployment improvements, DeepSeek context-translation tuning, and F5-TTS dubbing reliability fixes.
+## What is TransDub Studio?
 
-This repository is a modified version, not the official pyVideoTrans project. The original project remains copyright of its original authors and is licensed under GPL-3.0.
+**TransDub Studio** is a downstream customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), focused on a smoother macOS local workflow for AI video translation, subtitle translation, voice cloning, and dubbing.
 
-<img width="1566" height="912" alt="image" src="https://github.com/user-attachments/assets/7410b17d-9903-4919-954a-31764e246c15" />
+It keeps the original pyVideoTrans pipeline:
 
+`speech recognition → subtitle translation → AI dubbing / voice cloning → audio-video synthesis`
 
----
+Then it adds practical improvements around local deployment, DeepSeek translation quality, F5-TTS voice cloning stability, macOS app behavior, and dubbing output reliability.
 
-## ✨ Core Features
+This is **not** the official pyVideoTrans project. It is a modified version distributed under the same **GPL-3.0** license.
 
-> [Technical Architecture and Principles](docs/architecture.md)
+## Major improvements over the upstream project
 
-- **🎥 Fully Automatic Video Translation**: One-click workflow: Speech Recognition (ASR) -> Subtitle Translation -> Speech Synthesis (TTS) -> Video Synthesis.
-- **🎙️ Audio Transcription / Subtitle Generation**: Batch convert audio/video to SRT subtitles, supporting **Speaker Diarization** to distinguish between different roles.
-- **🗣️ Multi-Role AI Dubbing**: Assign different AI dubbing voices to different speakers.
-- **🧬 Voice Cloning**: Integrates models like **F5-TTS, CosyVoice, GPT-SoVITS** for zero-shot voice cloning.
-- **🧠 Powerful Model Support**: 
-  - **ASR**: Faster-Whisper (Local), OpenAI Whisper, Alibaba Qwen, ByteDance Volcano, Azure, Google, etc.
-  - **LLM Translation**: DeepSeek, ChatGPT, Claude, Gemini, MiniMax, Ollama (Local), Alibaba Bailian, etc.
-  - **TTS**: Edge-TTS (Free), OpenAI, Azure, Minimaxi, ChatTTS, ChatterBox, etc.
-- **🖥️ Interactive Editing**: Supports pausing and manual proofreading at each stage (recognition, translation, dubbing) to ensure accuracy.
-- **🛠️ Utility Toolkit**: Includes auxiliary tools such as vocal separation, video/subtitle merging, audio-video alignment, and transcript matching.
-- **💻 Command Line Interface (CLI)**: Supports headless operation, convenient for server deployment or batch processing.
+### 1. macOS app experience
 
-<img width="2752" height="1536" alt="unnamed" src="https://github.com/user-attachments/assets/960e9e34-84a4-425d-b582-f726623475a8" />
+- Renamed and packaged as **TransDub Studio**.
+- Added a custom macOS-style app icon.
+- Added a macOS `.app` wrapper with background startup.
+- Avoids opening extra black Terminal windows when launching the app.
+- Adds single-instance behavior so double-clicking does not start multiple copies.
+- Keeps the F5-TTS local service running quietly in the background.
+- Uses a local Application Support runtime path to reduce macOS permission problems.
 
----
+### 2. DeepSeek translation improvements
 
-## 🚀 Quick Start (Windows Users)
+- Tunes the DeepSeek subtitle translation prompt for full-context subtitle translation.
+- Sends SRT content with broader context instead of translating many small isolated chunks.
+- Encourages consistent terminology, better sentence continuity, and more natural Chinese output.
+- Reduces accidental untranslated English where the target output should be Chinese.
+- Includes prompt-aware translation caching so prompt changes do not keep reusing stale translations.
 
-We provide a pre-packaged `.exe` version for Windows 10/11 users, requiring no Python environment configuration.
+### 3. F5-TTS voice cloning reliability
 
-1. **Download**: [Click to download the latest pre-packaged version](https://github.com/jianchang512/pyvideotrans/releases)
-2. **Unzip**: Extract the compressed file to a path (e.g., `D:\TransDubStudio`).
-3. **Run**: Double-click `sp.exe` inside the folder to launch.
+- Adds safer reference-audio selection to avoid leaking names or English phrases from reference clips into generated Chinese dubbing.
+- Adds detection for unexpected English words in generated Chinese audio.
+- Adds retry behavior when F5-TTS output appears to contain subtitle-unrelated English.
+- Reduces heavy local inference settings for better behavior on Apple Silicon machines.
+- Adds memory cleanup around local F5-TTS inference to reduce long-run instability.
+- Fails fast when dubbing generation fails, instead of silently producing a broken final video.
 
-> **Note**: 
-> *   Do not run directly from within the compressed archive.
-> *   To use GPU acceleration, ensure **CUDA 12.8** and **cuDNN 9.11** are installed.
+### 4. Dubbing and audio output quality
 
----
+- Improves handling around failed TTS segments.
+- Reduces the chance of mixed original English appearing in a final dubbed result.
+- Improves voice-cloning workflow stability for local video translation experiments.
+- Keeps manual subtitle/proofreading workflow from pyVideoTrans while adding extra checks around generated audio.
 
-## 🛠️ Source Deployment (macOS / Linux / Windows Developers)
+### 5. Project identity and licensing cleanup
 
-We recommend using **[`uv`](https://docs.astral.sh/uv/)** for package management for faster speed and better environment isolation.
+- Adds a clear downstream identity: **TransDub Studio**.
+- Keeps attribution to the original pyVideoTrans author and project.
+- Adds [NOTICE](NOTICE) and [MODIFICATIONS.md](MODIFICATIONS.md) to clearly document that this is a modified build.
+- Keeps the project under GPL-3.0, consistent with upstream pyVideoTrans.
 
-### 1. Prerequisites
+## Who is this for?
 
-*   **Python**: Recommended version 3.10 --> 3.12
-*   **FFmpeg**: Must be installed and configured in the environment variables.
-    *   **macOS**: `brew install ffmpeg libsndfile git`
-    *   **Linux (Ubuntu/Debian)**: `sudo apt-get install ffmpeg libsndfile1-dev`
-    *   **Windows**: [Download FFmpeg](https://ffmpeg.org/download.html) and configure Path, or place `ffmpeg.exe` and `ffprobe.exe` directly in the project directory.
+TransDub Studio is mainly for users who want to run an AI video translation and dubbing workflow locally on macOS, especially when using:
 
-### 2. Install uv (If not installed)
+- DeepSeek-compatible APIs for subtitle translation.
+- Local F5-TTS voice cloning.
+- Chinese dubbing output from English source videos.
+- A double-clickable macOS app experience instead of command-line-only usage.
+
+## Current status
+
+This repository is a personal downstream build. It is useful as a working customized version, but it is not an official release channel of pyVideoTrans.
+
+Large local models are **not** intended to be committed into this repository. They should be downloaded or deployed separately when needed.
+
+## Source deployment
+
+Requirements:
+
+- Python 3.10
+- FFmpeg
+- `uv`
+
+Clone:
 
 ```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+git clone https://github.com/jianzhinotes/TransDub-Studio.git
+cd TransDub-Studio
 ```
 
-### 3. Clone and Install
+Install dependencies:
 
-1. Clone the repository (Ensure path has no spaces/Chinese characters)
+```bash
+uv sync
+```
 
-`git clone https://github.com/jianzhinotes/TransDub-Studio.git`
-`cd TransDub-Studio`
+Launch:
 
-2. Install dependencies (uv automatically syncs environment)
-`uv sync`
-
-> By default, `qwen-tts`, `qwen-asr`, `moss-tts`, and `chatterbox` are not installed locally. To install all of them, execute `uv sync --all-extra`.
-> - To install `qwen-tts` alone, execute `uv sync --extra qwentts`.
-> - To install `qwen-asr` alone, execute `uv sync --extra qwenasr`.
-> - To install `moss-tts` alone, execute `uv sync --extra mosstts`.
-> - To install `chatterbox` alone, execute `uv sync --extra chatterbox`.
-
-
-
-### 4. Launch Software
-
-**Launch GUI**:
 ```bash
 uv run sp.py
 ```
 
-**Use CLI**:
+## Supported workflow
 
-> [View documentation for detailed parameters](https://pyvideotrans.com/cli)
+TransDub Studio inherits the broad pyVideoTrans feature set, including:
 
-```bash
-# Video Translation Example
-uv run cli.py --task vtv --name "./video.mp4" --source_language_code zh --target_language_code en
+- Speech recognition / subtitle generation.
+- Subtitle translation through local or online translation channels.
+- AI dubbing and voice cloning.
+- Audio/video/subtitle merging.
+- Manual proofreading during recognition, translation, and dubbing.
+- CLI usage for batch processing.
 
-# Audio to Subtitle Example
-uv run cli.py --task stt --name "./audio.wav" --model_name large-v3
-```
+See upstream pyVideoTrans documentation for the general feature set and configuration details:
 
-### 5. (Optional) GPU Acceleration Configuration
+- [pyVideoTrans repository](https://github.com/jianchang512/pyvideotrans)
+- [pyVideoTrans documentation](https://pyvideotrans.com)
 
-If you have an NVIDIA graphics card, execute the following commands to install the CUDA-supported PyTorch version:
+## License and attribution
 
-```bash
-# Uninstall CPU version
-uv remove torch torchaudio
+TransDub Studio is based on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), created by [jianchang512](https://github.com/jianchang512).
 
-# Install CUDA version (Example for CUDA 12.x)
-uv add torch==2.7 torchaudio==2.7 --index-url https://download.pytorch.org/whl/cu128
-uv add nvidia-cublas-cu12 nvidia-cudnn-cu12
-```
+The original project is licensed under **GPL-3.0**. This modified version is also distributed under **GPL-3.0**.
 
----
+This repository is not affiliated with or endorsed by the official pyVideoTrans project. For details, see:
 
-## 🧩 Supported Channels & Models (Partial)
+- [LICENSE](LICENSE)
+- [NOTICE](NOTICE)
+- [MODIFICATIONS.md](MODIFICATIONS.md)
 
-| Category | Channel/Model | Description |
-| :--- | :--- | :--- |
-| **ASR (Speech Recognition)** | **Faster-Whisper** (Local) | Recommended, fast speed, high accuracy |
-| | WhisperX / Parakeet | Supports timestamp alignment & speaker diarization |
-| | Alibaba Qwen3-ASR / ByteDance Volcano | Online API, excellent for Chinese |
-| **Translation (LLM/MT)** | **DeepSeek** / ChatGPT | Supports context understanding, more natural translation |
-| | MiniMax AI | MiniMax M3 LLM, latest flagship model, OpenAI-compatible |
-| | Google / Microsoft | Traditional machine translation, fast speed |
-| | Ollama / M2M100 | Fully local offline translation |
-| **TTS (Speech Synthesis)** | **Edge-TTS** | Microsoft free interface, natural effect |
-| | **F5-TTS / CosyVoice** | Supports **Voice Cloning**, requires local deployment |
-| | GPT-SoVITS / ChatTTS | High-quality open-source TTS |
-| | 302.AI / OpenAI / Azure | High-quality commercial API |
+## Acknowledgements
 
----
+This project relies on the work of pyVideoTrans and many open-source projects, including:
 
-## 📚 Documentation & Support
+- [pyVideoTrans](https://github.com/jianchang512/pyvideotrans)
+- [FFmpeg](https://github.com/FFmpeg/FFmpeg)
+- [PySide6](https://pypi.org/project/PySide6/)
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+- [openai-whisper](https://github.com/openai/whisper)
+- [edge-tts](https://github.com/rany2/edge-tts)
+- [F5-TTS](https://github.com/SWivid/F5-TTS)
+- [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
 
-*   **Official Documentation**: [https://pyvideotrans.com](https://pyvideotrans.com) (Includes detailed tutorials, API configuration guides, FAQ)
-*   **Online Q&A Community**: [https://bbs.pyvideotrans.com](https://bbs.pyvideotrans.com) (Submit error logs for automated AI analysis and answers)
-
-## ⚠️ Disclaimer
-
-This software is an open-source, free, non-commercial project. Users are solely responsible for any legal consequences arising from the use of this software (including but not limited to calling third-party APIs or processing copyrighted video content). Please comply with local laws and regulations and the terms of use of relevant service providers.
-
-## 🙏 Acknowledgements
-
-This project mainly relies on the following open-source projects (partial):
-
-*   [FFmpeg](https://github.com/FFmpeg/FFmpeg)
-*   [PySide6](https://pypi.org/project/PySide6/)
-*   [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-*   [openai-whisper](https://github.com/openai/whisper)
-*   [edge-tts](https://github.com/rany2/edge-tts)
-*   [F5-TTS](https://github.com/SWivid/F5-TTS)
-*   [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
-
----
-
-*Based on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), created by [jianchang512](https://github.com/jianchang512). TransDub Studio contains downstream modifications and is distributed under GPL-3.0.*
