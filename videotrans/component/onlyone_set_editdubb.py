@@ -639,9 +639,8 @@ class EditDubbingResultDialog(QDialog):
 
         # 回写编辑结果，任务线程重载后 align 与最终字幕才能反映修改
         try:
-            clean = [{k: v for k, v in it.items() if not k.startswith('_')} for it in self.queue_tts]
-            Path(f'{self.cache_folder}/queue_tts.json').write_text(
-                json.dumps(clean, ensure_ascii=False), encoding='utf-8')
+            from videotrans.component.timeline.edit_logic import dump_queue
+            dump_queue(self.queue_tts, self.cache_folder)
         except OSError as e:
             logger.exception(f'回写 queue_tts.json 失败: {e}', exc_info=True)
 

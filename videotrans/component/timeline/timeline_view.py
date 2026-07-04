@@ -16,7 +16,7 @@ class TimelineView(QWidget):
     seekRequested = Signal(int)
     blockClicked = Signal(int)
 
-    def __init__(self, duration_ms: int, parent=None):
+    def __init__(self, duration_ms: int, parent=None, subtitle_track_cls=SubtitleTrack):
         super().__init__(parent)
         self.scale = TimeScale(duration_ms, parent=self)
         self._playhead_ms = 0
@@ -29,7 +29,7 @@ class TimelineView(QWidget):
         self.ruler = RulerTrack(self.scale)
         self._add_track(self.ruler)
 
-        self.subtitle_track = SubtitleTrack(self.scale)
+        self.subtitle_track = subtitle_track_cls(self.scale)
         self.subtitle_track.blockClicked.connect(self.blockClicked)
 
         self._scrollbar = QScrollBar(Qt.Orientation.Horizontal)
