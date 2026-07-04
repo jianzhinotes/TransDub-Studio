@@ -108,6 +108,17 @@ class Worker(QThread):
                         time.sleep(1)
                         app_cfg.set_countdown(app_cfg.task_countdown - 1)
 
+                    # 编辑界面把修改写回了 queue_tts.json，重载后 align/最终字幕才能反映编辑
+                    qfile = Path(f'{trk.cfg.cache_folder}/queue_tts.json')
+                    try:
+                        data = json.loads(qfile.read_text(encoding='utf-8'))
+                        if isinstance(data, list) and data:
+                            trk.queue_tts = data
+                        else:
+                            logger.warning('queue_tts.json 为空或格式异常，保留内存中的原列表')
+                    except Exception as e:
+                        logger.warning(f'重载 queue_tts.json 失败，保留原列表: {e}')
+
             if self._exit(): return
             trk.align()
 

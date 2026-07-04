@@ -627,14 +627,22 @@ class EditDubbingResultDialog(QDialog):
 
     def save_and_close(self):
         self.save_button.setDisabled(True)
-        
+
         for i, item in enumerate(self.queue_tts):
-            # 不修改文本，以便可以单独使用 各种配音渠道支持的控制符号进行声音微调
             text_item = self.table.item(i, 4)
             text = text_item.text().strip() if text_item else item['text'].strip()
+            item['text'] = text
 
             # 删除空文本对应的音频文件
             if not text:
                 Path(item['filename']).unlink(missing_ok=True)
+
+        # 回写编辑结果，任务线程重载后 align 与最终字幕才能反映修改
+        try:
+            clean = [{k: v for k, v in it.items() if not k.startswith('_')} for it in self.queue_tts]
+            Path(f'{self.cache_folder}/queue_tts.json').write_text(
+                json.dumps(clean, ensure_ascii=False), encoding='utf-8')
+        except OSError as e:
+            logger.exception(f'回写 queue_tts.json 失败: {e}', exc_info=True)
 
         self.accept()
