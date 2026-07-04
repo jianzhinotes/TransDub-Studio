@@ -709,6 +709,9 @@ class Ui_MainWindow(object):
         self.action_clipvideo = QtGui.QAction()
         self.action_clipvideo.setObjectName("action_clipvideo")
 
+        self.action_timeline_preview = QtGui.QAction()
+        self.action_timeline_preview.setObjectName("action_timeline_preview")
+
         self.action_realtime_stt = QtGui.QAction()
         self.action_realtime_stt.setObjectName("action_realtime_stt")
 
@@ -869,6 +872,8 @@ class Ui_MainWindow(object):
         self.menu.addAction(self.actionsetini)
         self.menu.addSeparator()
         self.menu.addAction(self.action_clipvideo)
+        self.menu.addSeparator()
+        self.menu.addAction(self.action_timeline_preview)
         self.menu.addSeparator()
         self.menu.addAction(self.actionwatermark)
         self.menu.addSeparator()
@@ -1138,6 +1143,8 @@ class Ui_MainWindow(object):
         self.action_yingyinhebing.setToolTip(tr("Merge audio, video, and subtitles into one file"))
         self.action_clipvideo.setText(tr("Edit video on subtitles"))
         self.action_clipvideo.setToolTip(tr("Edit video on subtitles"))
+        self.action_timeline_preview.setText(tr("Timeline Preview"))
+        self.action_timeline_preview.setToolTip(tr("Preview video, waveforms and subtitles on one timeline"))
         self.action_realtime_stt.setText(tr("Real-time speech-to-text"))
         self.action_textmatching.setText(tr("Text matching and timing"))
         self.action_textmatching.setToolTip(tr("Text matching and timing"))

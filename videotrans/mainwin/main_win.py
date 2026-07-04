@@ -299,6 +299,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action_hun.triggered.connect(lambda: self.open_winform('fn_hunliu'))
         self.action_yingyinhebing.triggered.connect(lambda: self.open_winform('fn_vas'))
         self.action_clipvideo.triggered.connect(lambda: self.open_winform('clipvideo'))
+        self.action_timeline_preview.triggered.connect(lambda: self.open_winform('timeline_preview'))
         self.action_textmatching.triggered.connect(lambda: self.open_winform('textmatching'))
         self.action_realtime_stt.triggered.connect(lambda: self.open_winform('realtime_stt'))
         self.action_fanyi.triggered.connect(lambda: self.open_winform('fn_fanyisrt'))
@@ -395,6 +396,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if name == 'clipvideo':
             from videotrans.component.clip_video import ClipVideoWindow
             window = ClipVideoWindow()
+            app_cfg.child_forms[name] = window
+            window.show()
+            return
+        if name == 'timeline_preview':
+            from videotrans.component.timeline.launcher import TimelineLauncherWindow
+            window = TimelineLauncherWindow()
             app_cfg.child_forms[name] = window
             window.show()
             return

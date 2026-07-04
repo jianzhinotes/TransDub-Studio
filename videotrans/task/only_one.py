@@ -98,7 +98,10 @@ class Worker(QThread):
 
                     app_cfg.set_countdown(86400)
                     # 等待修改配音结果或重新配音
-                    self._post(text=f"{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}", type='edit_dubbing')
+                    # 追加视频路径与原声 wav，供时间轴预览使用（旧字段顺序保持兼容）
+                    self._post(
+                        text=f"{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}<|>{trk.cfg.name}<|>{trk.cfg.source_wav}",
+                        type='edit_dubbing')
                     self._post(text=tr('The subtitle editing interface is rendering'))
                     while app_cfg.task_countdown > 0:
                         if self._exit(): return

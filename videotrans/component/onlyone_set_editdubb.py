@@ -46,12 +46,16 @@ class EditDubbingResultDialog(QDialog):
             self,
             parent=None,
             language=None,
-            cache_folder: str = None
+            cache_folder: str = None,
+            video_path: str = None,
+            source_wav: str = None
     ):
         super().__init__()
         self.parent = parent
         self.language = language
         self.cache_folder = cache_folder
+        self.video_path = video_path
+        self.source_wav = source_wav
         self.queue_tts = []
         queue_tts_file = Path(f'{cache_folder}/queue_tts.json')
         if queue_tts_file.exists():
@@ -117,8 +121,16 @@ class EditDubbingResultDialog(QDialog):
         cancel_button.setStyleSheet("background-color:transparent")
         cancel_button.clicked.connect(self.cancel_and_close)
         
+        # 时间轴预览：视频+原声/配音波形+字幕块 同步对照，仅在有视频路径时可用
+        self.timeline_button = QPushButton(tr("Timeline Preview"))
+        self.timeline_button.setCursor(Qt.PointingHandCursor)
+        self.timeline_button.setMinimumSize(QSize(200, 35))
+        self.timeline_button.clicked.connect(self.open_timeline_preview)
+        self.timeline_button.setVisible(bool(self.video_path))
+
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
+        bottom_layout.addWidget(self.timeline_button)
         bottom_layout.addWidget(self.save_button)
         bottom_layout.addWidget(cancel_button)
         bottom_layout.addStretch()
@@ -537,7 +549,12 @@ class EditDubbingResultDialog(QDialog):
             
             # 更新状态显示
             self._refresh_row(idx)
-            
+
+            # 配音已变化，下次打开时间轴预览时重建预览音频
+            if self.cache_folder:
+                from videotrans.component.timeline.dub_preview import invalidate_dub_preview
+                invalidate_dub_preview(self.cache_folder)
+
             # 播放新音频
             threading.Thread(target=tools.pygameaudio, args=(item['filename'],), daemon=True).start()
         else:
@@ -557,6 +574,22 @@ class EditDubbingResultDialog(QDialog):
                     self.prompt_label.setText(original_text)
                     self.prompt_label.setStyleSheet(original_style)
             QTimer.singleShot(2000, restore)
+
+    def open_timeline_preview(self):
+        """打开时间轴预览：视频 + 原声/配音波形 + 字幕块 同步对照"""
+        if not self.video_path:
+            return
+        self.stop_countdown()
+        from videotrans.component.timeline import TimelinePreviewDialog
+        dlg = TimelinePreviewDialog(
+            video_path=self.video_path,
+            subtitle_items=self.queue_tts,
+            source_audio=self.source_wav if self.source_wav and Path(self.source_wav).exists() else None,
+            queue_tts=self.queue_tts,
+            cache_folder=self.cache_folder,
+            parent=self,
+        )
+        dlg.exec()
 
     def cancel_and_close(self):
         if hasattr(self, 'timer') and self.timer:

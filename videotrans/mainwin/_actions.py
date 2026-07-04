@@ -720,10 +720,14 @@ class WinAction(WinActionBase):
             # 显示编辑翻译框
             from videotrans.component.onlyone_set_editdubb import EditDubbingResultDialog
 
-            cache_folder, language = d['text'].split('<|>')
+            # 防御式解析：后两段(视频路径/原声wav)为可选，兼容旧格式消息
+            parts = d['text'].split('<|>')
+            cache_folder, language = parts[0], parts[1]
             dialog = EditDubbingResultDialog(
                 cache_folder=cache_folder,
                 language=language,
+                video_path=parts[2] if len(parts) > 2 and parts[2] else None,
+                source_wav=parts[3] if len(parts) > 3 and parts[3] else None,
                 parent=self.main
 
             )
