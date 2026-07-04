@@ -1,0 +1,86 @@
+#!/bin/zsh
+
+SOURCE_APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+INSTALLED_ROOT="$HOME/Library/Application Support/pyVideoTrans"
+if [[ -f "$SOURCE_APP_DIR/sp.py" && -x "$SOURCE_APP_DIR/.venv/bin/python" ]]; then
+    APP_DIR="$SOURCE_APP_DIR"
+else
+    APP_DIR="$INSTALLED_ROOT/runtime"
+fi
+PYTHON="$APP_DIR/.venv/bin/python"
+MAIN="$APP_DIR/sp.py"
+F5_SERVICE="$INSTALLED_ROOT/f5-tts-service/start_service.sh"
+LOCK_DIR="/tmp/com.transdub.studio.local.lock"
+PID_FILE="$LOCK_DIR/python.pid"
+LOG_DIR="$APP_DIR/logs"
+LAUNCH_LOG="$LOG_DIR/macos-launcher.log"
+
+mkdir -p "$LOG_DIR"
+
+show_error() {
+    /usr/bin/osascript -e \
+        "display alert \"TransDub Studio 启动失败\" message \"$1\\n\\n详细日志：$LAUNCH_LOG\" as critical" \
+        >/dev/null 2>&1
+}
+
+activate_existing() {
+    local pid="$1"
+    /usr/bin/osascript - "$pid" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+    set targetPID to (item 1 of argv) as integer
+    tell application "System Events"
+        set frontmost of first process whose unix id is targetPID to true
+    end tell
+end run
+APPLESCRIPT
+}
+
+cleanup_lock() {
+    rm -f "$PID_FILE"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+if [[ ! -x "$PYTHON" || ! -f "$MAIN" ]]; then
+    show_error "Python 环境或主程序不存在，请不要把应用单独移出安装目录。"
+    exit 1
+fi
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    if [[ -s "$PID_FILE" ]]; then
+        EXISTING_PID="$(cat "$PID_FILE")"
+        if kill -0 "$EXISTING_PID" 2>/dev/null; then
+            activate_existing "$EXISTING_PID"
+            exit 0
+        fi
+    fi
+    cleanup_lock
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        show_error "无法创建单实例锁。"
+        exit 1
+    fi
+fi
+
+trap cleanup_lock EXIT INT TERM HUP
+
+cd "$APP_DIR"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export LANG="${LANG:-zh_CN.UTF-8}"
+export PYVIDEOTRANS_LANG="zh"
+
+# F5-TTS runs as a background service and writes to its own log. It never opens
+# Terminal and does not delay the TransDub Studio window while the model is loading.
+if [[ -x "$F5_SERVICE" ]]; then
+    "$F5_SERVICE" >>"$LAUNCH_LOG" 2>&1 &
+fi
+
+"$PYTHON" "$MAIN" --lang zh >>"$LAUNCH_LOG" 2>&1 &
+APP_PID=$!
+echo "$APP_PID" >"$PID_FILE"
+wait "$APP_PID"
+STATUS=$?
+
+if [[ $STATUS -ne 0 ]]; then
+    show_error "程序异常退出，错误代码：$STATUS"
+fi
+
+exit $STATUS

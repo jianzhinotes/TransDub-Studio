@@ -1,0 +1,17 @@
+TransDub Studio
+================
+
+TransDub Studio is a modified downstream build based on pyVideoTrans:
+
+    https://github.com/jianchang512/pyvideotrans
+
+The original pyVideoTrans project is licensed under the GNU General Public
+License version 3.0 (GPL-3.0). This modified version is distributed under the
+same license.
+
+This repository is not the official pyVideoTrans project. Changes in this
+downstream build include local macOS app/deployment improvements, DeepSeek
+context-translation tuning, and F5-TTS dubbing reliability fixes.
+
+The original authors retain copyright over their original work. Downstream
+modifications are provided under GPL-3.0 as part of this modified version.

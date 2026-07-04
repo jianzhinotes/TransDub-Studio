@@ -1,0 +1,92 @@
+from dataclasses import dataclass
+from pathlib import Path
+
+from videotrans.configure.excepts import DubbingSrtError
+from videotrans.configure.config import ROOT_DIR,app_cfg,logger
+from videotrans.tts._base import BaseTTS
+from videotrans.util import tools
+import wave
+from piper import PiperVoice,SynthesisConfig
+
+@dataclass
+class PiperTTS(BaseTTS):
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.speed=self.get_speed()
+        self.device="cpu"# todo cuda
+        
+    def _get_model_from_name(self,name):
+        # 角色名转为 piper文件夹下的子文件夹名
+        name_path=name.split('_')[0]+'/'+name.replace('-','/')
+        # 存放onnx文件的最终文件夹绝对路径
+        local_dir=ROOT_DIR+'/models/piper/'+name_path
+        onnx_file=f'{local_dir}/{name}.onnx'
+        if Path(onnx_file).exists():
+            return onnx_file
+        url=f'/rhasspy/piper-voices/resolve/main/{name_path}'
+        urls=[
+            f'{url}/{name}.onnx?download=true',
+            f'{url}/{name}.onnx.json?download=true',
+        ]
+        Path(local_dir).mkdir(exist_ok=True, parents=True)
+        tools.down_file_from_hf(local_dir,urls=urls,callback=self._process_callback)
+        return onnx_file
+    
+
+    
+    def _exec(self):
+        # 判断模型是否存在
+        role_model={}
+        _model_obj={}
+        for it in self.queue_tts:
+            if it['role'] in role_model or not it.get('text','').strip():
+                continue
+            role_model[it['role']]=self._get_model_from_name(it['role'])
+
+        syn_config = SynthesisConfig(
+            length_scale=self.speed,  # twice as slow
+        )
+        ok, err = 0, 0
+        _except=None
+        for i, item in enumerate(self.queue_tts):
+            if app_cfg.exit_soft:return
+            if not item.get('text','').strip():
+                continue
+            try:
+                _model_file=role_model.get(item['role'])
+                voice=_model_obj.get(_model_file)
+                if voice is None:
+                    voice = PiperVoice.load(_model_file,use_cuda=True if self.device=='cuda' else False)
+                    _model_obj[_model_file]=voice
+                with wave.open(item['filename']+'-24k.wav', "wb") as wav_file:
+                    voice.synthesize_wav(item.get('text'), wav_file,syn_config=syn_config)
+                if not tools.vail_file(item['filename']+'-24k.wav'):
+                    err+=1
+                    continue
+                ok+=1
+                self.convert_to_wav(item['filename']+'-24k.wav',item['filename'])
+                self.signal(text=f"Dubbing {ok}")
+            except Exception as e:
+                logger.exception(f'piper dubbing error',exc_info=True)
+                err+=1
+                _except=e
+
+        try:
+            del _model_obj
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
+        if ok==0:
+            raise _except if _except else DubbingSrtError('piper dubbing error')
+
+        msg="Dubbing ended"
+        if err > 0 and ok>0:
+            msg=f'[{err}] errors, {ok} succeed'
+
+        self.signal(text=msg)
+        logger.debug(f'piper配音结束：{msg}')
+
+

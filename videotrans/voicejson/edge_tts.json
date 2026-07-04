@@ -1,0 +1,479 @@
+{
+    "af": {
+        "Willem(Male/ZA)": "af-ZA-WillemNeural",
+        "Adri(Female/ZA)": "af-ZA-AdriNeural"
+    },
+    "sq": {
+        "Ilir(Male/AL)": "sq-AL-IlirNeural",
+        "Anila(Female/AL)": "sq-AL-AnilaNeural"
+    },
+    "am": {
+        "Mekdes(Female/ET)": "am-ET-MekdesNeural",
+        "Ameha(Male/ET)": "am-ET-AmehaNeural"
+    },
+    "ar": {
+        "Zariyah(Female/SA)": "ar-SA-ZariyahNeural",
+        "Taim(Male/JO)": "ar-JO-TaimNeural",
+        "Shakir(Male/EG)": "ar-EG-ShakirNeural",
+        "Sana(Female/JO)": "ar-JO-SanaNeural",
+        "Salma(Female/EG)": "ar-EG-SalmaNeural",
+        "Saleh(Male/YE)": "ar-YE-SalehNeural",
+        "Reem(Female/TN)": "ar-TN-ReemNeural",
+        "Rana(Female/IQ)": "ar-IQ-RanaNeural",
+        "Rami(Male/LB)": "ar-LB-RamiNeural",
+        "Omar(Male/LY)": "ar-LY-OmarNeural",
+        "Noura(Female/KW)": "ar-KW-NouraNeural",
+        "Mouna(Female/MA)": "ar-MA-MounaNeural",
+        "Moaz(Male/QA)": "ar-QA-MoazNeural",
+        "Maryam(Female/YE)": "ar-YE-MaryamNeural",
+        "Layla(Female/LB)": "ar-LB-LaylaNeural",
+        "Laith(Male/SY)": "ar-SY-LaithNeural",
+        "Laila(Female/BH)": "ar-BH-LailaNeural",
+        "Jamal(Male/MA)": "ar-MA-JamalNeural",
+        "Ismael(Male/DZ)": "ar-DZ-IsmaelNeural",
+        "Iman(Female/LY)": "ar-LY-ImanNeural",
+        "Hedi(Male/TN)": "ar-TN-HediNeural",
+        "Hamed(Male/SA)": "ar-SA-HamedNeural",
+        "Hamdan(Male/AE)": "ar-AE-HamdanNeural",
+        "Fatima(Female/AE)": "ar-AE-FatimaNeural",
+        "Fahed(Male/KW)": "ar-KW-FahedNeural",
+        "Bassel(Male/IQ)": "ar-IQ-BasselNeural",
+        "Aysha(Female/OM)": "ar-OM-AyshaNeural",
+        "Amina(Female/DZ)": "ar-DZ-AminaNeural",
+        "Amany(Female/SY)": "ar-SY-AmanyNeural",
+        "Amal(Female/QA)": "ar-QA-AmalNeural",
+        "Ali(Male/BH)": "ar-BH-AliNeural",
+        "Abdullah(Male/OM)": "ar-OM-AbdullahNeural"
+    },
+    "az": {
+        "Banu(Female/AZ)": "az-AZ-BanuNeural",
+        "Babek(Male/AZ)": "az-AZ-BabekNeural"
+    },
+    "bn": {
+        "Tanishaa(Female/IN)": "bn-IN-TanishaaNeural",
+        "Pradeep(Male/BD)": "bn-BD-PradeepNeural",
+        "Nabanita(Female/BD)": "bn-BD-NabanitaNeural",
+        "Bashkar(Male/IN)": "bn-IN-BashkarNeural"
+    },
+    "bs": {
+        "Vesna(Female/BA)": "bs-BA-VesnaNeural",
+        "Goran(Male/BA)": "bs-BA-GoranNeural"
+    },
+    "bg": {
+        "Kalina(Female/BG)": "bg-BG-KalinaNeural",
+        "Borislav(Male/BG)": "bg-BG-BorislavNeural"
+    },
+    "my": {
+        "Thiha(Male/MM)": "my-MM-ThihaNeural",
+        "Nilar(Female/MM)": "my-MM-NilarNeural"
+    },
+    "ca": {
+        "Joana(Female/ES)": "ca-ES-JoanaNeural",
+        "Enric(Male/ES)": "ca-ES-EnricNeural"
+    },
+    "zh": {
+        "Yunyang(Male/CN)": "zh-CN-YunyangNeural",
+        "Yunxia(Male/CN)": "zh-CN-YunxiaNeural",
+        "Yunxi(Male/CN)": "zh-CN-YunxiNeural",
+        "Yunjian(Male/CN)": "zh-CN-YunjianNeural",
+        "YunJhe(Male/TW)": "zh-TW-YunJheNeural",
+        "Xiaoyi(Female/CN)": "zh-CN-XiaoyiNeural",
+        "Xiaoxiao(Female/CN)": "zh-CN-XiaoxiaoNeural",
+        "Xiaoni(Female/CN)": "zh-CN-shaanxi-XiaoniNeural",
+        "Xiaobei(Female/CN)": "zh-CN-liaoning-XiaobeiNeural",
+        "WanLung(Male/HK)": "zh-HK-WanLungNeural",
+        "HsiaoYu(Female/TW)": "zh-TW-HsiaoYuNeural",
+        "HsiaoChen(Female/TW)": "zh-TW-HsiaoChenNeural",
+        "HiuMaan(Female/HK)": "zh-HK-HiuMaanNeural",
+        "HiuGaai(Female/HK)": "zh-HK-HiuGaaiNeural"
+    },
+	"yue":{
+		"HiuMaan(Female/HK)": "zh-HK-HiuMaanNeural",
+        "HiuGaai(Female/HK)": "zh-HK-HiuGaaiNeural",
+		"WanLung(Male/HK)": "zh-HK-WanLungNeural"
+	},
+    "hr": {
+        "Srecko(Male/HR)": "hr-HR-SreckoNeural",
+        "Gabrijela(Female/HR)": "hr-HR-GabrijelaNeural"
+    },
+    "cs": {
+        "Vlasta(Female/CZ)": "cs-CZ-VlastaNeural",
+        "Antonin(Male/CZ)": "cs-CZ-AntoninNeural"
+    },
+    "da": {
+        "Jeppe(Male/DK)": "da-DK-JeppeNeural",
+        "Christel(Female/DK)": "da-DK-ChristelNeural"
+    },
+    "nl": {
+        "Maarten(Male/NL)": "nl-NL-MaartenNeural",
+        "Fenna(Female/NL)": "nl-NL-FennaNeural",
+        "Dena(Female/BE)": "nl-BE-DenaNeural",
+        "Colette(Female/NL)": "nl-NL-ColetteNeural",
+        "Arnaud(Male/BE)": "nl-BE-ArnaudNeural"
+    },
+    "en": {
+        "Yan(Female/HK)": "en-HK-YanNeural",
+        "WilliamMultilingual(Male/AU)": "en-AU-WilliamMultilingualNeural",
+        "Wayne(Male/SG)": "en-SG-WayneNeural",
+        "Thomas(Male/GB)": "en-GB-ThomasNeural",
+        "Steffan(Male/US)": "en-US-SteffanNeural",
+        "Sonia(Female/GB)": "en-GB-SoniaNeural",
+        "Sam(Male/HK)": "en-HK-SamNeural",
+        "Ryan(Male/GB)": "en-GB-RyanNeural",
+        "Rosa(Female/PH)": "en-PH-RosaNeural",
+        "Roger(Male/US)": "en-US-RogerNeural",
+        "Prabhat(Male/IN)": "en-IN-PrabhatNeural",
+        "NeerjaExpressive(Female/IN)": "en-IN-NeerjaExpressiveNeural",
+        "Neerja(Female/IN)": "en-IN-NeerjaNeural",
+        "Natasha(Female/AU)": "en-AU-NatashaNeural",
+        "Molly(Female/NZ)": "en-NZ-MollyNeural",
+        "Mitchell(Male/NZ)": "en-NZ-MitchellNeural",
+        "Michelle(Female/US)": "en-US-MichelleNeural",
+        "Maisie(Female/GB)": "en-GB-MaisieNeural",
+        "Luna(Female/SG)": "en-SG-LunaNeural",
+        "Luke(Male/ZA)": "en-ZA-LukeNeural",
+        "Libby(Female/GB)": "en-GB-LibbyNeural",
+        "Liam(Male/CA)": "en-CA-LiamNeural",
+        "Leah(Female/ZA)": "en-ZA-LeahNeural",
+        "Jenny(Female/US)": "en-US-JennyNeural",
+        "James(Male/PH)": "en-PH-JamesNeural",
+        "Imani(Female/TZ)": "en-TZ-ImaniNeural",
+        "Guy(Male/US)": "en-US-GuyNeural",
+        "Ezinne(Female/NG)": "en-NG-EzinneNeural",
+        "Eric(Male/US)": "en-US-EricNeural",
+        "EmmaMultilingual(Female/US)": "en-US-EmmaMultilingualNeural",
+        "Emma(Female/US)": "en-US-EmmaNeural",
+        "Emily(Female/IE)": "en-IE-EmilyNeural",
+        "Elimu(Male/TZ)": "en-TZ-ElimuNeural",
+        "Connor(Male/IE)": "en-IE-ConnorNeural",
+        "Clara(Female/CA)": "en-CA-ClaraNeural",
+        "Christopher(Male/US)": "en-US-ChristopherNeural",
+        "Chilemba(Male/KE)": "en-KE-ChilembaNeural",
+        "BrianMultilingual(Male/US)": "en-US-BrianMultilingualNeural",
+        "Brian(Male/US)": "en-US-BrianNeural",
+        "AvaMultilingual(Female/US)": "en-US-AvaMultilingualNeural",
+        "Ava(Female/US)": "en-US-AvaNeural",
+        "Asilia(Female/KE)": "en-KE-AsiliaNeural",
+        "Aria(Female/US)": "en-US-AriaNeural",
+        "AndrewMultilingual(Male/US)": "en-US-AndrewMultilingualNeural",
+        "Andrew(Male/US)": "en-US-AndrewNeural",
+        "Ana(Female/US)": "en-US-AnaNeural",
+        "Abeo(Male/NG)": "en-NG-AbeoNeural"
+    },
+    "et": {
+        "Kert(Male/EE)": "et-EE-KertNeural",
+        "Anu(Female/EE)": "et-EE-AnuNeural"
+    },
+    "fil": {
+        "Blessica(Female/PH)": "fil-PH-BlessicaNeural",
+        "Angelo(Male/PH)": "fil-PH-AngeloNeural"
+    },
+    "fi": {
+        "Noora(Female/FI)": "fi-FI-NooraNeural",
+        "Harri(Male/FI)": "fi-FI-HarriNeural"
+    },
+    "fr": {
+        "VivienneMultilingual(Female/FR)": "fr-FR-VivienneMultilingualNeural",
+        "Thierry(Male/CA)": "fr-CA-ThierryNeural",
+        "Sylvie(Female/CA)": "fr-CA-SylvieNeural",
+        "RemyMultilingual(Male/FR)": "fr-FR-RemyMultilingualNeural",
+        "Jean(Male/CA)": "fr-CA-JeanNeural",
+        "Henri(Male/FR)": "fr-FR-HenriNeural",
+        "Gerard(Male/BE)": "fr-BE-GerardNeural",
+        "Fabrice(Male/CH)": "fr-CH-FabriceNeural",
+        "Eloise(Female/FR)": "fr-FR-EloiseNeural",
+        "Denise(Female/FR)": "fr-FR-DeniseNeural",
+        "Charline(Female/BE)": "fr-BE-CharlineNeural",
+        "Ariane(Female/CH)": "fr-CH-ArianeNeural",
+        "Antoine(Male/CA)": "fr-CA-AntoineNeural"
+    },
+    "gl": {
+        "Sabela(Female/ES)": "gl-ES-SabelaNeural",
+        "Roi(Male/ES)": "gl-ES-RoiNeural"
+    },
+    "ka": {
+        "Giorgi(Male/GE)": "ka-GE-GiorgiNeural",
+        "Eka(Female/GE)": "ka-GE-EkaNeural"
+    },
+    "de": {
+        "SeraphinaMultilingual(Female/DE)": "de-DE-SeraphinaMultilingualNeural",
+        "Leni(Female/CH)": "de-CH-LeniNeural",
+        "Killian(Male/DE)": "de-DE-KillianNeural",
+        "Katja(Female/DE)": "de-DE-KatjaNeural",
+        "Jonas(Male/AT)": "de-AT-JonasNeural",
+        "Jan(Male/CH)": "de-CH-JanNeural",
+        "Ingrid(Female/AT)": "de-AT-IngridNeural",
+        "FlorianMultilingual(Male/DE)": "de-DE-FlorianMultilingualNeural",
+        "Conrad(Male/DE)": "de-DE-ConradNeural",
+        "Amala(Female/DE)": "de-DE-AmalaNeural"
+    },
+    "el": {
+        "Nestoras(Male/GR)": "el-GR-NestorasNeural",
+        "Athina(Female/GR)": "el-GR-AthinaNeural"
+    },
+    "gu": {
+        "Niranjan(Male/IN)": "gu-IN-NiranjanNeural",
+        "Dhwani(Female/IN)": "gu-IN-DhwaniNeural"
+    },
+    "he": {
+        "Hila(Female/IL)": "he-IL-HilaNeural",
+        "Avri(Male/IL)": "he-IL-AvriNeural"
+    },
+    "hi": {
+        "Swara(Female/IN)": "hi-IN-SwaraNeural",
+        "Madhur(Male/IN)": "hi-IN-MadhurNeural"
+    },
+    "hu": {
+        "Tamas(Male/HU)": "hu-HU-TamasNeural",
+        "Noemi(Female/HU)": "hu-HU-NoemiNeural"
+    },
+    "is": {
+        "Gunnar(Male/IS)": "is-IS-GunnarNeural",
+        "Gudrun(Female/IS)": "is-IS-GudrunNeural"
+    },
+    "id": {
+        "Gadis(Female/ID)": "id-ID-GadisNeural",
+        "Ardi(Male/ID)": "id-ID-ArdiNeural"
+    },
+    "iu": {
+        "Taqqiq(Male/Latn)": "iu-Latn-CA-TaqqiqNeural",
+        "Taqqiq(Male/Cans)": "iu-Cans-CA-TaqqiqNeural",
+        "Siqiniq(Female/Latn)": "iu-Latn-CA-SiqiniqNeural",
+        "Siqiniq(Female/Cans)": "iu-Cans-CA-SiqiniqNeural"
+    },
+    "ga": {
+        "Orla(Female/IE)": "ga-IE-OrlaNeural",
+        "Colm(Male/IE)": "ga-IE-ColmNeural"
+    },
+    "it": {
+        "Isabella(Female/IT)": "it-IT-IsabellaNeural",
+        "GiuseppeMultilingual(Male/IT)": "it-IT-GiuseppeMultilingualNeural",
+        "Elsa(Female/IT)": "it-IT-ElsaNeural",
+        "Diego(Male/IT)": "it-IT-DiegoNeural"
+    },
+    "ja": {
+        "Nanami(Female/JP)": "ja-JP-NanamiNeural",
+        "Keita(Male/JP)": "ja-JP-KeitaNeural"
+    },
+    "jv": {
+        "Siti(Female/ID)": "jv-ID-SitiNeural",
+        "Dimas(Male/ID)": "jv-ID-DimasNeural"
+    },
+    "kn": {
+        "Sapna(Female/IN)": "kn-IN-SapnaNeural",
+        "Gagan(Male/IN)": "kn-IN-GaganNeural"
+    },
+    "kk": {
+        "Daulet(Male/KZ)": "kk-KZ-DauletNeural",
+        "Aigul(Female/KZ)": "kk-KZ-AigulNeural"
+    },
+    "km": {
+        "Sreymom(Female/KH)": "km-KH-SreymomNeural",
+        "Piseth(Male/KH)": "km-KH-PisethNeural"
+    },
+    "ko": {
+        "SunHi(Female/KR)": "ko-KR-SunHiNeural",
+        "InJoon(Male/KR)": "ko-KR-InJoonNeural",
+        "HyunsuMultilingual(Male/KR)": "ko-KR-HyunsuMultilingualNeural"
+    },
+    "lo": {
+        "Keomany(Female/LA)": "lo-LA-KeomanyNeural",
+        "Chanthavong(Male/LA)": "lo-LA-ChanthavongNeural"
+    },
+    "lv": {
+        "Nils(Male/LV)": "lv-LV-NilsNeural",
+        "Everita(Female/LV)": "lv-LV-EveritaNeural"
+    },
+    "lt": {
+        "Ona(Female/LT)": "lt-LT-OnaNeural",
+        "Leonas(Male/LT)": "lt-LT-LeonasNeural"
+    },
+    "mk": {
+        "Marija(Female/MK)": "mk-MK-MarijaNeural",
+        "Aleksandar(Male/MK)": "mk-MK-AleksandarNeural"
+    },
+    "ms": {
+        "Yasmin(Female/MY)": "ms-MY-YasminNeural",
+        "Osman(Male/MY)": "ms-MY-OsmanNeural"
+    },
+    "ml": {
+        "Sobhana(Female/IN)": "ml-IN-SobhanaNeural",
+        "Midhun(Male/IN)": "ml-IN-MidhunNeural"
+    },
+    "mt": {
+        "Joseph(Male/MT)": "mt-MT-JosephNeural",
+        "Grace(Female/MT)": "mt-MT-GraceNeural"
+    },
+    "mr": {
+        "Manohar(Male/IN)": "mr-IN-ManoharNeural",
+        "Aarohi(Female/IN)": "mr-IN-AarohiNeural"
+    },
+    "mn": {
+        "Yesui(Female/MN)": "mn-MN-YesuiNeural",
+        "Bataa(Male/MN)": "mn-MN-BataaNeural"
+    },
+    "ne": {
+        "Sagar(Male/NP)": "ne-NP-SagarNeural",
+        "Hemkala(Female/NP)": "ne-NP-HemkalaNeural"
+    },
+    "nb": {
+        "Pernille(Female/NO)": "nb-NO-PernilleNeural",
+        "Finn(Male/NO)": "nb-NO-FinnNeural"
+    },
+    "ps": {
+        "Latifa(Female/AF)": "ps-AF-LatifaNeural",
+        "GulNawaz(Male/AF)": "ps-AF-GulNawazNeural"
+    },
+    "fa": {
+        "Farid(Male/IR)": "fa-IR-FaridNeural",
+        "Dilara(Female/IR)": "fa-IR-DilaraNeural"
+    },
+    "pl": {
+        "Zofia(Female/PL)": "pl-PL-ZofiaNeural",
+        "Marek(Male/PL)": "pl-PL-MarekNeural"
+    },
+    "pt": {
+        "ThalitaMultilingual(Female/BR)": "pt-BR-ThalitaMultilingualNeural",
+        "Raquel(Female/PT)": "pt-PT-RaquelNeural",
+        "Francisca(Female/BR)": "pt-BR-FranciscaNeural",
+        "Duarte(Male/PT)": "pt-PT-DuarteNeural",
+        "Antonio(Male/BR)": "pt-BR-AntonioNeural"
+    },
+    "ro": {
+        "Emil(Male/RO)": "ro-RO-EmilNeural",
+        "Alina(Female/RO)": "ro-RO-AlinaNeural"
+    },
+    "ru": {
+        "Svetlana(Female/RU)": "ru-RU-SvetlanaNeural",
+        "Dmitry(Male/RU)": "ru-RU-DmitryNeural"
+    },
+    "sr": {
+        "Sophie(Female/RS)": "sr-RS-SophieNeural",
+        "Nicholas(Male/RS)": "sr-RS-NicholasNeural"
+    },
+    "si": {
+        "Thilini(Female/LK)": "si-LK-ThiliniNeural",
+        "Sameera(Male/LK)": "si-LK-SameeraNeural"
+    },
+    "sk": {
+        "Viktoria(Female/SK)": "sk-SK-ViktoriaNeural",
+        "Lukas(Male/SK)": "sk-SK-LukasNeural"
+    },
+    "sl": {
+        "Rok(Male/SI)": "sl-SI-RokNeural",
+        "Petra(Female/SI)": "sl-SI-PetraNeural"
+    },
+    "so": {
+        "Ubax(Female/SO)": "so-SO-UbaxNeural",
+        "Muuse(Male/SO)": "so-SO-MuuseNeural"
+    },
+    "es": {
+        "Yolanda(Female/NI)": "es-NI-YolandaNeural",
+        "Ximena(Female/ES)": "es-ES-XimenaNeural",
+        "Victor(Male/PR)": "es-PR-VictorNeural",
+        "Valentina(Female/UY)": "es-UY-ValentinaNeural",
+        "Tomas(Male/AR)": "es-AR-TomasNeural",
+        "Teresa(Female/GQ)": "es-GQ-TeresaNeural",
+        "Tania(Female/PY)": "es-PY-TaniaNeural",
+        "Sofia(Female/BO)": "es-BO-SofiaNeural",
+        "Sebastian(Male/VE)": "es-VE-SebastianNeural",
+        "Salome(Female/CO)": "es-CO-SalomeNeural",
+        "Rodrigo(Male/SV)": "es-SV-RodrigoNeural",
+        "Roberto(Male/PA)": "es-PA-RobertoNeural",
+        "Ramona(Female/DO)": "es-DO-RamonaNeural",
+        "Paola(Female/VE)": "es-VE-PaolaNeural",
+        "Paloma(Female/US)": "es-US-PalomaNeural",
+        "Mateo(Male/UY)": "es-UY-MateoNeural",
+        "Marta(Female/GT)": "es-GT-MartaNeural",
+        "Mario(Male/PY)": "es-PY-MarioNeural",
+        "Maria(Female/CR)": "es-CR-MariaNeural",
+        "Margarita(Female/PA)": "es-PA-MargaritaNeural",
+        "Marcelo(Male/BO)": "es-BO-MarceloNeural",
+        "Manuel(Male/CU)": "es-CU-ManuelNeural",
+        "Luis(Male/EC)": "es-EC-LuisNeural",
+        "Lorenzo(Male/CL)": "es-CL-LorenzoNeural",
+        "Lorena(Female/SV)": "es-SV-LorenaNeural",
+        "Karla(Female/HN)": "es-HN-KarlaNeural",
+        "Karina(Female/PR)": "es-PR-KarinaNeural",
+        "Juan(Male/CR)": "es-CR-JuanNeural",
+        "Jorge(Male/MX)": "es-MX-JorgeNeural",
+        "Javier(Male/GQ)": "es-GQ-JavierNeural",
+        "Gonzalo(Male/CO)": "es-CO-GonzaloNeural",
+        "Federico(Male/NI)": "es-NI-FedericoNeural",
+        "Emilio(Male/DO)": "es-DO-EmilioNeural",
+        "Elvira(Female/ES)": "es-ES-ElviraNeural",
+        "Elena(Female/AR)": "es-AR-ElenaNeural",
+        "Dalia(Female/MX)": "es-MX-DaliaNeural",
+        "Catalina(Female/CL)": "es-CL-CatalinaNeural",
+        "Carlos(Male/HN)": "es-HN-CarlosNeural",
+        "Camila(Female/PE)": "es-PE-CamilaNeural",
+        "Belkys(Female/CU)": "es-CU-BelkysNeural",
+        "Andres(Male/GT)": "es-GT-AndresNeural",
+        "Andrea(Female/EC)": "es-EC-AndreaNeural",
+        "Alvaro(Male/ES)": "es-ES-AlvaroNeural",
+        "Alonso(Male/US)": "es-US-AlonsoNeural",
+        "Alex(Male/PE)": "es-PE-AlexNeural"
+    },
+    "su": {
+        "Tuti(Female/ID)": "su-ID-TutiNeural",
+        "Jajang(Male/ID)": "su-ID-JajangNeural"
+    },
+    "sw": {
+        "Zuri(Female/KE)": "sw-KE-ZuriNeural",
+        "Rehema(Female/TZ)": "sw-TZ-RehemaNeural",
+        "Rafiki(Male/KE)": "sw-KE-RafikiNeural",
+        "Daudi(Male/TZ)": "sw-TZ-DaudiNeural"
+    },
+    "sv": {
+        "Sofie(Female/SE)": "sv-SE-SofieNeural",
+        "Mattias(Male/SE)": "sv-SE-MattiasNeural"
+    },
+    "ta": {
+        "Venba(Female/SG)": "ta-SG-VenbaNeural",
+        "Valluvar(Male/IN)": "ta-IN-ValluvarNeural",
+        "Surya(Male/MY)": "ta-MY-SuryaNeural",
+        "Saranya(Female/LK)": "ta-LK-SaranyaNeural",
+        "Pallavi(Female/IN)": "ta-IN-PallaviNeural",
+        "Kumar(Male/LK)": "ta-LK-KumarNeural",
+        "Kani(Female/MY)": "ta-MY-KaniNeural",
+        "Anbu(Male/SG)": "ta-SG-AnbuNeural"
+    },
+    "te": {
+        "Shruti(Female/IN)": "te-IN-ShrutiNeural",
+        "Mohan(Male/IN)": "te-IN-MohanNeural"
+    },
+    "th": {
+        "Premwadee(Female/TH)": "th-TH-PremwadeeNeural",
+        "Niwat(Male/TH)": "th-TH-NiwatNeural"
+    },
+    "tr": {
+        "Emel(Female/TR)": "tr-TR-EmelNeural",
+        "Ahmet(Male/TR)": "tr-TR-AhmetNeural"
+    },
+    "uk": {
+        "Polina(Female/UA)": "uk-UA-PolinaNeural",
+        "Ostap(Male/UA)": "uk-UA-OstapNeural"
+    },
+    "ur": {
+        "Uzma(Female/PK)": "ur-PK-UzmaNeural",
+        "Salman(Male/IN)": "ur-IN-SalmanNeural",
+        "Gul(Female/IN)": "ur-IN-GulNeural",
+        "Asad(Male/PK)": "ur-PK-AsadNeural"
+    },
+    "uz": {
+        "Sardor(Male/UZ)": "uz-UZ-SardorNeural",
+        "Madina(Female/UZ)": "uz-UZ-MadinaNeural"
+    },
+    "vi": {
+        "NamMinh(Male/VN)": "vi-VN-NamMinhNeural",
+        "HoaiMy(Female/VN)": "vi-VN-HoaiMyNeural"
+    },
+    "cy": {
+        "Nia(Female/GB)": "cy-GB-NiaNeural",
+        "Aled(Male/GB)": "cy-GB-AledNeural"
+    },
+    "zu": {
+        "Themba(Male/ZA)": "zu-ZA-ThembaNeural",
+        "Thando(Female/ZA)": "zu-ZA-ThandoNeural"
+    }
+}
