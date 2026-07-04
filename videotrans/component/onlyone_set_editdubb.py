@@ -1,3 +1,5 @@
+# DEPRECATED: 已由 videotrans/component/timeline/studio.py (Dubbing Studio) 取代，
+# 仅作为旧格式 edit_dubbing 消息（无视频路径）的回落路径保留，随回落分支一起移除。
 import json
 import threading
 import traceback

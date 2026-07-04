@@ -773,5 +773,19 @@
     "Close": "关闭",
     "Select video file": "选择视频文件",
     "Select subtitle file": "选择字幕文件",
-    "Select dubbed audio (optional)": "选择配音音频(可选)"
+    "Select dubbed audio (optional)": "选择配音音频(可选)",
+    "Dubbing Studio": "配音工作台",
+    "Continue synthesis": "继续合成",
+    "Source text": "原文",
+    "Translated text": "译文",
+    "Voice role": "配音音色",
+    "Needs re-dub": "待重配",
+    "Dubbing in progress": "配音中…",
+    "Queued for dubbing": "排队中…",
+    "Rebuilding dubbed preview...": "重建配音预览中…",
+    "{0} lines still dubbing. Wait for them to finish?": "还有 {0} 行正在重新配音，等待完成吗？(否=直接继续)",
+    "{0} lines modified but not re-dubbed. Continue anyway?": "有 {0} 行已修改但未重新配音，仍要继续合成吗？",
+    "Continue synthesis, terminate, or keep editing?": "继续合成、终止任务，还是留下继续编辑？",
+    "Drag block to move, drag edge to resize": "拖动字幕块调整位置，拖动块边缘改变时长；点击空白处跳转播放",
+    "No audio": "无配音音频"
 }

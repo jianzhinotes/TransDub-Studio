@@ -19,7 +19,7 @@ from videotrans.component.timeline.player import AUDIO_DUBBED, AUDIO_ORIGINAL, P
 from videotrans.component.timeline.timeline_view import TimelineView
 
 
-class _PrepWorker(QThread):
+class PrepWorker(QThread):
     """后台准备波形与配音预览 wav，避免阻塞对话框弹出。"""
     originalReady = Signal(object, int)   # peaks, duration_ms
     dubbedReady = Signal(object, str)     # peaks, preview_wav_path
@@ -47,6 +47,9 @@ class _PrepWorker(QThread):
         except Exception as e:
             logger.exception(f'时间轴预览波形准备失败: {e}', exc_info=True)
             self.failed.emit(f'{e}\n{traceback.format_exc()}')
+
+
+_PrepWorker = PrepWorker  # 兼容旧名
 
 
 class TimelinePreviewDialog(QDialog):
@@ -133,7 +136,7 @@ class TimelinePreviewDialog(QDialog):
 
         # 视频立即可拖看；波形后台生成
         self.player.load(video_path)
-        self._worker = _PrepWorker(
+        self._worker = PrepWorker(
             source_media=source_audio or video_path,
             cache_dir=cache_folder or ROOT_DIR + '/tmp',
             dubbed_audio=dubbed_audio,

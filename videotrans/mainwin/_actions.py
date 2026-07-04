@@ -717,20 +717,29 @@ class WinAction(WinActionBase):
             return
 
         if d['type'] == 'edit_dubbing':
-            # 显示编辑翻译框
-            from videotrans.component.onlyone_set_editdubb import EditDubbingResultDialog
-
             # 防御式解析：后两段(视频路径/原声wav)为可选，兼容旧格式消息
             parts = d['text'].split('<|>')
             cache_folder, language = parts[0], parts[1]
-            dialog = EditDubbingResultDialog(
-                cache_folder=cache_folder,
-                language=language,
-                video_path=parts[2] if len(parts) > 2 and parts[2] else None,
-                source_wav=parts[3] if len(parts) > 3 and parts[3] else None,
-                parent=self.main
-
-            )
+            video_path = parts[2] if len(parts) > 2 and parts[2] else None
+            source_wav = parts[3] if len(parts) > 3 and parts[3] else None
+            if video_path:
+                # Dubbing Studio：卡片+可编辑时间轴，等待用户确认后继续
+                from videotrans.component.timeline import DubbingStudioDialog
+                dialog = DubbingStudioDialog(
+                    cache_folder=cache_folder,
+                    language=language,
+                    video_path=video_path,
+                    source_wav=source_wav,
+                    parent=self.main
+                )
+            else:
+                # 旧格式消息无媒体路径，回落到表格弹窗
+                from videotrans.component.onlyone_set_editdubb import EditDubbingResultDialog
+                dialog = EditDubbingResultDialog(
+                    cache_folder=cache_folder,
+                    language=language,
+                    parent=self.main
+                )
             if dialog.exec():
                 self.set_djs_timeout()
             else:

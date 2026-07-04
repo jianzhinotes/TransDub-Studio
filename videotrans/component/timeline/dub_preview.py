@@ -13,8 +13,8 @@ PREVIEW_NAME = 'dub_preview.wav'
 _FRAME_RATE = 16000
 
 
-def preview_path(cache_folder: str) -> Path:
-    return Path(cache_folder) / PREVIEW_NAME
+def preview_path(cache_folder: str, name: str = PREVIEW_NAME) -> Path:
+    return Path(cache_folder) / name
 
 
 def invalidate_dub_preview(cache_folder: str) -> None:
@@ -22,13 +22,23 @@ def invalidate_dub_preview(cache_folder: str) -> None:
     preview_path(cache_folder).unlink(missing_ok=True)
 
 
+def cleanup_previews(cache_folder: str) -> None:
+    # 清理所有轮换版本（dub_preview*.wav）
+    try:
+        for f in Path(cache_folder).glob('dub_preview*.wav'):
+            f.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def build_dub_preview_wav(queue_tts, duration_ms: int, cache_folder: str,
-                          progress_cb=None) -> str:
+                          progress_cb=None, out_name: str = PREVIEW_NAME) -> str:
     """queue_tts 每项需支持 ['start_time'](ms) 与 ['filename']；返回生成的 wav 路径。
 
-    已存在则直接复用（用 invalidate_dub_preview 强制重建）。
+    已存在则直接复用（用 invalidate_dub_preview 强制重建）。Studio 每次重建
+    传入递增的 out_name：QMediaPlayer 对同名 URL 可能不重新加载。
     """
-    out = preview_path(cache_folder)
+    out = preview_path(cache_folder, out_name)
     if out.exists():
         return str(out)
 

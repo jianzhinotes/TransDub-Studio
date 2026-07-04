@@ -773,5 +773,19 @@
     "Close": "Close",
     "Select video file": "Select video file",
     "Select subtitle file": "Select subtitle file",
-    "Select dubbed audio (optional)": "Select dubbed audio (optional)"
+    "Select dubbed audio (optional)": "Select dubbed audio (optional)",
+    "Dubbing Studio": "Dubbing Studio",
+    "Continue synthesis": "Continue synthesis",
+    "Source text": "Source text",
+    "Translated text": "Translated text",
+    "Voice role": "Voice role",
+    "Needs re-dub": "Needs re-dub",
+    "Dubbing in progress": "Dubbing in progress",
+    "Queued for dubbing": "Queued for dubbing",
+    "Rebuilding dubbed preview...": "Rebuilding dubbed preview...",
+    "{0} lines still dubbing. Wait for them to finish?": "{0} lines still dubbing. Wait for them to finish?",
+    "{0} lines modified but not re-dubbed. Continue anyway?": "{0} lines modified but not re-dubbed. Continue anyway?",
+    "Continue synthesis, terminate, or keep editing?": "Continue synthesis, terminate, or keep editing?",
+    "Drag block to move, drag edge to resize": "Drag block to move, drag edge to resize",
+    "No audio": "No audio"
 }
