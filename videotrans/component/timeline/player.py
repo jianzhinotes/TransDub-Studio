@@ -140,15 +140,17 @@ class PreviewPlayer(QObject):
         self.playStateChanged.emit(st == QMediaPlayer.PlaybackState.PlayingState)
 
     def _render_poster(self):
-        """静音快速播放片刻再暂停回开头，把视频首帧顶出来当预览画面（类 YouTube 海报）。"""
+        """静音快速播放到第一帧渲染出来即暂停，把画面停在起点当预览海报（类 YouTube）。
+
+        暂停后**不**回跳到 0——回跳会让已渲染的画面跳变一下；停在起点附近
+        （几十毫秒处）几乎就是首帧，视觉上无跳动。"""
         self._postering = True
         self.video_audio.setMuted(True)
         self.video_player.play()
-        QTimer.singleShot(180, self._finish_poster)
+        QTimer.singleShot(60, self._finish_poster)
 
     def _finish_poster(self):
         self.video_player.pause()
-        self.video_player.setPosition(0)
         self._postering = False
         self.set_audio_mode(self._mode)     # 恢复正确的静音状态
         self.playStateChanged.emit(False)   # UI 复位到"未播放"（显示播放钮）
