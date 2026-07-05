@@ -147,7 +147,7 @@ class PreviewPlayer(QObject):
         self._postering = True
         self.video_audio.setMuted(True)
         self.video_player.play()
-        QTimer.singleShot(60, self._finish_poster)
+        QTimer.singleShot(200, self._finish_poster)
 
     def _finish_poster(self):
         self.video_player.pause()
