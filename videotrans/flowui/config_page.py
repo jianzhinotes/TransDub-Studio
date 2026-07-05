@@ -34,6 +34,7 @@ _QSS = """
 class ConfigPage(QWidget):
     back_requested = Signal()
     started = Signal()
+    start_failed = Signal()              # check_start 未进入运行态时发出，工作区据此切回配置
     _voicesFetched = Signal(int, list)   # tts_id, roles（工作线程发出，槽在 GUI 线程执行）
 
     def __init__(self, *, flow, parent=None):
@@ -312,4 +313,4 @@ class ConfigPage(QWidget):
 
     def _watchdog(self):
         if app_cfg.current_status != 'ing':
-            self.flow.setCurrentWidget(self)
+            self.start_failed.emit()
