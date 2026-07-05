@@ -6,7 +6,7 @@
 parent 到本容器 + resizeEvent 手动同步 geometry + raise_()，改动仅限本文件。）
 """
 from PySide6.QtCore import (
-    QEasingCurve, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer,
+    QPropertyAnimation, Qt, QTimer,
 )
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QSlider,
@@ -37,30 +37,16 @@ class _OverlayLayer(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
 
-        # ---- 中央播放/暂停图标（点按反馈，淡入停留淡出） ----
-        self.glyph = QLabel(_GLYPH_PLAY, self)
-        self.glyph.setFixedSize(64, 64)
-        self.glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.glyph.setStyleSheet(
-            f'background:{_BAR_BG}; border-radius:32px;'
-            'color:#FFFFFF; font-size:26px;')
-        self._glyph_fx = QGraphicsOpacityEffect(self.glyph)
-        self._glyph_fx.setOpacity(0.0)
-        self.glyph.setGraphicsEffect(self._glyph_fx)
-
-        fade_in = QPropertyAnimation(self._glyph_fx, b'opacity')
-        fade_in.setDuration(150)
-        fade_in.setStartValue(0.0)
-        fade_in.setEndValue(1.0)
-        fade_out = QPropertyAnimation(self._glyph_fx, b'opacity')
-        fade_out.setDuration(450)
-        fade_out.setStartValue(1.0)
-        fade_out.setEndValue(0.0)
-        fade_out.setEasingCurve(QEasingCurve.Type.OutQuad)
-        self._glyph_anim = QSequentialAnimationGroup(self)
-        self._glyph_anim.addAnimation(fade_in)
-        self._glyph_anim.addPause(150)
-        self._glyph_anim.addAnimation(fade_out)
+        # ---- 中央常驻播放按钮（暂停时可见，明确提示可点击播放） ----
+        self.center_btn = QPushButton(_GLYPH_PLAY, self)
+        self.center_btn.setFixedSize(72, 72)
+        self.center_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.center_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.center_btn.setStyleSheet(
+            'QPushButton { background:rgba(20,25,35,0.72); border:none;'
+            '  border-radius:36px; color:#FFFFFF; font-size:30px; }'
+            'QPushButton:hover { background:rgba(30,38,52,0.85); }')
+        self.center_btn.clicked.connect(self._toggle)
 
         # ---- 底部控制条 ----
         self.bar = QWidget(self)
@@ -121,22 +107,17 @@ class _OverlayLayer(QWidget):
     # ---- 布局 ----
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.glyph.move((self.width() - 64) // 2, (self.height() - 64) // 2)
+        self.center_btn.move((self.width() - 72) // 2, (self.height() - 72) // 2)
         self.bar.setGeometry(12, self.height() - 44 - 12, max(self.width() - 24, 50), 44)
 
     # ---- 交互 ----
     def _toggle(self):
         self.player.toggle()
-        self._flash_glyph()
-
-    def _flash_glyph(self):
-        self.glyph.setText(_GLYPH_PAUSE if self.player.is_playing() else _GLYPH_PLAY)
-        self._glyph_anim.stop()
-        self._glyph_anim.start()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton \
-                and not self.bar.geometry().contains(event.position().toPoint()):
+                and not self.bar.geometry().contains(event.position().toPoint()) \
+                and not self.center_btn.geometry().contains(event.position().toPoint()):
             self._toggle()
 
     def mouseMoveEvent(self, event):
@@ -178,6 +159,8 @@ class _OverlayLayer(QWidget):
 
     def _on_play_state(self, playing: bool):
         self.play_btn.setText(_GLYPH_PAUSE if playing else _GLYPH_PLAY)
+        # 暂停时露出中央大播放钮；播放时隐藏，避免遮挡画面
+        self.center_btn.setVisible(not playing)
         if not playing:
             self._show_bar()
 

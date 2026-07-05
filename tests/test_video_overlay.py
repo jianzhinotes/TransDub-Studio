@@ -62,8 +62,17 @@ class TestVideoOverlay:
 
         player.playStateChanged.emit(True)
         assert layer.play_btn.text() == _GLYPH_PAUSE
+        assert layer.center_btn.isHidden()        # 播放中隐藏中央大播放钮
         player.playStateChanged.emit(False)
         assert layer.play_btn.text() == _GLYPH_PLAY
+        assert not layer.center_btn.isHidden()    # 暂停时露出
+
+    def test_center_button_click_toggles(self, qapp):
+        from videotrans.component.timeline.video_overlay import VideoOverlay
+        player = _FakePlayer()
+        ov = VideoOverlay(player)
+        ov.overlay.center_btn.click()
+        assert player.is_playing() is True
 
     def test_toggle_and_seek(self, qapp):
         from videotrans.component.timeline.video_overlay import VideoOverlay
