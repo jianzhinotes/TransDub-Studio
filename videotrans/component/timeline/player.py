@@ -35,14 +35,15 @@ class PreviewPlayer(QObject):
 
         self._has_dub = False
         self._mode = AUDIO_ORIGINAL
+        self._poster_pending = False   # 待渲染首帧海报
+        self._postering = False        # 正在跑首帧渲染，期间不对外冒播放状态
 
         # qlonglong 信号不能直连 Signal(int)，经 lambda 转发
         self.video_player.positionChanged.connect(
             lambda p: self.positionChanged.emit(int(p)))
         self.video_player.durationChanged.connect(
             lambda d: self.durationChanged.emit(int(d)))
-        self.video_player.playbackStateChanged.connect(
-            lambda st: self.playStateChanged.emit(st == QMediaPlayer.PlaybackState.PlayingState))
+        self.video_player.playbackStateChanged.connect(self._on_playback_state)
         # 播完自动复位到暂停态（两个播放器都停）
         self.video_player.mediaStatusChanged.connect(self._on_media_status)
 
@@ -57,6 +58,8 @@ class PreviewPlayer(QObject):
         if self._has_dub:
             self.dub_player.setSource(QUrl.fromLocalFile(dub_wav_path))
         self.set_audio_mode(self._mode)
+        # 加载后暂停态不渲染首帧（黑屏），标记待渲染海报，媒体就绪后顶出首帧
+        self._poster_pending = True
 
     def set_dub_source(self, dub_wav_path: str):
         # 波形/预览 wav 后台生成完成后再挂载
@@ -130,7 +133,31 @@ class PreviewPlayer(QObject):
         if drift > _DRIFT_THRESHOLD_MS:
             self.dub_player.setPosition(self.video_player.position())
 
+    def _on_playback_state(self, st):
+        # 首帧海报渲染期间的 play/pause 属内部动作，不对外冒播放状态（避免按钮闪烁）
+        if self._postering:
+            return
+        self.playStateChanged.emit(st == QMediaPlayer.PlaybackState.PlayingState)
+
+    def _render_poster(self):
+        """静音快速播放片刻再暂停回开头，把视频首帧顶出来当预览画面（类 YouTube 海报）。"""
+        self._postering = True
+        self.video_audio.setMuted(True)
+        self.video_player.play()
+        QTimer.singleShot(180, self._finish_poster)
+
+    def _finish_poster(self):
+        self.video_player.pause()
+        self.video_player.setPosition(0)
+        self._postering = False
+        self.set_audio_mode(self._mode)     # 恢复正确的静音状态
+        self.playStateChanged.emit(False)   # UI 复位到"未播放"（显示播放钮）
+
     def _on_media_status(self, status):
+        if status in (QMediaPlayer.MediaStatus.LoadedMedia,
+                      QMediaPlayer.MediaStatus.BufferedMedia) and self._poster_pending:
+            self._poster_pending = False
+            self._render_poster()
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self._drift_timer.stop()
             self.dub_player.pause()
