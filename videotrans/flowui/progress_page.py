@@ -183,7 +183,7 @@ class ProgressPage(QWidget):
         self.setStyleSheet(_QSS)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 16, 32, 16)
+        layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
 
         head = QHBoxLayout()

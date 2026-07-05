@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QListWidget, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QListWidget, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from videotrans.component.timeline.player import PreviewPlayer
@@ -15,17 +15,18 @@ from videotrans.component.timeline.video_overlay import VideoOverlay
 from videotrans.styles import tokens
 
 _QSS = f"""
+#previewPanel {{ background: {tokens.WINDOW_BG}; }}
+#videoCard {{ background: #05070A; border-radius: 12px; }}
 #previewFilmstrip {{
-    background: {tokens.SURFACE};
+    background: transparent;
     border: none;
-    border-top: 1px solid {tokens.BORDER};
 }}
 #previewFilmstrip::item {{
     color: {tokens.TEXT_SECONDARY};
     border: 1px solid {tokens.BORDER};
-    border-radius: 6px;
-    padding: 4px 10px;
-    margin: 4px 3px;
+    border-radius: 8px;
+    padding: 5px 12px;
+    margin: 2px 3px;
 }}
 #previewFilmstrip::item:selected {{
     color: #FFFFFF;
@@ -43,22 +44,28 @@ class VideoPreviewPanel(QWidget):
         self.files = []
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(20, 20, 12, 20)
+        layout.setSpacing(12)
 
         self.player = PreviewPlayer(self)
         self.video_area = VideoOverlay(self.player)
-        self.video_area.setMinimumSize(480, 270)
-        self.video_area.setSizePolicy(QSizePolicy.Policy.Expanding,
+        # 视频卡片：圆角深底，视频四周留白，避免黑块贴边生硬
+        self.video_card = QFrame()
+        self.video_card.setObjectName('videoCard')
+        self.video_card.setSizePolicy(QSizePolicy.Policy.Expanding,
                                       QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.video_area, stretch=1)
+        card_layout = QVBoxLayout(self.video_card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.addWidget(self.video_area)
+        self.video_area.setMinimumSize(480, 270)
+        layout.addWidget(self.video_card, stretch=1)
 
         # 多文件缩略条：横向可点文件名
         self.filmstrip = QListWidget()
         self.filmstrip.setObjectName('previewFilmstrip')
         self.filmstrip.setFlow(QListWidget.Flow.LeftToRight)
         self.filmstrip.setWrapping(False)
-        self.filmstrip.setFixedHeight(44)
+        self.filmstrip.setFixedHeight(40)
         self.filmstrip.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.filmstrip.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.filmstrip.currentRowChanged.connect(self._on_pick)

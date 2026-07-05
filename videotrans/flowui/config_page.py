@@ -47,7 +47,7 @@ class ConfigPage(QWidget):
 
         from videotrans.translator import LANGNAME_DICT
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 16, 32, 16)
+        layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
 
         # 顶栏：返回 + 文件摘要 + 输出目录

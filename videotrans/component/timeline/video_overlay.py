@@ -1,16 +1,15 @@
-"""视频悬浮控件：点视频播放/暂停 + 中央淡入淡出图标 + 悬停底部控制条。
+"""视频悬浮控件：点视频播放/暂停 + 常驻中央播放钮 + 悬停底部控制条。
 
-叠放方案：QStackedLayout(StackAll)，0=video_widget、1=透明覆盖层，
-覆盖层为当前层以接收鼠标事件，两层同时渲染。
-（若 macOS 视频层出现遮挡兄弟控件的极端情况，fallback 为：覆盖层
-parent 到本容器 + resizeEvent 手动同步 geometry + raise_()，改动仅限本文件。）
+叠放方案：覆盖层作为 video_widget 的**子控件**并 raise_()。
+macOS 上 QVideoWidget 是原生视频层，会盖住兄弟控件，因此覆盖层必须是它的
+子控件才能渲染在视频画面之上；geometry 通过事件过滤器随视频控件同步。
 """
 from PySide6.QtCore import (
-    QPropertyAnimation, Qt, QTimer,
+    QEvent, QPropertyAnimation, Qt, QTimer,
 )
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QStackedLayout, QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget,
 )
 
 _BAR_BG = 'rgba(20, 25, 35, 0.78)'
@@ -170,15 +169,22 @@ class _OverlayLayer(QWidget):
 
 
 class VideoOverlay(QWidget):
-    """视频区容器：video_widget 与透明控制层同栈叠放。"""
+    """视频区容器：video_widget 铺满，控制层作为其子控件浮在视频之上。"""
 
     def __init__(self, player, parent=None):
         super().__init__(parent)
         self.player = player
-        stack = QStackedLayout(self)
-        stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
-        stack.setContentsMargins(0, 0, 0, 0)
-        stack.addWidget(player.video_widget)
-        self.overlay = _OverlayLayer(player)
-        stack.addWidget(self.overlay)
-        stack.setCurrentIndex(1)   # 覆盖层接收鼠标，两层同时渲染
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(player.video_widget)
+        # 覆盖层 parent 到 video_widget，确保在 macOS 原生视频层之上渲染
+        self.overlay = _OverlayLayer(player, parent=player.video_widget)
+        self.overlay.raise_()
+        player.video_widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.player.video_widget and event.type() in (
+                QEvent.Type.Resize, QEvent.Type.Show):
+            self.overlay.setGeometry(self.player.video_widget.rect())
+            self.overlay.raise_()
+        return super().eventFilter(obj, event)
