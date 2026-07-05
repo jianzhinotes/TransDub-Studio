@@ -3,10 +3,9 @@ TransDub Studio: Translate videos from one language to another and add dubbing.
 
 This is a customized build based on pyVideoTrans.
 
-Home-page: https://github.com/jianchang512/pyvideotrans
-Author: jianchang512@gmail.com
-Documents: https://pyvideotrans.com
-Discuss: https://bbs.pyvideotrans.com
+Home-page: https://github.com/jianzhinotes/TransDub-Studio
+Author: jianzhinotes <jianzhi.notes@gmail.com>
+Upstream: https://github.com/jianchang512/pyvideotrans (jianchang512@gmail.com)
 License: GPL-V3
 
 码不在雅，能跑则灵。
@@ -95,21 +94,45 @@ class StartWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)  # 窗口背景透明
 
-        self.background_label = QLabel(self)
-        self.pixmap = QPixmap("./videotrans/styles/logo.png")
-        self.background_label.setPixmap(self.pixmap)
-        self.background_label.setScaledContents(True)
-        self.background_label.setGeometry(self.rect())
+        # TransDub Studio 品牌闪屏：深色圆角卡片 + 应用图标 + 星光标题
+        card = QLabel(self)
+        card.setGeometry(self.rect())
+        card.setStyleSheet(
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+            " stop:0 #19232D, stop:0.6 #1C2A3A, stop:1 #241F38);"
+            "border-radius: 18px; border: 1px solid #455364;")
 
-        # 背景上叠加文字
         v_layout = QVBoxLayout(self)
+        v_layout.setContentsMargins(24, 28, 24, 20)
         v_layout.addStretch(1)
-        self.status_label = QLabel(f"TransDub Studio {VERSION} Loading...")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.status_label.setStyleSheet("font-size:16px; color:white; background-color:transparent;")
 
+        icon_label = QLabel()
+        icon_path = Path('./app-resources/app-icon.png')
+        if icon_path.is_file():
+            self.pixmap = QPixmap(icon_path.as_posix()).scaled(
+                120, 120, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            icon_label.setPixmap(self.pixmap)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet('background:transparent;')
+        v_layout.addWidget(icon_label)
+
+        title_label = QLabel('✨ TransDub Studio')
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(
+            'font-size:26px; font-weight:bold; color:#DFE1E2; background:transparent;')
+        v_layout.addWidget(title_label)
+
+        slogan_label = QLabel(f'{VERSION} · AI 视频翻译配音工作台')
+        slogan_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        slogan_label.setStyleSheet('font-size:13px; color:#8a9ba8; background:transparent;')
+        v_layout.addWidget(slogan_label)
+
+        v_layout.addStretch(1)
+        self.status_label = QLabel("Loading...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setStyleSheet("font-size:13px; color:#60798B; background-color:transparent;")
         v_layout.addWidget(self.status_label)
-        v_layout.setContentsMargins(0, 0, 0, 20)
 
     def closeEvent(self, event):
         # 释放启动画面的资源

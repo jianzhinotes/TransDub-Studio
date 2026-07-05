@@ -186,8 +186,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.target_language.setCurrentText(_target_language)
             if _role in _rolelist:
                 self.voice_role.setCurrentText(_role)
-        self.callback('show main window ...')
-        self.show()
+        # 注意：不在此处 show()——等 _bind_signal 末尾装好 Flow UI 后再显示，
+        # 避免经典界面先闪现一下（闪屏会一直盖着直到 'end'）
         run_in_threadpool(self._daemon)
         self._bind_signal()
 
@@ -355,6 +355,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_winform('fn_fanyisrt')
         self.callback('install flow ui...')
         self._install_flow_ui()
+        self.callback('show main window ...')
+        self.show()
         self.callback('end')
 
     def _install_flow_ui(self):
