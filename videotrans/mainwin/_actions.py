@@ -670,7 +670,14 @@ class WinAction(WinActionBase):
     def update_data(self, uuid: Union[str, None] = "", d: Union[SignMsg, None] = None):
         if uuid and uuid not in [it['uuid'] for it in self.obj_list]:
             return
-        
+
+        # 镜像给 Flow UI 进度页（先于分发，保证暂停弹窗 exec 阻塞前状态已落地）
+        if self.flow_observer:
+            try:
+                self.flow_observer(uuid, d)
+            except Exception:
+                logger.exception('flow observer error', exc_info=True)
+
         if d['type'] == 'ffmpeg':
             self.main.startbtn.setText(d['text'])
             self.main.startbtn.setDisabled(True)

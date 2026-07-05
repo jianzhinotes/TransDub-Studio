@@ -300,6 +300,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.action_yingyinhebing.triggered.connect(lambda: self.open_winform('fn_vas'))
         self.action_clipvideo.triggered.connect(lambda: self.open_winform('clipvideo'))
         self.action_timeline_preview.triggered.connect(lambda: self.open_winform('timeline_preview'))
+        self.action_toggle_uimode.toggled.connect(
+            lambda checked: self.set_ui_mode('classic' if checked else 'flow'))
         self.action_textmatching.triggered.connect(lambda: self.open_winform('textmatching'))
         self.action_realtime_stt.triggered.connect(lambda: self.open_winform('realtime_stt'))
         self.action_fanyi.triggered.connect(lambda: self.open_winform('fn_fanyisrt'))
@@ -351,7 +353,34 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_winform('fn_recogn')
         self.callback('preload translate srt win...')
         self.open_winform('fn_fanyisrt')
+        self.callback('install flow ui...')
+        self._install_flow_ui()
         self.callback('end')
+
+    def _install_flow_ui(self):
+        """把中央区换成 QStackedWidget：0=Flow UI（简洁流程），1=经典界面（高级模式）。
+        旧 centralwidget 保活，其控件继续作为提交链路的数据载体。"""
+        from PySide6.QtWidgets import QStackedWidget
+        from videotrans.flowui import FlowWidget
+        self.flow = FlowWidget(main=self, win_action=self.win_action)
+        self.ui_stack = QStackedWidget()
+        classic = self.takeCentralWidget()          # 即 self.centralwidget，保活
+        self.ui_stack.addWidget(self.flow)
+        self.ui_stack.addWidget(classic)
+        self.setCentralWidget(self.ui_stack)
+        sets = QSettings("TransDub Studio", "settings")
+        self.set_ui_mode(sets.value("uiMode", "flow"))
+
+    def set_ui_mode(self, mode: str):
+        """mode: 'flow' | 'classic'。菜单/工具栏不受影响；工具栏仅高级模式显示。"""
+        is_flow = mode == 'flow'
+        self.ui_stack.setCurrentIndex(0 if is_flow else 1)
+        self.toolBar.setVisible(not is_flow)
+        if hasattr(self, 'action_toggle_uimode'):
+            self.action_toggle_uimode.setChecked(not is_flow)
+        if is_flow:
+            self.flow.show_home()
+        QSettings("TransDub Studio", "settings").setValue("uiMode", mode)
     # 检测GPU完成后，启动子线程
     def _start_workers(self, status):
         if status == 'end':
@@ -359,6 +388,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.worker_threads = start_thread()
             self.startbtn.setDisabled(False)
             self.startbtn.setText(tr("Start"))
+            if hasattr(self, 'flow'):
+                self.flow.set_workers_ready(True)
         else:
             show_error(status)
 

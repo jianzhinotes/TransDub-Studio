@@ -712,6 +712,10 @@ class Ui_MainWindow(object):
         self.action_timeline_preview = QtGui.QAction()
         self.action_timeline_preview.setObjectName("action_timeline_preview")
 
+        self.action_toggle_uimode = QtGui.QAction()
+        self.action_toggle_uimode.setObjectName("action_toggle_uimode")
+        self.action_toggle_uimode.setCheckable(True)
+
         self.action_realtime_stt = QtGui.QAction()
         self.action_realtime_stt.setObjectName("action_realtime_stt")
 
@@ -874,6 +878,8 @@ class Ui_MainWindow(object):
         self.menu.addAction(self.action_clipvideo)
         self.menu.addSeparator()
         self.menu.addAction(self.action_timeline_preview)
+        self.menu.addSeparator()
+        self.menu.addAction(self.action_toggle_uimode)
         self.menu.addSeparator()
         self.menu.addAction(self.actionwatermark)
         self.menu.addSeparator()
@@ -1145,6 +1151,8 @@ class Ui_MainWindow(object):
         self.action_clipvideo.setToolTip(tr("Edit video on subtitles"))
         self.action_timeline_preview.setText(tr("Timeline Preview"))
         self.action_timeline_preview.setToolTip(tr("Preview video, waveforms and subtitles on one timeline"))
+        self.action_toggle_uimode.setText(tr("flow_advanced_mode"))
+        self.action_toggle_uimode.setToolTip(tr("flow_advanced_mode_tip"))
         self.action_realtime_stt.setText(tr("Real-time speech-to-text"))
         self.action_textmatching.setText(tr("Text matching and timing"))
         self.action_textmatching.setToolTip(tr("Text matching and timing"))
