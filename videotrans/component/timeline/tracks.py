@@ -13,12 +13,12 @@ from PySide6.QtWidgets import QWidget
 from videotrans.component.timeline.peaks import PEAKS_PER_SECOND
 
 # 与 styles/style.qss 深色主题一致
-COLOR_BG = QColor('#19232D')
-COLOR_TEXT = QColor('#DFE1E2')
-COLOR_ACCENT = QColor('#1A72BB')
-COLOR_BORDER = QColor('#455364')
-COLOR_BLOCK = QColor('#346792')
-COLOR_PLAYHEAD = QColor('#DFE1E2')
+COLOR_BG = QColor('#161B22')
+COLOR_TEXT = QColor('#E6E9EC')
+COLOR_ACCENT = QColor('#2E7CF6')
+COLOR_BORDER = QColor('#2E3947')
+COLOR_BLOCK = QColor('#2A4A73')
+COLOR_PLAYHEAD = QColor('#E6E9EC')
 
 
 class _BaseTrack(QWidget):

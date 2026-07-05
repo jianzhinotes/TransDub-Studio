@@ -12,10 +12,10 @@ GITHUB_URL = 'https://github.com/jianzhinotes/TransDub-Studio'
 UPSTREAM_URL = 'https://github.com/jianchang512/pyvideotrans'
 
 _QSS = """
-QDialog { background: #19232D; }
-QLabel { color: #DFE1E2; }
+QDialog { background: #161B22; }
+QLabel { color: #E6E9EC; }
 QLabel#aboutTitle { font-size: 20px; font-weight: bold; }
-QLabel#aboutSub { color: #8a9ba8; }
+QLabel#aboutSub { color: #9AA7B4; }
 """
 
 
@@ -45,11 +45,11 @@ class AboutDialog(QDialog):
         body = QLabel(
             f"<p style='line-height:1.7'>"
             f"{tr('flow_author')}: <b>{AUTHOR}</b><br>"
-            f"{tr('flow_contact')}: <a style='color:#1A72BB' href='mailto:{EMAIL}'>{EMAIL}</a><br>"
-            f"{tr('flow_github')}: <a style='color:#1A72BB' href='{GITHUB_URL}'>{GITHUB_URL}</a><br>"
+            f"{tr('flow_contact')}: <a style='color:#2E7CF6' href='mailto:{EMAIL}'>{EMAIL}</a><br>"
+            f"{tr('flow_github')}: <a style='color:#2E7CF6' href='{GITHUB_URL}'>{GITHUB_URL}</a><br>"
             f"⭐ {tr('flow_star_hint')}"
             f"</p>"
-            f"<p style='color:#8a9ba8;font-size:12px;line-height:1.6'>"
+            f"<p style='color:#9AA7B4;font-size:12px;line-height:1.6'>"
             f"{tr('flow_upstream_credit')}: "
             f"<a style='color:#60798B' href='{UPSTREAM_URL}'>pyVideoTrans</a> (GPL-3.0)"
             f"</p>")

@@ -18,7 +18,7 @@ _BATCH_SIZE = 50
 _STATUS_COLOR = {
     STATUS_NO_AUDIO: '#ff4d4d',
     STATUS_EXCEEDED: '#ff6600',
-    STATUS_SHORTENED: '#DFE1E2',
+    STATUS_SHORTENED: '#E6E9EC',
     STATUS_OK: '#66ff66',
 }
 
@@ -57,7 +57,7 @@ class SpeakerCard(QFrame):
         self._state = state
         self.setObjectName('speaker_card')
         self.setStyleSheet(
-            '#speaker_card{border:1px solid #455364;border-radius:4px;background:#19232D;}')
+            '#speaker_card{border:1px solid #2E3947;border-radius:4px;background:#161B22;}')
 
         item = state.items[idx]
         layout = QVBoxLayout(self)
@@ -67,14 +67,14 @@ class SpeakerCard(QFrame):
         # 头行：#行号 时间（点击跳转） | 状态 | 待重配徽标
         head = QHBoxLayout()
         self.time_label = QLabel()
-        self.time_label.setStyleSheet('color:#DFE1E2;')
+        self.time_label.setStyleSheet('color:#E6E9EC;')
         self.time_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.time_label.mousePressEvent = self._on_head_click
         head.addWidget(self.time_label)
         head.addStretch(1)
         self.dirty_badge = QLabel(tr('Needs re-dub'))
         self.dirty_badge.setStyleSheet(
-            'color:#19232D;background:#e0a94f;border-radius:3px;padding:1px 6px;')
+            'color:#161B22;background:#e0a94f;border-radius:3px;padding:1px 6px;')
         self.dirty_badge.setVisible(False)
         head.addWidget(self.dirty_badge)
         self.status_label = QLabel()
@@ -86,7 +86,7 @@ class SpeakerCard(QFrame):
         ref = QLabel(str(item.get('ref_text') or ''))
         ref.setWordWrap(True)
         ref.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        ref.setStyleSheet('color:#8a9ba8;')
+        ref.setStyleSheet('color:#9AA7B4;')
         ref.setToolTip(tr('Source text'))
         body.addWidget(ref, stretch=1)
         self.text_edit = _CommitOnFocusOutEdit(
@@ -128,9 +128,9 @@ class SpeakerCard(QFrame):
         self.seekRequested.emit(int(self._state.items[self.idx]['start_time']))
 
     def set_active(self, active: bool):
-        border = '#1A72BB' if active else '#455364'
+        border = '#2E7CF6' if active else '#2E3947'
         self.setStyleSheet(
-            f'#speaker_card{{border:1px solid {border};border-radius:4px;background:#19232D;}}')
+            f'#speaker_card{{border:1px solid {border};border-radius:4px;background:#161B22;}}')
 
     def set_busy(self, busy: bool, queued: bool = False):
         self.redub_btn.setDisabled(busy)

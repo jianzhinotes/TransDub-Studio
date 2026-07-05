@@ -104,7 +104,7 @@ class DubbingStudioDialog(QDialog):
         self.subtitle_label = QLabel('')
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setStyleSheet('font-size:14px;color:#DFE1E2;padding:2px 8px;')
+        self.subtitle_label.setStyleSheet('font-size:14px;color:#E6E9EC;padding:2px 8px;')
         self.subtitle_label.setMinimumHeight(36)
         left_layout.addWidget(self.subtitle_label)
 
@@ -130,7 +130,7 @@ class DubbingStudioDialog(QDialog):
 
         # 下：可编辑时间轴
         hint = QLabel(tr("Drag block to move, drag edge to resize"))
-        hint.setStyleSheet('color:#8a9ba8;font-size:12px;')
+        hint.setStyleSheet('color:#9AA7B4;font-size:12px;')
         layout.addWidget(hint)
         self.timeline = TimelineView(1, subtitle_track_cls=EditableSubtitleTrack)
         self.wave_original = self.timeline.add_waveform_track(tr("Original audio"))

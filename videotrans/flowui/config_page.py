@@ -17,17 +17,17 @@ from videotrans.flowui.channel_card import ChannelCard
 from videotrans.task.simple_runnable_qt import run_in_threadpool
 
 _QSS = """
-#pageConfig QLabel#secTitle { font-size: 14px; font-weight: bold; color: #DFE1E2; }
+#pageConfig QLabel#secTitle { font-size: 14px; font-weight: bold; color: #E6E9EC; }
 #pageConfig QPushButton#startBtn {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1A72BB, stop:1 #6C5CE7);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2E7CF6, stop:1 #6C5CE7);
     color: #FFFFFF; font-size: 16px; font-weight: bold; border-radius: 8px; border: none;
 }
 #pageConfig QPushButton#startBtn:hover {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2286D8, stop:1 #7E6EF2);
 }
-#pageConfig QPushButton#startBtn:disabled { background: #455364; color: #788D9C; }
+#pageConfig QPushButton#startBtn:disabled { background: #2E3947; color: #788D9C; }
 #pageConfig QLabel#startHint { color: #f39c12; font-size: 12px; }
-#pageConfig QPushButton#linkBtn { border:none; background:transparent; color:#1A72BB; }
+#pageConfig QPushButton#linkBtn { border:none; background:transparent; color:#2E7CF6; }
 """
 
 
@@ -57,7 +57,7 @@ class ConfigPage(QWidget):
         back.clicked.connect(self.back_requested)
         top.addWidget(back)
         self.files_label = QLabel('')
-        self.files_label.setStyleSheet('color:#8a9ba8;')
+        self.files_label.setStyleSheet('color:#9AA7B4;')
         top.addWidget(self.files_label)
         top.addStretch(1)
         self.outdir_btn = QPushButton(tr('flow_output_dir'))

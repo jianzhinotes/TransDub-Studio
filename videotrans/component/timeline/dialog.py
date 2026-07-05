@@ -81,7 +81,7 @@ class TimelinePreviewDialog(QDialog):
         self.subtitle_label = QLabel('')
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setStyleSheet('font-size:15px;color:#DFE1E2;padding:2px 8px;')
+        self.subtitle_label.setStyleSheet('font-size:15px;color:#E6E9EC;padding:2px 8px;')
         self.subtitle_label.setMinimumHeight(40)
         layout.addWidget(self.subtitle_label)
 

@@ -19,12 +19,12 @@ _EDIT_TYPES = {'edit_dubbing', 'edit_subtitle_source', 'edit_subtitle_target',
                'edit_recogn2_subtitle'}
 
 _QSS = """
-#pageProgress QFrame#taskCard { border: 1px solid #455364; border-radius: 8px; background: #1A2530; }
-#pageProgress QLabel#taskName { font-size: 14px; font-weight: bold; color: #DFE1E2; }
-#pageProgress QLabel#lastLog { color: #8a9ba8; font-size: 12px; }
-#pageProgress QLabel#stageDone { color: #1A72BB; font-weight: bold; }
-#pageProgress QLabel#stageCurrent { color: #DFE1E2; font-weight: bold; }
-#pageProgress QLabel#stagePending { color: #455364; }
+#pageProgress QFrame#taskCard { border: 1px solid #2E3947; border-radius: 8px; background: #1C232D; }
+#pageProgress QLabel#taskName { font-size: 14px; font-weight: bold; color: #E6E9EC; }
+#pageProgress QLabel#lastLog { color: #9AA7B4; font-size: 12px; }
+#pageProgress QLabel#stageDone { color: #2E7CF6; font-weight: bold; }
+#pageProgress QLabel#stageCurrent { color: #E6E9EC; font-weight: bold; }
+#pageProgress QLabel#stagePending { color: #2E3947; }
 #pageProgress QLabel#editState { color: #f39c12; }
 #pageProgress QLabel#errState { color: #ff4d4d; }
 #pageProgress QLabel#doneBanner { color: #2ecc71; font-size: 15px; font-weight: bold; }
@@ -188,7 +188,7 @@ class ProgressPage(QWidget):
 
         head = QHBoxLayout()
         title = QLabel(tr('flow_progress_title'))
-        title.setStyleSheet('font-size:16px;font-weight:bold;color:#DFE1E2;')
+        title.setStyleSheet('font-size:16px;font-weight:bold;color:#E6E9EC;')
         head.addWidget(title)
         head.addStretch(1)
         self.cancel_btn = QPushButton(tr('flow_cancel'))

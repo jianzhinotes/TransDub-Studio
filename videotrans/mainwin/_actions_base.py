@@ -118,7 +118,7 @@ class WinActionBase:
     # 启用标准模式
     def set_biaozhun(self):
         self.main.action_biaozhun.setChecked(True)
-        self.main.splitter.setSizes([self.main.width - 300, 300])
+        self.main.splitter.setSizes([self.main.width - 380, 380])
         self.main.app_mode = 'biaozhun'
         self.main.show_tips.setText(
             tr("Customize each configuration to batch video translation. When selecting a single video, you can pause to edit subtitles during processing."))
@@ -190,7 +190,7 @@ class WinActionBase:
     # 视频提取字幕并翻译，无需配音
     def set_tiquzimu(self):
         self.main.action_tiquzimu.setChecked(True)
-        self.main.splitter.setSizes([self.main.width - 300, 300])
+        self.main.splitter.setSizes([self.main.width - 380, 380])
         self.main.app_mode = 'tiqu'
         self.main.show_tips.setText(tr('tiquzimu'))
         self.main.startbtn.setText(tr('kaishitiquhefanyi'))

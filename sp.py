@@ -99,8 +99,8 @@ class StartWindow(QWidget):
         card.setGeometry(self.rect())
         card.setStyleSheet(
             "background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
-            " stop:0 #19232D, stop:0.6 #1C2A3A, stop:1 #241F38);"
-            "border-radius: 18px; border: 1px solid #455364;")
+            " stop:0 #161B22, stop:0.6 #1C2A3A, stop:1 #241F38);"
+            "border-radius: 18px; border: 1px solid #2E3947;")
 
         v_layout = QVBoxLayout(self)
         v_layout.setContentsMargins(24, 28, 24, 20)
@@ -120,12 +120,12 @@ class StartWindow(QWidget):
         title_label = QLabel('✨ TransDub Studio')
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet(
-            'font-size:26px; font-weight:bold; color:#DFE1E2; background:transparent;')
+            'font-size:26px; font-weight:bold; color:#E6E9EC; background:transparent;')
         v_layout.addWidget(title_label)
 
         slogan_label = QLabel(f'{VERSION} · AI 视频翻译配音工作台')
         slogan_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        slogan_label.setStyleSheet('font-size:13px; color:#8a9ba8; background:transparent;')
+        slogan_label.setStyleSheet('font-size:13px; color:#9AA7B4; background:transparent;')
         v_layout.addWidget(slogan_label)
 
         v_layout.addStretch(1)

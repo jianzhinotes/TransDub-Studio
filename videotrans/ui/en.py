@@ -34,16 +34,16 @@ class Ui_MainWindow(object):
         self.layoutWidget = QtWidgets.QWidget(self.splitter)
         self.layoutWidget.setObjectName("layoutWidget")
         self.verticalLayout_3 = QtWidgets.QVBoxLayout(self.layoutWidget)
-        self.verticalLayout_3.setContentsMargins(0, 0, 3, 0)
+        self.verticalLayout_3.setContentsMargins(12, 10, 12, 10)
         self.verticalLayout_3.setObjectName("verticalLayout_3")
-        self.verticalLayout_3.setSpacing(8)
+        self.verticalLayout_3.setSpacing(12)
 
         # 首行操作
         self.horizontalLayout_6 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_6.setObjectName("horizontalLayout_6")
 
         self.btn_get_video = QtWidgets.QPushButton(self.layoutWidget)
-        self.btn_get_video.setMinimumSize(QtCore.QSize(120, 30))
+        self.btn_get_video.setMinimumSize(QtCore.QSize(120, 32))
         self.btn_get_video.setObjectName("btn_get_video")
 
         self.source_mp4 = QtWidgets.QLabel('')
@@ -70,11 +70,11 @@ class Ui_MainWindow(object):
         self.horizontalLayout_6.addWidget(self.source_mp4)
 
         self.btn_save_dir = QtWidgets.QPushButton()
-        self.btn_save_dir.setMinimumSize(QtCore.QSize(120, 30))
+        self.btn_save_dir.setMinimumSize(QtCore.QSize(120, 32))
         self.btn_save_dir.setObjectName("btn_save_dir")
 
         self.copysrt_rawvideo = QtWidgets.QCheckBox(self.layoutWidget)
-        self.copysrt_rawvideo.setMinimumSize(QtCore.QSize(0, 30))
+        self.copysrt_rawvideo.setMinimumSize(QtCore.QSize(0, 32))
         self.copysrt_rawvideo.setObjectName("copysrt_rawvideo")
         self.copysrt_rawvideo.setVisible(False)
         self.copysrt_rawvideo.setText(tr("Moving subtitle"))
@@ -264,7 +264,7 @@ class Ui_MainWindow(object):
         self.align_sub_audio.setVisible(False)
 
         self.subtitle_type = QtWidgets.QComboBox(self.layoutWidget)
-        self.subtitle_type.setMinimumSize(QtCore.QSize(150, 30))
+        self.subtitle_type.setMinimumSize(QtCore.QSize(150, 32))
         self.subtitle_type.setObjectName("subtitle_type")
 
         self.align_layout.addWidget(self.align_btn)
@@ -279,12 +279,12 @@ class Ui_MainWindow(object):
         self.set_adv_status.setCursor(Qt.PointingHandCursor)
 
         self.label = QtWidgets.QPushButton(self.layoutWidget)
-        self.label.setMinimumSize(QtCore.QSize(0, 30))
+        self.label.setMinimumSize(QtCore.QSize(0, 32))
         self.label.setObjectName("label")
         self.label.setStyleSheet("""background-color:transparent""")
 
         self.proxy = QtWidgets.QLineEdit(self.layoutWidget)
-        self.proxy.setMinimumSize(QtCore.QSize(200, 30))
+        self.proxy.setMinimumSize(QtCore.QSize(200, 32))
         self.proxy.setObjectName("proxy")
 
         self.output_srt_label = QtWidgets.QLabel(tr('Output') + tr('Subtitles'))
@@ -310,11 +310,11 @@ class Ui_MainWindow(object):
         self.bgm_layout.setObjectName("bgm_layout")
 
         self.is_separate = QtWidgets.QCheckBox(self.layoutWidget)
-        self.is_separate.setMinimumSize(QtCore.QSize(0, 30))
+        self.is_separate.setMinimumSize(QtCore.QSize(0, 32))
         self.is_separate.setObjectName("is_separate")
         self.is_separate.setVisible(False)
         self.embed_bgm = QtWidgets.QCheckBox(self.layoutWidget)
-        self.embed_bgm.setMinimumSize(QtCore.QSize(0, 30))
+        self.embed_bgm.setMinimumSize(QtCore.QSize(0, 32))
         self.embed_bgm.setObjectName("embed_bgm")
         self.embed_bgm.setChecked(True)
         self.embed_bgm.setVisible(False)
@@ -462,7 +462,7 @@ class Ui_MainWindow(object):
         self.enable_cuda.setToolTip(tr('cudatips'))
 
         self.startbtn = QtWidgets.QPushButton(self.layoutWidget)
-        self.startbtn.setMinimumSize(QtCore.QSize(160, 40))
+        self.startbtn.setMinimumSize(QtCore.QSize(220, 44))
         self.startbtn.setObjectName("startbtn")
 
         self.retrybtn = QtWidgets.QPushButton(self.layoutWidget)

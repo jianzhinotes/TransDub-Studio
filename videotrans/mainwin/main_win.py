@@ -26,7 +26,7 @@ from videotrans.util.help_misc import set_proxy,is_connect_hf,open_url,show_glos
 class MainWindow(QMainWindow, Ui_MainWindow):
 
 
-    def __init__(self, parent=None, width=1200, height=650,callback=None):
+    def __init__(self, parent=None, width=1280, height=760,callback=None):
         super().__init__(parent)
         self.callback=callback
         self.resize(width, height)

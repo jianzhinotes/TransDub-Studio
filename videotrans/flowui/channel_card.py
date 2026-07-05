@@ -19,8 +19,8 @@ _KIND_TITLE = {
 }
 
 _QSS = """
-QFrame#channelCard { border: 1px solid #455364; border-radius: 8px; background: #1A2530; }
-QFrame#channelCard QLabel#cardTitle { font-size: 14px; font-weight: bold; color: #DFE1E2; }
+QFrame#channelCard { border: 1px solid #2E3947; border-radius: 8px; background: #1C232D; }
+QFrame#channelCard QLabel#cardTitle { font-size: 14px; font-weight: bold; color: #E6E9EC; }
 QFrame#channelCard QLabel#cardWarn { color: #f39c12; font-size: 12px; }
 """
 
@@ -48,7 +48,7 @@ class ChannelCard(QFrame):
         self.status_dot = QLabel('●')
         head.addWidget(self.status_dot)
         self.status_text = QLabel('')
-        self.status_text.setStyleSheet('font-size:12px;color:#8a9ba8;')
+        self.status_text.setStyleSheet('font-size:12px;color:#9AA7B4;')
         head.addWidget(self.status_text)
         layout.addLayout(head)
 

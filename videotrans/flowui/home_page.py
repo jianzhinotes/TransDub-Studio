@@ -18,17 +18,17 @@ _ALLOWED_EXTS = contants.VIDEO_EXTS + contants.AUDIO_EXITS
 
 _QSS = """
 #pageHome QFrame#dropZone {
-    border: 2px dashed #455364; border-radius: 14px;
+    border: 2px dashed #2E3947; border-radius: 14px;
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #1A2530, stop:0.5 #1C2A3A, stop:1 #201F38);
+        stop:0 #1C232D, stop:0.5 #1C2A3A, stop:1 #201F38);
 }
-#pageHome QFrame#dropZone[drag="1"] { border-color: #1A72BB; background: #1E2C3A; }
-#pageHome QLabel#heroTitle { font-size: 24px; color: #DFE1E2; font-weight: bold; }
-#pageHome QLabel#heroSub { font-size: 13px; color: #8a9ba8; }
+#pageHome QFrame#dropZone[drag="1"] { border-color: #2E7CF6; background: #1E2C3A; }
+#pageHome QLabel#heroTitle { font-size: 24px; color: #E6E9EC; font-weight: bold; }
+#pageHome QLabel#heroSub { font-size: 13px; color: #9AA7B4; }
 #pageHome QLabel#heroStar { color: #6C7FD8; font-size: 15px; }
-#pageHome QLabel#appTitle { font-size: 16px; color: #DFE1E2; font-weight: bold; }
+#pageHome QLabel#appTitle { font-size: 16px; color: #E6E9EC; font-weight: bold; }
 #pageHome QPushButton#linkBtn {
-    border: none; background: transparent; color: #1A72BB; text-align: left;
+    border: none; background: transparent; color: #2E7CF6; text-align: left;
 }
 #pageHome QPushButton#linkBtn:hover { text-decoration: underline; }
 #pageHome QLabel#authorBar { color: #60798B; font-size: 12px; }
@@ -135,7 +135,7 @@ class HomePage(QWidget):
         layout.addWidget(self.drop_zone, stretch=1)
 
         recent_head = QLabel(tr('flow_recent_tasks'))
-        recent_head.setStyleSheet('color:#DFE1E2;font-size:14px;font-weight:bold;')
+        recent_head.setStyleSheet('color:#E6E9EC;font-size:14px;font-weight:bold;')
         layout.addWidget(recent_head)
         self.recent_list = QListWidget()
         self.recent_list.setMaximumHeight(200)
@@ -146,8 +146,8 @@ class HomePage(QWidget):
         from videotrans.component.about_dialog import AUTHOR, EMAIL, GITHUB_URL
         author_bar = QLabel(
             f"✨ TransDub Studio · {tr('flow_author')} <b>{AUTHOR}</b> · "
-            f"<a style='color:#1A72BB' href='mailto:{EMAIL}'>{EMAIL}</a> · "
-            f"<a style='color:#1A72BB' href='{GITHUB_URL}'>GitHub ⭐</a>")
+            f"<a style='color:#2E7CF6' href='mailto:{EMAIL}'>{EMAIL}</a> · "
+            f"<a style='color:#2E7CF6' href='{GITHUB_URL}'>GitHub ⭐</a>")
         author_bar.setObjectName('authorBar')
         author_bar.setOpenExternalLinks(True)
         author_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -170,7 +170,7 @@ class HomePage(QWidget):
         recent_tasks.STATUS_RUNNING: ('flow_status_running', '#f39c12'),
         recent_tasks.STATUS_SUCCEED: ('flow_status_succeed', '#2ecc71'),
         recent_tasks.STATUS_ERROR: ('flow_status_error', '#ff4d4d'),
-        recent_tasks.STATUS_STOPPED: ('flow_status_stopped', '#8a9ba8'),
+        recent_tasks.STATUS_STOPPED: ('flow_status_stopped', '#9AA7B4'),
     }
 
     def refresh_recent(self):
