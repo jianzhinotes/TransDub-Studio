@@ -7,27 +7,30 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from videotrans.configure.config import app_cfg, logger, params, tr
 from videotrans.flowui import curated, recent_tasks
 from videotrans.flowui.channel_card import ChannelCard
+from videotrans.styles import tokens
 from videotrans.task.simple_runnable_qt import run_in_threadpool
 
-_QSS = """
-#pageConfig QLabel#secTitle { font-size: 14px; font-weight: bold; color: #E6E9EC; }
-#pageConfig QPushButton#startBtn {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2E7CF6, stop:1 #6C5CE7);
-    color: #FFFFFF; font-size: 16px; font-weight: bold; border-radius: 8px; border: none;
-}
-#pageConfig QPushButton#startBtn:hover {
+_QSS = f"""
+#pageConfig, #cfgScroll, #cfgContent {{ background: {tokens.WINDOW_BG}; }}
+#pageConfig QLabel#secTitle {{ font-size: 13px; color: {tokens.TEXT_SECONDARY}; }}
+#cfgPanel {{ background: {tokens.SURFACE}; border: 1px solid {tokens.BORDER}; border-radius: 10px; }}
+#pageConfig QPushButton#startBtn {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {tokens.ACCENT}, stop:1 #6C5CE7);
+    color: #FFFFFF; font-size: 16px; font-weight: bold; border-radius: 10px; border: none;
+}}
+#pageConfig QPushButton#startBtn:hover {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2286D8, stop:1 #7E6EF2);
-}
-#pageConfig QPushButton#startBtn:disabled { background: #2E3947; color: #788D9C; }
-#pageConfig QLabel#startHint { color: #f39c12; font-size: 12px; }
-#pageConfig QPushButton#linkBtn { border:none; background:transparent; color:#2E7CF6; }
+}}
+#pageConfig QPushButton#startBtn:disabled {{ background: {tokens.BORDER}; color: #788D9C; }}
+#pageConfig QLabel#startHint {{ color: {tokens.WARNING}; font-size: 12px; }}
+#pageConfig QPushButton#linkBtn {{ border:none; background:transparent; color:{tokens.ACCENT}; }}
 """
 
 
@@ -47,8 +50,8 @@ class ConfigPage(QWidget):
 
         from videotrans.translator import LANGNAME_DICT
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
 
         # 顶栏：返回 + 文件摘要 + 输出目录
         top = QHBoxLayout()
@@ -58,7 +61,7 @@ class ConfigPage(QWidget):
         back.clicked.connect(self.back_requested)
         top.addWidget(back)
         self.files_label = QLabel('')
-        self.files_label.setStyleSheet('color:#9AA7B4;')
+        self.files_label.setStyleSheet(f'color:{tokens.TEXT_SECONDARY};')
         top.addWidget(self.files_label)
         top.addStretch(1)
         self.outdir_btn = QPushButton(tr('flow_output_dir'))
@@ -68,52 +71,75 @@ class ConfigPage(QWidget):
         top.addWidget(self.outdir_btn)
         layout.addLayout(top)
 
-        # 语言行
-        lang_row = QHBoxLayout()
-        lang_row.addWidget(QLabel(tr('Source language')))
+        # 可滚动配置内容（面板竖排铺满，任何窗口高度都协调）
+        scroll = QScrollArea()
+        scroll.setObjectName('cfgScroll')
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setObjectName('cfgContent')
+        clay = QVBoxLayout(content)
+        clay.setContentsMargins(0, 0, 0, 0)
+        clay.setSpacing(14)
+
+        # 语言面板：源/目标各占一列
+        lang_panel = self._panel()
+        lp = QHBoxLayout(lang_panel)
+        lp.setContentsMargins(16, 14, 16, 14)
+        lp.setSpacing(20)
+        src_col = QVBoxLayout()
+        src_col.setSpacing(6)
+        src_col.addWidget(self._sec_title(tr('Source language')))
         self.source_lang = QComboBox()
         self.source_lang.addItems(list(LANGNAME_DICT.values()))
-        lang_row.addWidget(self.source_lang, stretch=1)
-        lang_row.addSpacing(24)
-        lang_row.addWidget(QLabel(tr('Target lang')))
+        src_col.addWidget(self.source_lang)
+        lp.addLayout(src_col, stretch=1)
+        tgt_col = QVBoxLayout()
+        tgt_col.setSpacing(6)
+        tgt_col.addWidget(self._sec_title(tr('Target lang')))
         self.target_lang = QComboBox()
         self.target_lang.addItems(list(LANGNAME_DICT.values()))
-        lang_row.addWidget(self.target_lang, stretch=1)
-        layout.addLayout(lang_row)
+        tgt_col.addWidget(self.target_lang)
+        lp.addLayout(tgt_col, stretch=1)
+        clay.addWidget(lang_panel)
 
-        # 三渠道卡
-        cards_row = QHBoxLayout()
+        # 三渠道卡竖排（全宽，舒展）
         self.recogn_card = ChannelCard(kind=curated.KIND_RECOGN, curated_ids=curated.CURATED_RECOGN)
         self.trans_card = ChannelCard(kind=curated.KIND_TRANS, curated_ids=curated.CURATED_TRANS)
         self.tts_card = ChannelCard(kind=curated.KIND_TTS, curated_ids=curated.CURATED_TTS)
         for c in (self.recogn_card, self.trans_card, self.tts_card):
-            cards_row.addWidget(c, stretch=1)
-        layout.addLayout(cards_row)
+            clay.addWidget(c)
 
-        # 开关行
-        toggles = QHBoxLayout()
-        toggles.addWidget(QLabel(tr('flow_subtitle_label')))
+        # 选项面板：字幕 / 自动对齐 / 保留背景音
+        opt_panel = self._panel()
+        op = QVBoxLayout(opt_panel)
+        op.setContentsMargins(16, 14, 16, 14)
+        op.setSpacing(10)
+        op.addWidget(self._sec_title(tr('flow_options')))
+        sub_row = QHBoxLayout()
+        sub_row.addWidget(QLabel(tr('flow_subtitle_label')))
         self.subtitle_box = QComboBox()
         self.subtitle_box.addItems([tr('nosubtitle'), tr('embedsubtitle'), tr('softsubtitle')])
-        toggles.addWidget(self.subtitle_box)
-        toggles.addSpacing(16)
+        sub_row.addWidget(self.subtitle_box, stretch=1)
+        op.addLayout(sub_row)
         self.auto_align = QCheckBox(tr('flow_auto_align'))
-        toggles.addWidget(self.auto_align)
+        op.addWidget(self.auto_align)
         self.keep_bgm = QCheckBox(tr('flow_keep_bgm'))
-        toggles.addWidget(self.keep_bgm)
-        toggles.addStretch(1)
-        layout.addLayout(toggles)
+        op.addWidget(self.keep_bgm)
+        clay.addWidget(opt_panel)
 
-        layout.addStretch(1)
+        clay.addStretch(1)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, stretch=1)
 
-        # 开始
+        # 开始（固定底部）
         self.start_hint = QLabel('')
         self.start_hint.setObjectName('startHint')
         self.start_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.start_hint)
         self.start_btn = QPushButton('✨ ' + tr('flow_start'))
         self.start_btn.setObjectName('startBtn')
-        self.start_btn.setMinimumHeight(48)
+        self.start_btn.setMinimumHeight(50)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_start)
         layout.addWidget(self.start_btn)
@@ -131,6 +157,19 @@ class ConfigPage(QWidget):
         self._status_timer.timeout.connect(self._refresh_all_status)
 
         self._load_defaults()
+
+    # ---- 小部件工厂 ----
+    @staticmethod
+    def _panel() -> QFrame:
+        f = QFrame()
+        f.setObjectName('cfgPanel')
+        return f
+
+    @staticmethod
+    def _sec_title(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName('secTitle')
+        return lbl
 
     # ---- 生命周期 ----
     def showEvent(self, event):

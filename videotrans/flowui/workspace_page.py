@@ -24,14 +24,14 @@ class WorkspacePage(QWidget):
         layout.setSpacing(0)
 
         self.preview = VideoPreviewPanel()
-        layout.addWidget(self.preview, stretch=55)
+        layout.addWidget(self.preview, stretch=52)
 
         self.right_stack = QStackedWidget()
         self.config_page = ConfigPage(flow=flow)
         self.progress_page = ProgressPage(flow=flow)
         self.right_stack.addWidget(self.config_page)
         self.right_stack.addWidget(self.progress_page)
-        layout.addWidget(self.right_stack, stretch=45)
+        layout.addWidget(self.right_stack, stretch=48)
 
         # 态切换接线
         self.config_page.started.connect(self.show_processing)

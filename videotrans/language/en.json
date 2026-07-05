@@ -834,5 +834,6 @@
     "flow_github": "Homepage",
     "flow_star_hint": "If you find it useful, star it on GitHub to support the developer",
     "flow_upstream_credit": "Built upon the open-source project, with thanks to",
-    "Checking GPUs...": "Checking GPUs…"
+    "Checking GPUs...": "Checking GPUs…",
+    "flow_options": "Options"
 }
