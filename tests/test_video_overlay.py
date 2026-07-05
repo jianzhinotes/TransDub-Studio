@@ -50,53 +50,44 @@ class TestVideoOverlay:
         from videotrans.component.timeline.video_overlay import VideoOverlay, _GLYPH_PAUSE, _GLYPH_PLAY
         player = _FakePlayer()
         ov = VideoOverlay(player)
-        layer = ov.overlay
 
         player.durationChanged.emit(90000)
-        assert layer.slider.maximum() == 90000
-        assert '01:30.0' in layer.time_label.text()
+        assert ov.slider.maximum() == 90000
+        assert '01:30.0' in ov.time_label.text()
 
         player.positionChanged.emit(45500)
-        assert layer.slider.value() == 45500
-        assert layer.time_label.text().startswith('00:45.5')
+        assert ov.slider.value() == 45500
+        assert ov.time_label.text().startswith('00:45.5')
 
         player.playStateChanged.emit(True)
-        assert layer.play_btn.text() == _GLYPH_PAUSE
-        assert layer.center_btn.isHidden()        # 播放中隐藏中央大播放钮
+        assert ov.play_btn.text() == _GLYPH_PAUSE
         player.playStateChanged.emit(False)
-        assert layer.play_btn.text() == _GLYPH_PLAY
-        assert not layer.center_btn.isHidden()    # 暂停时露出
+        assert ov.play_btn.text() == _GLYPH_PLAY
 
-    def test_center_button_click_toggles(self, qapp):
+    def test_play_button_click_toggles(self, qapp):
         from videotrans.component.timeline.video_overlay import VideoOverlay
         player = _FakePlayer()
         ov = VideoOverlay(player)
-        ov.overlay.center_btn.click()
+        ov.play_btn.click()
         assert player.is_playing() is True
 
-    def test_toggle_and_seek(self, qapp):
+    def test_seek(self, qapp):
         from videotrans.component.timeline.video_overlay import VideoOverlay
         player = _FakePlayer()
         ov = VideoOverlay(player)
-        layer = ov.overlay
-
-        layer._toggle()
-        assert player.is_playing() is True
-
         player.durationChanged.emit(10000)
-        layer.slider.setValue(7000)
-        layer._on_slider_released()
+        ov.slider.setValue(7000)
+        ov._on_slider_released()
         assert player.seeked_to == 7000
-        assert layer._dragging is False
+        assert ov._dragging is False
 
     def test_drag_blocks_position_updates(self, qapp):
         from videotrans.component.timeline.video_overlay import VideoOverlay
         player = _FakePlayer()
         ov = VideoOverlay(player)
-        layer = ov.overlay
         player.durationChanged.emit(10000)
 
-        layer._dragging = True
-        layer.slider.setValue(3000)
+        ov._dragging = True
+        ov.slider.setValue(3000)
         player.positionChanged.emit(9000)
-        assert layer.slider.value() == 3000   # 拖动中不被播放位置顶掉
+        assert ov.slider.value() == 3000   # 拖动中不被播放位置顶掉
