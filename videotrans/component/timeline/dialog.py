@@ -68,12 +68,14 @@ class TimelinePreviewDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # 播放器与视频区
+        # 播放器与视频区（悬浮控件承载播放/暂停/进度）
         self.player = PreviewPlayer(self)
-        self.player.video_widget.setMinimumSize(480, 270)
-        self.player.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                               QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.player.video_widget, stretch=1)
+        from videotrans.component.timeline.video_overlay import VideoOverlay
+        self.video_area = VideoOverlay(self.player)
+        self.video_area.setMinimumSize(480, 270)
+        self.video_area.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                      QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.video_area, stretch=1)
 
         # 当前字幕
         self.subtitle_label = QLabel('')
@@ -83,16 +85,8 @@ class TimelinePreviewDialog(QDialog):
         self.subtitle_label.setMinimumHeight(40)
         layout.addWidget(self.subtitle_label)
 
-        # 控制条
+        # 控制条（播放/时间已移入视频悬浮控件）
         ctrl = QHBoxLayout()
-        self.play_btn = QPushButton(tr("Play"))
-        self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.play_btn.setMinimumWidth(90)
-        self.play_btn.clicked.connect(self.player.toggle)
-        ctrl.addWidget(self.play_btn)
-
-        self.time_label = QLabel('00:00.0 / 00:00.0')
-        ctrl.addWidget(self.time_label)
         ctrl.addStretch(1)
 
         self.original_radio = QRadioButton(tr("Original audio"))
@@ -131,8 +125,6 @@ class TimelinePreviewDialog(QDialog):
         self.timeline.seekRequested.connect(self.player.seek)
         self.player.positionChanged.connect(self._on_position)
         self.player.durationChanged.connect(self._on_duration)
-        self.player.playStateChanged.connect(
-            lambda playing: self.play_btn.setText(tr("Pause") if playing else tr("Play")))
 
         # 视频立即可拖看；波形后台生成
         self.player.load(video_path)
@@ -176,11 +168,9 @@ class TimelinePreviewDialog(QDialog):
         if ms > 0:
             self._duration_ms = max(self._duration_ms, int(ms))
             self.timeline.scale.set_duration(self._duration_ms)
-            self.time_label.setText(f'{self._fmt(self.player.position())} / {self._fmt(self._duration_ms)}')
 
     def _on_position(self, ms: int):
         self.timeline.set_position(ms)
-        self.time_label.setText(f'{self._fmt(ms)} / {self._fmt(self._duration_ms)}')
         idx = self.timeline.subtitle_track.index_for_ms(ms)
         if idx >= 0 and ms <= int(self._subtitle_items[idx]['end_time']):
             self.timeline.subtitle_track.set_active(idx)

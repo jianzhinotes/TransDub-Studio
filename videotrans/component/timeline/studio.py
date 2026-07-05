@@ -94,10 +94,12 @@ class DubbingStudioDialog(QDialog):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.player = PreviewPlayer(self)
-        self.player.video_widget.setMinimumSize(480, 270)
-        self.player.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                               QSizePolicy.Policy.Expanding)
-        left_layout.addWidget(self.player.video_widget, stretch=1)
+        from videotrans.component.timeline.video_overlay import VideoOverlay
+        self.video_area = VideoOverlay(self.player)
+        self.video_area.setMinimumSize(480, 270)
+        self.video_area.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                      QSizePolicy.Policy.Expanding)
+        left_layout.addWidget(self.video_area, stretch=1)
 
         self.subtitle_label = QLabel('')
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -106,14 +108,8 @@ class DubbingStudioDialog(QDialog):
         self.subtitle_label.setMinimumHeight(36)
         left_layout.addWidget(self.subtitle_label)
 
+        # 播放/时间已移入视频悬浮控件；此行仅保留 A/B 音轨切换
         ctrl = QHBoxLayout()
-        self.play_btn = QPushButton(tr("Play"))
-        self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.play_btn.setMinimumWidth(90)
-        self.play_btn.clicked.connect(self.player.toggle)
-        ctrl.addWidget(self.play_btn)
-        self.time_label = QLabel('00:00.0 / 00:00.0')
-        ctrl.addWidget(self.time_label)
         ctrl.addStretch(1)
         self.original_radio = QRadioButton(tr("Original audio"))
         self.original_radio.setChecked(True)
@@ -173,8 +169,6 @@ class DubbingStudioDialog(QDialog):
         self.timeline.subtitle_track.timesEditRequested.connect(self._on_times_edited)
         self.player.positionChanged.connect(self._on_position)
         self.player.durationChanged.connect(self._on_duration)
-        self.player.playStateChanged.connect(
-            lambda playing: self.play_btn.setText(tr("Pause") if playing else tr("Play")))
 
         self.cards.seekRequested.connect(self.player.seek)
         self.cards.playRequested.connect(self._play_single_line)
@@ -250,7 +244,6 @@ class DubbingStudioDialog(QDialog):
 
     def _on_position(self, ms: int):
         self.timeline.set_position(ms)
-        self.time_label.setText(f'{self._fmt(ms)} / {self._fmt(self._duration_ms)}')
         idx = self.timeline.subtitle_track.index_for_ms(ms)
         items = self.state.items
         if 0 <= idx < len(items) and ms <= int(items[idx]['end_time']):
