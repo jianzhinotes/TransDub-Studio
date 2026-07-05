@@ -6,7 +6,7 @@
 
 [English](../README.md) · [原项目 pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [许可证 GPL-3.0](../LICENSE)
 
-作者：**jianzhinotes** · [ijilocavac392@gmail.com](mailto:ijilocavac392@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
+作者：**jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
 
 </div>
 

@@ -7,7 +7,7 @@ from videotrans import VERSION
 from videotrans.configure.config import ROOT_DIR, tr
 
 AUTHOR = 'jianzhinotes'
-EMAIL = 'ijilocavac392@gmail.com'
+EMAIL = 'jianzhi.notes@gmail.com'
 GITHUB_URL = 'https://github.com/jianzhinotes/TransDub-Studio'
 UPSTREAM_URL = 'https://github.com/jianchang512/pyvideotrans'
 

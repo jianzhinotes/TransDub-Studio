@@ -6,7 +6,7 @@
 
 [中文说明](docs/README_CN.md) · [Upstream pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [License: GPL-3.0](LICENSE)
 
-Author: **jianzhinotes** · [ijilocavac392@gmail.com](mailto:ijilocavac392@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
+Author: **jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
 
 </div>
 
