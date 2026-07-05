@@ -135,7 +135,7 @@
     "Fill in the HTTP address after the clone voice program starts": "填写clone-voice项目启动后的http地址",
     "Fill in the HTTP address after the kokoro program starts": "kokoro-uiapi启动后的地址,默认请填写 http://127.0.0.1:5066",
     "Fill in the available voice acting role names, separate multiple with English commas": "填写可用的配音角色名称，以英文逗号分隔多个",
-    "Fill in the extra parameters passed to the api via the extra key, null to pass pyvideotrans": "填写通过extra键向api传递的额外参数，为空则传递pyvideotrans",
+    "Fill in the extra parameters passed to the api via the extra key, null to pass pyvideotrans": "填写通过extra键向api传递的额外参数，留空则不传递",
     "Fill in the full address starting with http": "填写http开头的完整地址",
     "Fill in the names of the available voiceover characters, separating multiple ones with English commas": "配音角色名称",
     "Fill out the tutorial": "查看填写教程",
@@ -833,5 +833,6 @@
     "flow_contact": "联系邮箱",
     "flow_github": "项目主页",
     "flow_star_hint": "觉得好用请到 GitHub 点个 Star 支持开发者",
-    "flow_upstream_credit": "基于开源项目二次开发，特别致谢"
+    "flow_upstream_credit": "基于开源项目二次开发，特别致谢",
+    "Checking GPUs...": "正在检测 GPU…"
 }

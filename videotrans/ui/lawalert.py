@@ -75,7 +75,7 @@ class Ui_lawalert(QtWidgets.QWidget):
 <ul>
     <li><strong>本地运行</strong>：本软件的核心功能完全在您的本地计算机上运行，不会收集或上传您的任何个人信息、视频文件或操作数据至开发者服务器。</li>
     <li><strong>第三方服务</strong>：当您选择使用集成的第三方API服务（如 Microsoft Azure, OpenAI, Edge TTS等）时，相关数据将直接由您的计算机发送至相应的第三方服务提供商。您的数据处理将受限于该第三方服务商的隐私政策和使用条款。开发者不参与此过程，也不对第三方服务的数据安全和隐私泄露承担任何责任。</li>
-    <li><strong>版本更新与报错信息</strong>：软件通过 <code>https://pyvideotrans.com/version.json</code> 这个静态文件获取最新版本号; <br>当你在软件中点击“报告错误”按钮时，会打开 <code>https://bbs.pyvideotrans.com/post</code> 报错提交页面并显示错误信息，在该页面你仍需要再次点击“发布”按钮，才会向开发者提交错误信息，否则错误信息只会保留在本地和你的浏览器缓存中，不会提交。</li>
+    <li><strong>版本更新与报错信息</strong>：本软件不联网检查更新，最新版本请关注 <code>https://github.com/jianzhinotes/TransDub-Studio/releases</code>; <br>当你在软件中点击“报告错误”按钮时，会打开 GitHub Issues 新建页面并预填错误信息，在该页面你仍需要再次点击“Submit”按钮，才会向开发者提交错误信息，否则错误信息只会保留在本地和你的浏览器缓存中，不会提交。</li>
 </ul>
 
 <h2>3. 免责声明与责任限制</h2>

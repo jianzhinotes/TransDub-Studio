@@ -20,7 +20,7 @@ from videotrans.util.checkgpu import AiLoaderThread
 from videotrans.ui.en import Ui_MainWindow
 from videotrans.task.simple_runnable_qt import run_in_threadpool
 from videotrans.configure.signal_hub import SignalHub
-from videotrans.util.help_misc import set_proxy,is_connect_hf,check_new_version,open_url,show_glossary_editor,show_error,show_refaudio_win
+from videotrans.util.help_misc import set_proxy,is_connect_hf,open_url,show_glossary_editor,show_error,show_refaudio_win
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -48,7 +48,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.current_rolelist = []
         mac_icon = Path(ROOT_DIR) / "app-resources/app-icon.png"
         self.setWindowIcon(QIcon(str(mac_icon if mac_icon.is_file() else Path(ROOT_DIR) / "videotrans/styles/icon.ico")))
-        self.rawtitle = f"{tr('softname')} {VERSION} {tr('Documents')} pyvideotrans.com"
+        self.rawtitle = f"{tr('softname')} {VERSION}"
         self.setWindowTitle(self.rawtitle)
 
         self.moshi = {
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         s = AiLoaderThread(self)
         s.gpu_io.connect(self._start_workers)
         self.startbtn.setDisabled(True)
-        self.startbtn.setText('Checking GPUs...')
+        self.startbtn.setText(tr('Checking GPUs...'))
         s.start()
         self._set_default()
 
@@ -196,7 +196,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 核对 huggingface.co 连通性
         from videotrans.util.help_ffmpeg import check_hw_on_start
         check_hw_on_start()
-        check_new_version()
         is_connect_hf()
 
     def _bind_signal(self):
@@ -556,7 +555,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def cleanup_and_accept(self):
         QCoreApplication.processEvents()
-        sets = QSettings("pyvideotrans", "settings")
+        # 与 sp.py 读取方保持同一组织名，否则窗口尺寸持久化写读不一致
+        sets = QSettings("TransDub Studio", "settings")
         sets.setValue("windowSize", self.size())
         try:
             for w in app_cfg.child_forms.values():

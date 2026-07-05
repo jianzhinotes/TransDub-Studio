@@ -516,7 +516,7 @@ class WinActionBase:
         if not role or role == 'No':
             return show_error(tr('mustberole'))
 
-        voice_dir = tempfile.gettempdir() + '/pyvideotrans'
+        voice_dir = tempfile.gettempdir() + '/transdubstudio'
         if not Path(voice_dir).exists():
             Path(voice_dir).mkdir(parents=True, exist_ok=True)
         rate = int(self.main.voice_rate.value())

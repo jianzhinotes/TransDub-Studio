@@ -97,7 +97,7 @@ def show_error(tb_str):
             if not _isfrozen:
                 _msg += f"Python: {sys.version}\n"
             encoded_content = urllib.parse.quote(_msg)
-            full_url = f"https://bbs.pyvideotrans.com/?type=post&content={encoded_content}"
+            full_url = f"https://github.com/jianzhinotes/TransDub-Studio/issues/new?body={encoded_content}"
     elif url_button and clicked_button_storage == url_button:
         if msg_box.clickedButton() == url_button:
             full_url = urls[0]
@@ -442,21 +442,8 @@ def serial(data: object) -> str:
     return json.dumps(_newlist)
 
 
-def check_new_version():
-    # 查看当前最新版本信息
-    try:
-
-        import requests
-        # 纯静态文件，仅返回版本信息字符串
-        # 只获取当前软件版本号数字和操作系统类型(win32/macos/linux)
-        url = f"https://pyvideotrans.com/version.json?version={VERSION}&os={sys.platform}"
-        res = requests.get(url)
-        res.raise_for_status()
-        d = res.json()
-        app_cfg.new_version_pvt = d['version']
-    except Exception:
-        #logger.exception(f'获取最新版本信息失败{e}', exc_info=True)
-        pass
+# 版本检查已移除：不再向上游服务器发起任何网络请求；
+# 更新请关注 https://github.com/jianzhinotes/TransDub-Studio/releases
 
 
 

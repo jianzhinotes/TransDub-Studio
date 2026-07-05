@@ -55,7 +55,7 @@ def _set_env():
     #os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
     os.environ['QT_API'] = 'pyside6'
-    os.environ['SOFT_NAME'] = 'pyvideotrans'
+    os.environ['SOFT_NAME'] = 'transdubstudio'
     os.environ['MODELSCOPE_CACHE'] = ROOT_DIR + "/models"
     os.environ['HF_HOME'] = ROOT_DIR + "/models"
     os.environ['HF_HUB_CACHE'] = ROOT_DIR + "/models"
@@ -755,7 +755,7 @@ class AppParams:
             "stt_model": "large-v3-turbo",
             "ttsapi_url": "",
             "ttsapi_voice_role": "",
-            "ttsapi_extra": "pyvideotrans",
+            "ttsapi_extra": "transdubstudio",
             "ttsapi_language_boost": "auto",
             "ttsapi_emotion": "happy",
             "minimaxi_apikey": "",
