@@ -75,16 +75,15 @@ class WinActionBase:
 
     # 关于页面
     def about(self):
+        # 支持开发者/关于：作者声明 + 联系方式 + 项目主页（替代上游捐助页）
         if app_cfg.child_forms.get('information'):
             app_cfg.child_forms.get('information').show()
+            app_cfg.child_forms.get('information').activateWindow()
             return
 
-        from videotrans.component.set_form import InfoForm
-        def open():
-            app_cfg.child_forms['information'] = InfoForm()
-            app_cfg.child_forms['information'].show()
-
-        QTimer.singleShot(200, open)
+        from videotrans.component.about_dialog import AboutDialog
+        app_cfg.child_forms['information'] = AboutDialog()
+        app_cfg.child_forms['information'].show()
 
     # 选中按钮时判断当前cuda是否可用
     def check_cuda(self, state):

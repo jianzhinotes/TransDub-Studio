@@ -826,5 +826,12 @@
     "flow_status_running": "Running",
     "flow_status_succeed": "Done",
     "flow_status_error": "Error",
-    "flow_status_stopped": "Stopped"
+    "flow_status_stopped": "Stopped",
+    "flow_about_title": "About · Support the Developer",
+    "flow_about_slogan": "Local AI video translation & dubbing studio",
+    "flow_author": "Author",
+    "flow_contact": "Email",
+    "flow_github": "Homepage",
+    "flow_star_hint": "If you find it useful, star it on GitHub to support the developer",
+    "flow_upstream_credit": "Built upon the open-source project, with thanks to"
 }

@@ -136,7 +136,7 @@ class TaskCard(QFrame):
                 lbl.style().unpolish(lbl)
                 lbl.style().polish(lbl)
             self.bar.setValue(100)
-            self.set_state(tr('flow_status_succeed'), 'doneBanner')
+            self.set_state('✨ ' + tr('flow_status_succeed'), 'doneBanner')
             self.open_btn.setVisible(True)
             self.preview_btn.setVisible(True)
         else:

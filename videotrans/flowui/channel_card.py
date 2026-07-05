@@ -41,7 +41,7 @@ class ChannelCard(QFrame):
         layout.setSpacing(6)
 
         head = QHBoxLayout()
-        title = QLabel(tr(_KIND_TITLE[kind]))
+        title = QLabel('✦ ' + tr(_KIND_TITLE[kind]))
         title.setObjectName('cardTitle')
         head.addWidget(title)
         head.addStretch(1)

@@ -111,8 +111,9 @@ def open_url(url: str = None):
     title_url_dict = {
         'bbs': "https://bbs.pyvideotrans.com",
         'ffmpeg': "https://www.ffmpeg.org/download.html",
-        'git': "https://github.com/jianchang512/pyvideotrans",
-        'issue': "https://github.com/jianchang512/pyvideotrans/issues",
+        # 本项目（TransDub Studio）主页/文档/反馈；上游教程类链接保持指向 pyvideotrans
+        'git': "https://github.com/jianzhinotes/TransDub-Studio",
+        'issue': "https://github.com/jianzhinotes/TransDub-Studio/issues",
         'hfmirrorcom': "https://pyvideotrans.com/819",
         'models': "https://github.com/jianchang512/stt/releases/tag/0.0",
         'stt': "https://github.com/jianchang512/stt/",
@@ -120,10 +121,10 @@ def open_url(url: str = None):
         'gtrans': "https://pyvideotrans.com/aiocr",
         'cuda': "https://pyvideotrans.com/gpu.html",
         'website': "https://pyvideotrans.com",
-        'help': "https://pyvideotrans.com",
-        'xinshou': "https://pyvideotrans.com/getstart",
-        "about": "https://pyvideotrans.com/about",
-        'download': "https://github.com/jianchang512/pyvideotrans/releases",
+        'help': "https://github.com/jianzhinotes/TransDub-Studio#readme",
+        'xinshou': "https://github.com/jianzhinotes/TransDub-Studio#readme",
+        "about": "https://github.com/jianzhinotes/TransDub-Studio",
+        'download': "https://github.com/jianzhinotes/TransDub-Studio/releases",
     }
     if url and url.startswith("http"):
         return webbrowser.open_new_tab(url)

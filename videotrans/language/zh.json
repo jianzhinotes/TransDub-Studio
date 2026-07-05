@@ -826,5 +826,12 @@
     "flow_status_running": "进行中",
     "flow_status_succeed": "完成",
     "flow_status_error": "出错",
-    "flow_status_stopped": "已停止"
+    "flow_status_stopped": "已停止",
+    "flow_about_title": "关于 · 支持开发者",
+    "flow_about_slogan": "本地 AI 视频翻译配音工作台",
+    "flow_author": "作者",
+    "flow_contact": "联系邮箱",
+    "flow_github": "项目主页",
+    "flow_star_hint": "觉得好用请到 GitHub 点个 Star 支持开发者",
+    "flow_upstream_credit": "基于开源项目二次开发，特别致谢"
 }

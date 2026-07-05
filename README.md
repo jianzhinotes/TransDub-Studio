@@ -1,26 +1,49 @@
-# TransDub Studio
+# ✨ TransDub Studio
 
 <div align="center">
 
-**A customized AI video translation and dubbing studio based on pyVideoTrans**
+**A CapCut/ElevenLabs-inspired AI video translation & dubbing studio**
 
 [中文说明](docs/README_CN.md) · [Upstream pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [License: GPL-3.0](LICENSE)
+
+Author: **jianzhinotes** · [ijilocavac392@gmail.com](mailto:ijilocavac392@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
 
 </div>
 
 ## What is TransDub Studio?
 
-**TransDub Studio** is a downstream customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), focused on a smoother macOS local workflow for AI video translation, subtitle translation, voice cloning, and dubbing.
+**TransDub Studio** is a downstream customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), rebuilt around a modern, CapCut/ElevenLabs-style workflow for AI video translation, subtitle translation, voice cloning, and dubbing.
 
 It keeps the original pyVideoTrans pipeline:
 
 `speech recognition → subtitle translation → AI dubbing / voice cloning → audio-video synthesis`
 
-Then it adds practical improvements around local deployment, DeepSeek translation quality, F5-TTS voice cloning stability, macOS app behavior, and dubbing output reliability.
+## ✨ The new Flow UI (default)
 
-This is **not** the official pyVideoTrans project. It is a modified version distributed under the same **GPL-3.0** license.
+Launch the app and you land in a streamlined three-step flow:
+
+1. **Home** — drag & drop a video (or click to browse), see recent tasks with status chips, one-click reopen of results.
+2. **Configure** — everything on one page: source/target language, three channel cards (Speech Recognition / Translation / Dubbing) with live "configured / needs API key" status dots and inline API-key setup, model & voice pickers, and just three toggles (subtitles, auto-align, keep BGM). Your last choices are remembered.
+3. **Progress** — a per-task six-stage stepper (prepare → recognize → translate → dub → align → merge). At the dubbing pause the **Dubbing Studio** opens automatically: per-line speaker cards (source + translation side by side), editable timeline (drag subtitle blocks, stretch edges), per-line re-dub with voice switching, and instant original/dubbed A/B preview — all before the final render.
+
+The classic full-featured UI (batch processing, all 79 channels, advanced parameters) is still available via **Tools → Advanced Mode**.
+
+### Run from source
+
+```bash
+cd pyvideotrans
+uv sync            # first time only
+uv run python sp.py
+```
 
 ## Major improvements over the upstream project
+
+### 0. Flow UI, Dubbing Studio & timeline preview
+
+- New default CapCut/ElevenLabs-style flow: Home → single-page smart config → staged progress.
+- ElevenLabs-style **Dubbing Studio** at the post-dubbing pause: speaker cards, editable timeline, per-line re-dub, A/B audio preview. No more countdown auto-skip.
+- Read-only **Timeline Preview** tool (video + original/dubbed waveforms + subtitle blocks on one synced timeline) available from the Tools menu for any video + SRT.
+- Fixed a long-standing bug where subtitle/text edits in the dubbing review step were silently discarded (queue_tts.json was never written back / reloaded).
 
 ### 1. macOS app experience
 

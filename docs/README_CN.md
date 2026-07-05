@@ -1,20 +1,39 @@
-# TransDub Studio
+# ✨ TransDub Studio
 
 <div align="center">
 
-**基于 pyVideoTrans 修改的 AI 视频翻译与配音工作室**
+**贴近剪映 / ElevenLabs 体验的 AI 视频翻译配音工作台**
 
 [English](../README.md) · [原项目 pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [许可证 GPL-3.0](../LICENSE)
+
+作者：**jianzhinotes** · [ijilocavac392@gmail.com](mailto:ijilocavac392@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
 
 </div>
 
 ## TransDub Studio 是什么？
 
-**TransDub Studio** 是基于 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) 修改的下游定制版本，重点优化 macOS 本地视频翻译、字幕翻译、声音克隆和 AI 配音流程。
+**TransDub Studio** 是基于 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) 深度重构的下游版本，围绕剪映/ElevenLabs 式的现代工作流重新设计了整套界面。
 
 它保留了 pyVideoTrans 原有的核心流程：
 
 `语音识别 → 字幕翻译 → AI 配音 / 声音克隆 → 音视频合成`
+
+## ✨ 全新 Flow 界面（默认）
+
+启动即进入三步流程：
+
+1. **首页** —— 拖入视频（或点击选择），最近任务带状态徽标，一键打开历史结果。
+2. **配置页** —— 一页搞定：源/目标语言、三张渠道卡（识别 / 翻译 / 配音，实时显示"已配置/需配置密钥"状态点，点「配置」直接填 API Key）、模型与音色选择、三个开关（字幕、自动对齐、保留背景音）。上次的选择自动记忆。
+3. **进度页** —— 每个任务一张六阶段步进卡（准备→识别→翻译→配音→对齐→合成）。配音完成后自动进入 **配音工作台（Dubbing Studio）**：逐句卡片（原文+译文并排）、可拖拽时间轴（拖块改位置、拉边改时长）、单句换音色重配、原声/配音 A/B 即时试听——最终合成前就能精修一切。
+
+经典完整界面（批量处理、全部渠道、高级参数）仍在 **工具 → 高级模式** 中。
+
+### 源码启动
+
+```bash
+cd pyvideotrans
+uv run python sp.py
+```
 
 在此基础上，TransDub Studio 针对本地部署、DeepSeek 翻译质量、F5-TTS 原声克隆稳定性、macOS 应用体验和最终配音可靠性做了改进。
 

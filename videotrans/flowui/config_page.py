@@ -19,7 +19,11 @@ from videotrans.task.simple_runnable_qt import run_in_threadpool
 _QSS = """
 #pageConfig QLabel#secTitle { font-size: 14px; font-weight: bold; color: #DFE1E2; }
 #pageConfig QPushButton#startBtn {
-    background: #1A72BB; color: #DFE1E2; font-size: 16px; border-radius: 6px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1A72BB, stop:1 #6C5CE7);
+    color: #FFFFFF; font-size: 16px; font-weight: bold; border-radius: 8px; border: none;
+}
+#pageConfig QPushButton#startBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2286D8, stop:1 #7E6EF2);
 }
 #pageConfig QPushButton#startBtn:disabled { background: #455364; color: #788D9C; }
 #pageConfig QLabel#startHint { color: #f39c12; font-size: 12px; }
@@ -106,7 +110,7 @@ class ConfigPage(QWidget):
         self.start_hint.setObjectName('startHint')
         self.start_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.start_hint)
-        self.start_btn = QPushButton(tr('flow_start'))
+        self.start_btn = QPushButton('✨ ' + tr('flow_start'))
         self.start_btn.setObjectName('startBtn')
         self.start_btn.setMinimumHeight(48)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -198,7 +202,10 @@ class ConfigPage(QWidget):
             except Exception as e:
                 logger.warning(f'获取音色列表失败: {e}')
                 roles = [params.get('voice_role') or 'No']
-            self._voicesFetched.emit(tts_id, list(roles))
+            try:
+                self._voicesFetched.emit(tts_id, list(roles))
+            except RuntimeError:
+                pass   # 页面已销毁（应用退出），丢弃结果
 
         run_in_threadpool(fetch)
 
