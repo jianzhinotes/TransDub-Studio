@@ -369,18 +369,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ui_stack.addWidget(classic)
         self.setCentralWidget(self.ui_stack)
         sets = QSettings("TransDub Studio", "settings")
-        self.set_ui_mode(sets.value("uiMode", "flow"))
+        self.set_ui_mode(sets.value("uiMode", "flow"), save=False)
 
-    def set_ui_mode(self, mode: str):
-        """mode: 'flow' | 'classic'。菜单/工具栏不受影响；工具栏仅高级模式显示。"""
+    def set_ui_mode(self, mode: str, save: bool = True):
+        """mode: 'flow' | 'classic'。菜单/工具栏不受影响；工具栏仅高级模式显示。
+        save=False 用于启动恢复，避免非用户操作写回设置。"""
         is_flow = mode == 'flow'
         self.ui_stack.setCurrentIndex(0 if is_flow else 1)
         self.toolBar.setVisible(not is_flow)
         if hasattr(self, 'action_toggle_uimode'):
+            self.action_toggle_uimode.blockSignals(True)
             self.action_toggle_uimode.setChecked(not is_flow)
+            self.action_toggle_uimode.blockSignals(False)
         if is_flow:
             self.flow.show_home()
-        QSettings("TransDub Studio", "settings").setValue("uiMode", mode)
+        if save:
+            QSettings("TransDub Studio", "settings").setValue("uiMode", mode)
     # 检测GPU完成后，启动子线程
     def _start_workers(self, status):
         if status == 'end':
