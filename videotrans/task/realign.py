@@ -33,18 +33,19 @@ class RealignWorker(QThread):
             cfg_dict = dict(project['cfg'])
             proj = Path(self.proj_dir)
 
-            # 临时工作区：复制工程文件进来变速合成，不污染工程原始未变速 wav
+            # 临时工作区：复制工程文件进来变速合成，不污染工程原始未变速 wav。
+            # 逐行 wav 必须放工作区**根目录**——SpeedRate 拼接以 cache_folder 为 cwd、
+            # 按文件名查找（help_ffmpeg.create_concat_txt 用 path.name）。
             new_uuid = _uuid.uuid4().hex
             work = f"{config.TEMP_DIR}/realign-{new_uuid}"
-            wdubb = Path(work) / 'dubb'
-            wdubb.mkdir(parents=True, exist_ok=True)
+            Path(work).mkdir(parents=True, exist_ok=True)
             shutil.copy2(proj / 'novoice.mp4', Path(work) / 'novoice.mp4')
             if (proj / 'source.wav').exists():
                 shutil.copy2(proj / 'source.wav', Path(work) / 'source.wav')
             for it in queue:
                 fn = it.get('filename')
                 if fn and Path(fn).exists():
-                    dst = wdubb / Path(fn).name
+                    dst = Path(work) / Path(fn).name
                     shutil.copy2(fn, dst)
                     it['filename'] = str(dst)
                 else:
