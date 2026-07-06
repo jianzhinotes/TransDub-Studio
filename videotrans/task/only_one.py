@@ -119,6 +119,15 @@ class Worker(QThread):
                     except Exception as e:
                         logger.warning(f'重载 queue_tts.json 失败，保留原列表: {e}')
 
+            # 保存可重开编辑工程（此刻逐行配音尚未被 align 变速，是原始未变速版本），
+            # 供任务完成后从最近任务反复打开工作台编辑、仅重跑对齐+合成
+            if not trk.cfg.only_out_mp4 and getattr(trk, 'should_dubbing', False):
+                try:
+                    from videotrans.task.project import save_project
+                    save_project(trk.cfg, trk.queue_tts, trk.cfg.cache_folder)
+                except Exception as e:
+                    logger.warning(f'保存编辑工程失败，跳过: {e}')
+
             if self._exit(): return
             trk.align()
 
