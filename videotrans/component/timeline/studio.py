@@ -55,25 +55,38 @@ class _PreviewRebuildWorker(QThread):
 
 
 class DubbingStudioDialog(QDialog):
+    # 工程模式点"重新生成成品"时发出，携带工程目录，交由调用方跑 RealignWorker
+    regenerate_requested = Signal(str)
+
     def __init__(self, parent=None, language=None, cache_folder=None,
-                 video_path=None, source_wav=None):
+                 video_path=None, source_wav=None, project_dir=None):
         super().__init__(parent)
-        self.language = language
-        self.cache_folder = cache_folder
+        self.project_dir = project_dir
+        self._project_mode = bool(project_dir)
         self.setWindowTitle(tr("Dubbing Studio"))
         self.setWindowIcon(QIcon(f"{ROOT_DIR}/videotrans/styles/icon.ico"))
         self.setMinimumSize(1280, 800)
         self.setWindowFlags(Qt.WindowTitleHint | Qt.WindowSystemMenuHint
                             | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
 
-        # 数据
+        # 数据：工程模式从 .tdproj 加载（filename 绝对化），否则读流水线 cache
         queue_tts = []
-        qfile = Path(f'{cache_folder}/queue_tts.json')
-        if qfile.exists():
-            try:
-                queue_tts = json.loads(qfile.read_text(encoding='utf-8'))
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning(f'加载 queue_tts.json 失败: {e}')
+        if self._project_mode:
+            from videotrans.task.project import load_project
+            project, queue_tts = load_project(project_dir)
+            language = project.get('target_language_code') or language
+            cache_folder = project_dir
+            video_path = project.get('source_video') or video_path
+            source_wav = str(Path(project_dir) / 'source.wav')
+        else:
+            qfile = Path(f'{cache_folder}/queue_tts.json')
+            if qfile.exists():
+                try:
+                    queue_tts = json.loads(qfile.read_text(encoding='utf-8'))
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning(f'加载 queue_tts.json 失败: {e}')
+        self.language = language
+        self.cache_folder = cache_folder
         self.state = StudioState(queue_tts, duration_ms=1, parent=self)
         self._duration_ms = 1
         self._preview_rev = 0
@@ -150,15 +163,19 @@ class DubbingStudioDialog(QDialog):
             btn.clicked.connect(fn)
             bottom.addWidget(btn)
         bottom.addStretch(1)
-        self.continue_btn = QPushButton(tr("Continue synthesis"))
+        # 工程模式：改完只重跑对齐+合成出新成品；流水线模式：继续合成
+        self.continue_btn = QPushButton(
+            tr("flow_regenerate") if self._project_mode else tr("Continue synthesis"))
+        self.continue_btn.setObjectName('startBtn')
         self.continue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.continue_btn.setMinimumSize(300, 36)
-        self.continue_btn.clicked.connect(self._continue_synthesis)
+        self.continue_btn.clicked.connect(
+            self._regenerate if self._project_mode else self._continue_synthesis)
         bottom.addWidget(self.continue_btn)
-        cancel_btn = QPushButton(tr("Terminate this mission"))
+        cancel_btn = QPushButton(tr("Close") if self._project_mode else tr("Terminate this mission"))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setStyleSheet('background-color:transparent')
-        cancel_btn.clicked.connect(self._terminate)
+        cancel_btn.clicked.connect(self.close if self._project_mode else self._terminate)
         bottom.addWidget(cancel_btn)
         bottom.addStretch(1)
         layout.addLayout(bottom)
@@ -365,6 +382,29 @@ class DubbingStudioDialog(QDialog):
         cleanup_previews(self.cache_folder)
         self._teardown()
         self._accepting = True
+        self.accept()
+
+    def _regenerate(self):
+        """工程模式：保存编辑到工程，交由调用方跑 RealignWorker 只重对齐+合成。"""
+        pending = self.redub_queue.pending()
+        if pending:
+            ret = QMessageBox.question(
+                self, tr('Dubbing Studio'),
+                tr('{0} lines still dubbing. Wait for them to finish?').format(len(pending)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret == QMessageBox.StandardButton.Yes:
+                return
+        try:
+            from videotrans.task.project import save_queue
+            save_queue(self.project_dir, self.state.items)
+        except OSError as e:
+            logger.exception(f'保存工程 queue_tts.json 失败: {e}', exc_info=True)
+            QMessageBox.warning(self, tr('anerror'), str(e))
+            return
+        cleanup_previews(self.cache_folder)
+        self._teardown()
+        self._accepting = True
+        self.regenerate_requested.emit(self.project_dir)
         self.accept()
 
     def _terminate(self):

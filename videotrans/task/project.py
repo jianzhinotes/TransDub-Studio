@@ -74,6 +74,26 @@ def save_project(cfg, queue_tts, cache_folder: str) -> str:
     return str(proj)
 
 
+def save_queue(proj_dir: str, queue) -> None:
+    """工作台编辑后把 queue_tts 写回工程：重配产生的新 wav 收进 dubb/，filename 相对化。"""
+    proj = Path(proj_dir)
+    dubb = proj / _DUBB_DIR
+    dubb.mkdir(parents=True, exist_ok=True)
+    out = copy.deepcopy(list(queue))
+    for it in out:
+        fn = it.get('filename') if hasattr(it, 'get') else it['filename']
+        if fn and Path(fn).exists():
+            dst = dubb / Path(fn).name
+            try:
+                _copy_if_diff(fn, dst)
+                it['filename'] = f'{_DUBB_DIR}/{dst.name}'
+            except OSError:
+                it['filename'] = ''
+        else:
+            it['filename'] = ''
+    (proj / _QUEUE_JSON).write_text(json.dumps(out, ensure_ascii=False), encoding='utf-8')
+
+
 def load_project(proj_dir: str):
     """返回 (project_dict, queue_tts)：queue_tts 的 filename 还原为绝对路径。"""
     proj = Path(proj_dir)

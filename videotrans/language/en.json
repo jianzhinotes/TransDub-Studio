@@ -837,5 +837,6 @@
     "Checking GPUs...": "Checking GPUs…",
     "flow_options": "Options",
     "flow_result_output": "Result",
-    "flow_result_source": "Original"
+    "flow_result_source": "Original",
+    "flow_regenerate": "Regenerate"
 }

@@ -837,5 +837,6 @@
     "Checking GPUs...": "正在检测 GPU…",
     "flow_options": "选项",
     "flow_result_output": "成品",
-    "flow_result_source": "原片"
+    "flow_result_source": "原片",
+    "flow_regenerate": "重新生成成品"
 }
