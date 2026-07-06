@@ -1,19 +1,21 @@
-"""工作区页：左侧常驻视频预览 + 右侧栈（配置/进度）三态切换。
+"""工作区页：导入→配置→处理→内嵌编辑工作台→导出，一体连贯（ElevenLabs 式）。
 
-视频画面贯穿导入→配置→处理→完成全程；开始处理时右栈原地切到进度视图，
-视频不销毁（可继续拖看），符合剪映/ElevenLabs 的单工作区体验。
+顶层 QStackedWidget：
+  normal 视图 = 左视频预览 + 右栈（配置 / 进度）
+  editing 视图 = 全区内嵌的配音/字幕校对工作台（非弹窗）
+处理完成后自动进入编辑工作台校对，「导出成品」只重跑对齐+合成，「返回」回到完成态。
 """
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QHBoxLayout, QMessageBox, QStackedWidget, QVBoxLayout, QWidget,
+)
 
 from videotrans.configure.config import tr
 from videotrans.flowui.config_page import ConfigPage
 from videotrans.flowui.progress_page import ProgressPage
 from videotrans.flowui.video_preview_panel import VideoPreviewPanel
-
-# 会自带视频画面、需要隐藏背景预览以免叠加的编辑/对齐对话框消息
-_EDIT_TYPES = {'edit_dubbing', 'edit_subtitle_source', 'edit_subtitle_target',
-               'edit_recogn2_subtitle'}
 
 
 class WorkspacePage(QWidget):
@@ -23,22 +25,28 @@ class WorkspacePage(QWidget):
         super().__init__(parent)
         self.flow = flow
         self.setObjectName('pageWorkspace')
+        self._realign = None
+        self._editor = None
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._top = QStackedWidget()
+        outer.addWidget(self._top)
 
+        # normal 视图：左预览 + 右栈
+        self._normal = QWidget()
+        nlay = QHBoxLayout(self._normal)
+        nlay.setContentsMargins(0, 0, 0, 0)
+        nlay.setSpacing(0)
         self.preview = VideoPreviewPanel()
-        layout.addWidget(self.preview, stretch=52)
-
+        nlay.addWidget(self.preview, stretch=52)
         self.right_stack = QStackedWidget()
         self.config_page = ConfigPage(flow=flow)
         self.progress_page = ProgressPage(flow=flow)
         self.right_stack.addWidget(self.config_page)
         self.right_stack.addWidget(self.progress_page)
-        layout.addWidget(self.right_stack, stretch=48)
-
-        self._realign = None
+        nlay.addWidget(self.right_stack, stretch=48)
+        self._top.addWidget(self._normal)   # index 0
 
         # 态切换接线
         self.config_page.started.connect(self.show_processing)
@@ -49,6 +57,7 @@ class WorkspacePage(QWidget):
 
     # ---- 载入 ----
     def load(self, files: list):
+        self._top.setCurrentWidget(self._normal)
         self.preview.load(files)
         self.config_page.load(files)
         self.show_configure()
@@ -56,35 +65,29 @@ class WorkspacePage(QWidget):
     def set_workers_ready(self, ready: bool):
         self.config_page.set_workers_ready(ready)
 
-    # ---- 三态 ----
+    # ---- normal 视图三态 ----
     def show_configure(self):
+        self._top.setCurrentWidget(self._normal)
         self.right_stack.setCurrentWidget(self.config_page)
 
     def show_processing(self):
+        self._top.setCurrentWidget(self._normal)
         self.right_stack.setCurrentWidget(self.progress_page)
 
     def show_done(self):
-        # 进度页 TaskCard 自带完成态（打开文件夹/时间轴预览），右栈保持进度视图
+        self._top.setCurrentWidget(self._normal)
         self.right_stack.setCurrentWidget(self.progress_page)
 
     # ---- 任务消息（FlowWidget 把 win_action.flow_observer 指向这里） ----
     def on_message(self, uuid: str, d: dict):
         t = d.get('type')
-        # 编辑/对齐等对话框会自带视频画面；macOS 的 QVideoWidget 是原生层，
-        # 背景预览视频会穿透到对话框上层形成叠加，故弹窗前隐藏背景预览，其余消息恢复
-        if t in _EDIT_TYPES:
-            self.preview.set_video_hidden(True)
-        elif t:
-            self.preview.set_video_hidden(False)
         self.progress_page.on_message(uuid, d)
-        if t in ('succeed', 'end'):
-            self.show_done()
-            if t == 'succeed' and uuid:
-                self._load_result(uuid)
+        if t == 'succeed' and uuid:
+            self._load_result(uuid)
+            self._enter_editing_for(uuid)   # 处理完自动进入内嵌编辑工作台校对
 
     def _load_result(self, uuid: str):
-        """任务完成后，把成品视频加载进左侧预览区（可与原片切换对比）。"""
-        from pathlib import Path
+        """把成品视频加载进左侧预览区（返回完成态时可与原片切换对比）。"""
         info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
         if not info:
             return
@@ -95,22 +98,45 @@ class WorkspacePage(QWidget):
             output = vids[-1].as_posix() if vids else None
         self.preview.show_result(source, output)
 
-    # ---- 重新编辑工程 ----
+    def _enter_editing_for(self, uuid: str):
+        from videotrans.task.project import project_dir_for
+        info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
+        if not info:
+            return
+        source, target_dir = info[0], info[1]
+        pd = project_dir_for(target_dir, Path(source).stem)
+        if Path(pd).is_dir():
+            self.show_editing(pd)
+
+    # ---- 内嵌编辑工作台 ----
     def open_editor(self, proj_dir: str):
-        """打开工作台（工程模式）编辑，改完只重跑对齐+合成。"""
-        from pathlib import Path
+        self.show_editing(proj_dir)
+
+    def show_editing(self, proj_dir: str):
         if not proj_dir or not Path(proj_dir).is_dir():
             return
-        self.preview.set_video_hidden(True)   # 弹窗自带视频，隐藏背景预览防叠加
+        self.preview.stop()
+        self._destroy_editor()
         from videotrans.component.timeline.studio import DubbingStudioDialog
-        dlg = DubbingStudioDialog(project_dir=proj_dir, parent=self)
-        dlg.regenerate_requested.connect(self._start_realign)
-        dlg.exec()
-        self.preview.set_video_hidden(False)
+        self._editor = DubbingStudioDialog(project_dir=proj_dir, embedded=True, parent=self)
+        self._editor.regenerate_requested.connect(self._start_realign)
+        self._editor.back_requested.connect(self._exit_editing)
+        self._top.addWidget(self._editor)
+        self._top.setCurrentWidget(self._editor)
 
+    def _destroy_editor(self):
+        if self._editor:
+            self._top.removeWidget(self._editor)
+            self._editor.deleteLater()
+            self._editor = None
+
+    def _exit_editing(self):
+        self._destroy_editor()
+        self.show_done()
+
+    # ---- 导出（只重跑对齐+合成） ----
     def _start_realign(self, proj_dir: str):
         from videotrans.task.realign import RealignWorker
-        from PySide6.QtWidgets import QApplication
         if self._realign and self._realign.isRunning():
             return
         QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
@@ -120,14 +146,13 @@ class WorkspacePage(QWidget):
         self._realign.start()
 
     def _on_realign_done(self, new_mp4: str):
-        from PySide6.QtWidgets import QApplication, QMessageBox
         QApplication.restoreOverrideCursor()
+        self._exit_editing()
         self.preview.set_video_hidden(False)
         self.preview.load_output(new_mp4)
         QMessageBox.information(self, tr('Dubbing Studio'), tr('flow_regenerate_done'))
 
     def _on_realign_failed(self, msg: str):
-        from PySide6.QtWidgets import QApplication, QMessageBox
         QApplication.restoreOverrideCursor()
         QMessageBox.warning(self, tr('anerror'), msg)
 

@@ -55,17 +55,21 @@ class _PreviewRebuildWorker(QThread):
 
 
 class DubbingStudioDialog(QDialog):
-    # 工程模式点"重新生成成品"时发出，携带工程目录，交由调用方跑 RealignWorker
+    # 工程模式点"导出成品"时发出，携带工程目录，交由调用方跑 RealignWorker
     regenerate_requested = Signal(str)
+    # 内嵌模式点"返回"时发出，交由外层工作区切回上一态
+    back_requested = Signal()
 
     def __init__(self, parent=None, language=None, cache_folder=None,
-                 video_path=None, source_wav=None, project_dir=None):
+                 video_path=None, source_wav=None, project_dir=None, embedded=False):
         super().__init__(parent)
         self.project_dir = project_dir
         self._project_mode = bool(project_dir)
+        self._embedded = embedded   # 内嵌进工作区（非弹窗），主按钮发信号而非 accept
         self.setWindowTitle(tr("Dubbing Studio"))
         self.setWindowIcon(QIcon(f"{ROOT_DIR}/videotrans/styles/icon.ico"))
-        self.setMinimumSize(1280, 800)
+        if not embedded:
+            self.setMinimumSize(1280, 800)
         self.setWindowFlags(Qt.WindowTitleHint | Qt.WindowSystemMenuHint
                             | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
 
@@ -163,19 +167,33 @@ class DubbingStudioDialog(QDialog):
             btn.clicked.connect(fn)
             bottom.addWidget(btn)
         bottom.addStretch(1)
-        # 工程模式：改完只重跑对齐+合成出新成品；流水线模式：继续合成
-        self.continue_btn = QPushButton(
-            tr("flow_regenerate") if self._project_mode else tr("Continue synthesis"))
+        # 内嵌编辑态：导出成品；工程弹窗：重新生成；流水线：继续合成
+        if self._embedded:
+            main_text = tr("flow_export")
+        elif self._project_mode:
+            main_text = tr("flow_regenerate")
+        else:
+            main_text = tr("Continue synthesis")
+        self.continue_btn = QPushButton(main_text)
         self.continue_btn.setObjectName('startBtn')
         self.continue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.continue_btn.setMinimumSize(300, 36)
         self.continue_btn.clicked.connect(
             self._regenerate if self._project_mode else self._continue_synthesis)
         bottom.addWidget(self.continue_btn)
-        cancel_btn = QPushButton(tr("Close") if self._project_mode else tr("Terminate this mission"))
+        if self._embedded:
+            cancel_text = tr("flow_back")
+            cancel_action = self._on_back
+        elif self._project_mode:
+            cancel_text = tr("Close")
+            cancel_action = self.close
+        else:
+            cancel_text = tr("Terminate this mission")
+            cancel_action = self._terminate
+        cancel_btn = QPushButton(cancel_text)
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setStyleSheet('background-color:transparent')
-        cancel_btn.clicked.connect(self.close if self._project_mode else self._terminate)
+        cancel_btn.clicked.connect(cancel_action)
         bottom.addWidget(cancel_btn)
         bottom.addStretch(1)
         layout.addLayout(bottom)
@@ -405,7 +423,13 @@ class DubbingStudioDialog(QDialog):
         self._teardown()
         self._accepting = True
         self.regenerate_requested.emit(self.project_dir)
-        self.accept()
+        if not self._embedded:
+            self.accept()
+
+    def _on_back(self):
+        """内嵌模式返回：停播放器、清理，交外层切态。"""
+        self._teardown()
+        self.back_requested.emit()
 
     def _terminate(self):
         ret = QMessageBox.question(
