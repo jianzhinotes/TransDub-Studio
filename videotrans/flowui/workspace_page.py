@@ -10,6 +10,10 @@ from videotrans.flowui.config_page import ConfigPage
 from videotrans.flowui.progress_page import ProgressPage
 from videotrans.flowui.video_preview_panel import VideoPreviewPanel
 
+# 会自带视频画面、需要隐藏背景预览以免叠加的编辑/对齐对话框消息
+_EDIT_TYPES = {'edit_dubbing', 'edit_subtitle_source', 'edit_subtitle_target',
+               'edit_recogn2_subtitle'}
+
 
 class WorkspacePage(QWidget):
     back_requested = Signal()
@@ -61,10 +65,17 @@ class WorkspacePage(QWidget):
 
     # ---- 任务消息（FlowWidget 把 win_action.flow_observer 指向这里） ----
     def on_message(self, uuid: str, d: dict):
+        t = d.get('type')
+        # 编辑/对齐等对话框会自带视频画面；macOS 的 QVideoWidget 是原生层，
+        # 背景预览视频会穿透到对话框上层形成叠加，故弹窗前隐藏背景预览，其余消息恢复
+        if t in _EDIT_TYPES:
+            self.preview.set_video_hidden(True)
+        elif t:
+            self.preview.set_video_hidden(False)
         self.progress_page.on_message(uuid, d)
-        if d.get('type') in ('succeed', 'end'):
+        if t in ('succeed', 'end'):
             self.show_done()
-            if d.get('type') == 'succeed' and uuid:
+            if t == 'succeed' and uuid:
                 self._load_result(uuid)
 
     def _load_result(self, uuid: str):

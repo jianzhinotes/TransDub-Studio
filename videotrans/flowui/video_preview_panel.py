@@ -112,5 +112,14 @@ class VideoPreviewPanel(QWidget):
         if 0 <= row < len(paths):
             self.player.load(paths[row])
 
+    def set_video_hidden(self, hidden: bool):
+        """隐藏/显示视频画面。编辑对话框（自带视频）弹出时隐藏，避免 macOS
+        原生视频层穿透到对话框上层形成叠加。"""
+        if hidden and not self.video_card.isHidden():
+            self.player.pause()
+            self.video_card.setVisible(False)
+        elif not hidden and self.video_card.isHidden():
+            self.video_card.setVisible(True)
+
     def stop(self):
         self.player.stop()
