@@ -838,5 +838,7 @@
     "flow_options": "Options",
     "flow_result_output": "Result",
     "flow_result_source": "Original",
-    "flow_regenerate": "Regenerate"
+    "flow_regenerate": "Regenerate",
+    "flow_reedit": "Re-edit",
+    "flow_regenerate_done": "Regenerated successfully"
 }

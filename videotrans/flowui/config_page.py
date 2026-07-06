@@ -337,10 +337,14 @@ class ConfigPage(QWidget):
         if not self.apply_to_classic_ui():
             return
 
+        from pathlib import Path as _P
+        from videotrans.task.project import project_dir_for
+        target_dir = self.flow.main.target_dir or ''
         for f in self.files:
             recent_tasks.append({
                 'video_path': f,
-                'target_dir': self.flow.main.target_dir or '',
+                'target_dir': target_dir,
+                'project_dir': project_dir_for(target_dir, _P(f).stem) if target_dir else '',
                 'source_language': self.source_lang.currentText(),
                 'target_language': self.target_lang.currentText(),
             })

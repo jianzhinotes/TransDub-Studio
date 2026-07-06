@@ -376,6 +376,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def set_ui_mode(self, mode: str):
         """mode: 'flow' | 'classic'。仅会话内切换；工具栏仅高级模式显示。"""
         is_flow = mode == 'flow'
+        # flow 模式直接出片、跳过流水线中途暂停（完成后用工作台反复编辑）；
+        # 经典模式保留中途暂停编辑
+        app_cfg.flow_no_pause = is_flow
         self.ui_stack.setCurrentIndex(0 if is_flow else 1)
         self.toolBar.setVisible(not is_flow)
         if hasattr(self, 'action_toggle_uimode'):

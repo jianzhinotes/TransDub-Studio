@@ -838,5 +838,7 @@
     "flow_options": "选项",
     "flow_result_output": "成品",
     "flow_result_source": "原片",
-    "flow_regenerate": "重新生成成品"
+    "flow_regenerate": "重新生成成品",
+    "flow_reedit": "重新编辑",
+    "flow_regenerate_done": "已重新生成成品"
 }

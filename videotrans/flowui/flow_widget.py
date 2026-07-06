@@ -27,6 +27,7 @@ class FlowWidget(QStackedWidget):
 
         self.home_page.files_chosen.connect(self.show_workspace)
         self.home_page.open_advanced.connect(lambda: self.main.set_ui_mode('classic'))
+        self.home_page.edit_requested.connect(self._open_editor_from_home)
         self.workspace.back_requested.connect(self.show_home)
 
         # 任务消息镜像（SignalHub 与 only_one uito 两条通道都经过 update_data）
@@ -40,6 +41,10 @@ class FlowWidget(QStackedWidget):
     def show_workspace(self, files: list):
         self.workspace.load(files)
         self.setCurrentIndex(PAGE_WORKSPACE)
+
+    def _open_editor_from_home(self, proj_dir: str):
+        # 跨会话：从最近任务直接打开工作台编辑（模态），不切换页面
+        self.workspace.open_editor(proj_dir)
 
     # ---- 状态 ----
     def set_workers_ready(self, ready: bool):

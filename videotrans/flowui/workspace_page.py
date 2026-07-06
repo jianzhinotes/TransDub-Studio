@@ -3,9 +3,10 @@
 视频画面贯穿导入→配置→处理→完成全程；开始处理时右栈原地切到进度视图，
 视频不销毁（可继续拖看），符合剪映/ElevenLabs 的单工作区体验。
 """
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QWidget
 
+from videotrans.configure.config import tr
 from videotrans.flowui.config_page import ConfigPage
 from videotrans.flowui.progress_page import ProgressPage
 from videotrans.flowui.video_preview_panel import VideoPreviewPanel
@@ -37,11 +38,14 @@ class WorkspacePage(QWidget):
         self.right_stack.addWidget(self.progress_page)
         layout.addWidget(self.right_stack, stretch=48)
 
+        self._realign = None
+
         # 态切换接线
         self.config_page.started.connect(self.show_processing)
         self.config_page.start_failed.connect(self.show_configure)
         self.config_page.back_requested.connect(self._on_back)
         self.progress_page.back_home.connect(self._on_back)
+        self.progress_page.editRequested.connect(self.open_editor)
 
     # ---- 载入 ----
     def load(self, files: list):
@@ -90,6 +94,42 @@ class WorkspacePage(QWidget):
             vids = sorted(Path(target_dir).glob('*.mp4'), key=lambda p: p.stat().st_mtime)
             output = vids[-1].as_posix() if vids else None
         self.preview.show_result(source, output)
+
+    # ---- 重新编辑工程 ----
+    def open_editor(self, proj_dir: str):
+        """打开工作台（工程模式）编辑，改完只重跑对齐+合成。"""
+        from pathlib import Path
+        if not proj_dir or not Path(proj_dir).is_dir():
+            return
+        self.preview.set_video_hidden(True)   # 弹窗自带视频，隐藏背景预览防叠加
+        from videotrans.component.timeline.studio import DubbingStudioDialog
+        dlg = DubbingStudioDialog(project_dir=proj_dir, parent=self)
+        dlg.regenerate_requested.connect(self._start_realign)
+        dlg.exec()
+        self.preview.set_video_hidden(False)
+
+    def _start_realign(self, proj_dir: str):
+        from videotrans.task.realign import RealignWorker
+        from PySide6.QtWidgets import QApplication
+        if self._realign and self._realign.isRunning():
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        self._realign = RealignWorker(proj_dir)
+        self._realign.succeeded.connect(self._on_realign_done)
+        self._realign.failed.connect(self._on_realign_failed)
+        self._realign.start()
+
+    def _on_realign_done(self, new_mp4: str):
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        QApplication.restoreOverrideCursor()
+        self.preview.set_video_hidden(False)
+        self.preview.load_output(new_mp4)
+        QMessageBox.information(self, tr('Dubbing Studio'), tr('flow_regenerate_done'))
+
+    def _on_realign_failed(self, msg: str):
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        QApplication.restoreOverrideCursor()
+        QMessageBox.warning(self, tr('anerror'), msg)
 
     def _on_back(self):
         self.preview.stop()

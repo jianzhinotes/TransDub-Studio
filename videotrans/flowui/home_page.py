@@ -106,6 +106,7 @@ class DropZone(QFrame):
 
 class HomePage(QWidget):
     files_chosen = Signal(list)
+    edit_requested = Signal(str)   # 最近任务里可编辑工程 → 打开工作台重新编辑
     open_advanced = Signal()
 
     def __init__(self, parent=None):
@@ -195,8 +196,11 @@ class HomePage(QWidget):
         e = item.data(Qt.ItemDataRole.UserRole)
         if not e:
             return
-        # 成功任务点击打开输出目录；其余情况若源文件仍在则重新发起
-        if e.get('status') == recent_tasks.STATUS_SUCCEED and e.get('target_dir') \
+        # 有可编辑工程 → 打开工作台重新编辑；成功任务 → 打开输出目录；否则重新发起
+        proj = e.get('project_dir')
+        if proj and Path(proj).is_dir():
+            self.edit_requested.emit(proj)
+        elif e.get('status') == recent_tasks.STATUS_SUCCEED and e.get('target_dir') \
                 and Path(e['target_dir']).is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(e['target_dir']))
         elif e.get('video_path') and Path(e['video_path']).exists():

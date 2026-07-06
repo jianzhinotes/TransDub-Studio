@@ -35,6 +35,8 @@ _STAGE_KEYS = ['flow_stage_prepare', 'flow_stage_recogn', 'flow_stage_trans',
 
 
 class TaskCard(QFrame):
+    editRequested = Signal(str)   # 携带工程目录，请求打开工作台重新编辑
+
     def __init__(self, *, uuid: str, video_path: str, target_dir: str, parent=None):
         super().__init__(parent)
         self.uuid = uuid
@@ -91,6 +93,11 @@ class TaskCard(QFrame):
         self.preview_btn.clicked.connect(self._open_preview)
         self.preview_btn.setVisible(False)
         btns.addWidget(self.preview_btn)
+        self.edit_btn = QPushButton(tr('flow_reedit'))
+        self.edit_btn.setObjectName('startBtn')
+        self.edit_btn.clicked.connect(self._on_edit)
+        self.edit_btn.setVisible(False)
+        btns.addWidget(self.edit_btn)
         layout.addLayout(btns)
 
     # ---- 状态更新 ----
@@ -139,12 +146,26 @@ class TaskCard(QFrame):
             self.set_state('✨ ' + tr('flow_status_succeed'), 'doneBanner')
             self.open_btn.setVisible(True)
             self.preview_btn.setVisible(True)
+            self.edit_btn.setVisible(bool(self._project_dir()))
         else:
             self.set_state(tr('flow_status_error'), 'errState')
             self.set_log(err)
             self.open_btn.setVisible(bool(self.target_dir))
 
     # ---- 完成态动作 ----
+    def _project_dir(self):
+        """该任务的可编辑工程目录（存在才返回）。"""
+        if not self.target_dir or not self.video_path:
+            return None
+        from videotrans.task.project import project_dir_for
+        pd = project_dir_for(self.target_dir, Path(self.video_path).stem)
+        return pd if Path(pd).is_dir() else None
+
+    def _on_edit(self):
+        pd = self._project_dir()
+        if pd:
+            self.editRequested.emit(pd)
+
     def _open_folder(self):
         if self.target_dir and Path(self.target_dir).is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.target_dir))
@@ -173,6 +194,7 @@ class TaskCard(QFrame):
 
 class ProgressPage(QWidget):
     back_home = Signal()
+    editRequested = Signal(str)   # 转发某任务卡片的"重新编辑"，携带工程目录
 
     def __init__(self, *, flow, parent=None):
         super().__init__(parent)
@@ -221,6 +243,7 @@ class ProgressPage(QWidget):
             # uuid_queue_mp4: [name, target_dir]（_actions.py create_btns 填充）
             video_path, target_dir = info[0], info[1]
         card = TaskCard(uuid=uuid, video_path=video_path or uuid, target_dir=target_dir)
+        card.editRequested.connect(self.editRequested)
         self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
         self.cards[uuid] = card
         return card
