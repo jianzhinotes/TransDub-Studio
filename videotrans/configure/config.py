@@ -613,8 +613,9 @@ class AppParams:
         default = self._get_defaults()
         if Path(self._json_path).exists():
             try:
+                from videotrans.configure.secret_store import decrypt_params
                 loaded = json.loads(Path(self._json_path).read_text(encoding='utf-8'))
-                default.update(loaded)
+                default.update(decrypt_params(loaded))
             except (OSError, json.JSONDecodeError):
                 pass
         else:
@@ -832,7 +833,9 @@ class AppParams:
 
     def _save_to_disk(self):
         try:
-            _write_with_retry(self._json_path,json.dumps(self.to_dict(), ensure_ascii=False))
+            from videotrans.configure.secret_store import encrypt_params
+            _write_with_retry(self._json_path,
+                              json.dumps(encrypt_params(self.to_dict()), ensure_ascii=False))
         except Exception as e:
             logger.exception(f'保存 params 到本地失败：{e}',exc_info=True)
     # 兼容 params['key']

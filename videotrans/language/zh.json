@@ -835,5 +835,7 @@
     "flow_star_hint": "觉得好用请到 GitHub 点个 Star 支持开发者",
     "flow_upstream_credit": "基于开源项目二次开发，特别致谢",
     "Checking GPUs...": "正在检测 GPU…",
-    "flow_options": "选项"
+    "flow_options": "选项",
+    "flow_result_output": "成品",
+    "flow_result_source": "原片"
 }

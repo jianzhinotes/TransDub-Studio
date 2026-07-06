@@ -64,6 +64,21 @@ class WorkspacePage(QWidget):
         self.progress_page.on_message(uuid, d)
         if d.get('type') in ('succeed', 'end'):
             self.show_done()
+            if d.get('type') == 'succeed' and uuid:
+                self._load_result(uuid)
+
+    def _load_result(self, uuid: str):
+        """任务完成后，把成品视频加载进左侧预览区（可与原片切换对比）。"""
+        from pathlib import Path
+        info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
+        if not info:
+            return
+        source, target_dir = info[0], info[1]
+        output = None
+        if target_dir and Path(target_dir).is_dir():
+            vids = sorted(Path(target_dir).glob('*.mp4'), key=lambda p: p.stat().st_mtime)
+            output = vids[-1].as_posix() if vids else None
+        self.preview.show_result(source, output)
 
     def _on_back(self):
         self.preview.stop()

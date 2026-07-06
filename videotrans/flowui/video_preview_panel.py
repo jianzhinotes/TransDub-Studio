@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from videotrans.component.timeline.player import PreviewPlayer
 from videotrans.component.timeline.video_overlay import VideoOverlay
+from videotrans.configure.config import tr
 from videotrans.styles import tokens
 
 _QSS = f"""
@@ -42,6 +43,7 @@ class VideoPreviewPanel(QWidget):
         self.setObjectName('previewPanel')
         self.setStyleSheet(_QSS)
         self.files = []
+        self._result_paths = None   # 完成态：[成品, 原片] 切换用
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 12, 20)
@@ -73,6 +75,7 @@ class VideoPreviewPanel(QWidget):
         layout.addWidget(self.filmstrip)
 
     def load(self, files: list):
+        self._result_paths = None
         self.files = list(files or [])
         self.filmstrip.blockSignals(True)
         self.filmstrip.clear()
@@ -85,14 +88,29 @@ class VideoPreviewPanel(QWidget):
         if self.files:
             self.player.load(self.files[0])
 
-    def _on_pick(self, row: int):
-        if 0 <= row < len(self.files):
-            self.player.load(self.files[row])
+    def show_result(self, source: str, output: str = None):
+        """完成态：缩略条切换为【成品 / 原片】，默认预览成品视频。"""
+        items = []
+        if output and Path(output).exists():
+            items.append((tr('flow_result_output'), output))
+        if source and Path(source).exists():
+            items.append((tr('flow_result_source'), source))
+        if not items:
+            return
+        self._result_paths = [p for _, p in items]
+        self.filmstrip.blockSignals(True)
+        self.filmstrip.clear()
+        for label, _ in items:
+            self.filmstrip.addItem(QListWidgetItem(label))
+        self.filmstrip.setCurrentRow(0)
+        self.filmstrip.blockSignals(False)
+        self.filmstrip.setVisible(len(items) > 1)
+        self.player.load(self._result_paths[0])
 
-    def load_output(self, path: str):
-        """完成态可加载成品视频。"""
-        if path and Path(path).exists():
-            self.player.load(path)
+    def _on_pick(self, row: int):
+        paths = self._result_paths if self._result_paths is not None else self.files
+        if 0 <= row < len(paths):
+            self.player.load(paths[row])
 
     def stop(self):
         self.player.stop()
