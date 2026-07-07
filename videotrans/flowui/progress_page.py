@@ -154,12 +154,19 @@ class TaskCard(QFrame):
 
     # ---- 完成态动作 ----
     def _project_dir(self):
-        """该任务的可编辑工程目录（存在才返回）。"""
+        """该任务的可编辑工程目录（存在才返回）。工程在输出根下的视频名子文件夹内
+        （子文件夹名带 -ext 后缀），故按视频名在根目录递归匹配同名 .tdproj。"""
         if not self.target_dir or not self.video_path:
             return None
-        from videotrans.task.project import project_dir_for
-        pd = project_dir_for(self.target_dir, Path(self.video_path).stem)
-        return pd if Path(pd).is_dir() else None
+        from videotrans.task.project import PROJECT_EXT
+        root = Path(self.target_dir)
+        if not root.is_dir():
+            return None
+        stem = Path(self.video_path).stem
+        for p in root.rglob(f'*{PROJECT_EXT}'):
+            if p.stem == stem and p.is_dir():
+                return str(p)
+        return None
 
     def _on_edit(self):
         pd = self._project_dir()

@@ -87,25 +87,23 @@ class WorkspacePage(QWidget):
             self._enter_editing_for(uuid)   # 处理完自动进入内嵌编辑工作台校对
 
     def _load_result(self, uuid: str):
-        """把成品视频加载进左侧预览区（返回完成态时可与原片切换对比）。"""
+        """把成品视频加载进左侧预览区（返回完成态时可与原片切换对比）。
+        用进度卡片的 target_dir（视频名子文件夹，非 uuid_queue_mp4 的父级目录）。"""
+        card = self.progress_page.cards.get(uuid)
         info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
-        if not info:
-            return
-        source, target_dir = info[0], info[1]
+        source = info[0] if info else ''
+        target_dir = card.target_dir if card else (info[1] if info else '')
         output = None
         if target_dir and Path(target_dir).is_dir():
-            vids = sorted(Path(target_dir).glob('*.mp4'), key=lambda p: p.stat().st_mtime)
+            vids = sorted(Path(target_dir).rglob('*.mp4'), key=lambda p: p.stat().st_mtime)
             output = vids[-1].as_posix() if vids else None
         self.preview.show_result(source, output)
 
     def _enter_editing_for(self, uuid: str):
-        from videotrans.task.project import project_dir_for
-        info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
-        if not info:
-            return
-        source, target_dir = info[0], info[1]
-        pd = project_dir_for(target_dir, Path(source).stem)
-        if Path(pd).is_dir():
+        # 复用进度卡片计算的工程目录（其 target_dir 是正确的视频名子文件夹）
+        card = self.progress_page.cards.get(uuid)
+        pd = card._project_dir() if card else None
+        if pd:
             self.show_editing(pd)
 
     # ---- 内嵌编辑工作台 ----
