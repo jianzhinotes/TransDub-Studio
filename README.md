@@ -12,11 +12,34 @@ Author: **jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail
 
 ## What is TransDub Studio?
 
-**TransDub Studio** is a downstream customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), rebuilt around a modern, CapCut/ElevenLabs-style workflow for AI video translation, subtitle translation, voice cloning, and dubbing.
-
-It keeps the original pyVideoTrans pipeline:
+**TransDub Studio** is a customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), rebuilt around a modern, CapCut/ElevenLabs-style workflow for AI video translation, subtitle translation, voice cloning, and dubbing — but running **on your own machine**.
 
 `speech recognition → subtitle translation → AI dubbing / voice cloning → audio-video synthesis`
+
+## 🚀 Why TransDub Studio — vs CapCut & ElevenLabs
+
+The polished editing experience of CapCut and ElevenLabs, but **local, private, and free** — your video and voice never have to leave your computer.
+
+| | **TransDub Studio** | CapCut (剪映) | ElevenLabs |
+|---|:---:|:---:|:---:|
+| **Runs locally / offline** | ✅ full pipeline can run 100% local | ☁️ cloud only | ☁️ cloud only |
+| **Cost** | ✅ **free** local stack, or bring-your-own API | membership + dubbing limits | pay-per-character |
+| **Length / watermark limits** | none | yes | quota-limited |
+| **Data privacy** | ✅ stays on your machine | uploaded to cloud | uploaded to cloud |
+| **Voice cloning** | ✅ F5-TTS, local | limited | ✅ cloud |
+| **Channel choice** | ✅ 79 recognition/translation/TTS channels, mix & match | fixed | fixed |
+| **Per-line dubbing edit** | ✅ | limited | ✅ |
+| **Timeline proofreading** | ✅ | ✅ | ✅ |
+| **Open source / customizable** | ✅ GPL-3.0 | ❌ | ❌ |
+
+**Key advantages**
+
+- **🔒 Local & private.** Recognition (faster-whisper), translation (local LLM / offline models), and voice cloning (F5-TTS) can all run offline. Nothing is uploaded unless *you* pick a cloud API. CapCut and ElevenLabs always send your media to their servers.
+- **💰 Free, no limits.** A fully free stack — faster-whisper + Google/local-LLM translation + Edge-TTS — costs nothing, has **no subscription, no watermark, no length or quota caps**. ElevenLabs bills per character/minute; CapCut gates dubbing behind membership and time limits.
+- **🎛 Your choice of engines.** 79 channels across recognition / translation / TTS. Free local, DeepSeek, OpenAI, Gemini, DeepL, ElevenLabs, Azure… mix them however you like — not locked to one vendor.
+- **✂️ Best of both editors.** CapCut-style step-by-step proofreading (fix the transcript, then the translation, then the dubbing) **and** ElevenLabs-style per-line editing (edit source/translation, swap voices, re-dub, drag the timeline) — in one inline workspace, no popups.
+- **♻️ Reopenable projects.** Every finished job is saved as a local project you can reopen anytime to re-edit and re-export — and it only re-runs alignment + merge, not the whole pipeline (no repeated API cost).
+- **🖥 Native app experience.** Rebranded macOS `.app`, encrypted local API-key storage, remembered settings, and a classic Advanced Mode for batch processing and every parameter.
 
 ## ✨ The new Flow UI (default)
 
