@@ -212,20 +212,21 @@ class SubtitleTrack(_BaseTrack):
         it = self._items[idx]
         x0 = self._scale.ms_to_x(int(it['start_time']))
         x1 = self._scale.ms_to_x(int(it['end_time']))
-        return QRectF(x0, 4.0, max(x1 - x0, 2.0), self.height() - 8.0)
+        # 最小 8px：短句也留出可见、可点的块宽
+        return QRectF(x0, 4.0, max(x1 - x0, 8.0), self.height() - 8.0)
 
     def _index_at(self, pos) -> int:
-        # 一列只有一个字幕块，按 x 命中即可（不要求 y 落在块内，便于点选整块）
+        # 一列一个字幕块，只按 x 命中（不判 y）；短块很窄时就近选中最近的块
         x = pos.x()
+        best_idx, best_dist = -1, 1e9
         for idx in range(len(self._items)):
             r = self._block_rect(idx)
-            if r.right() < 0:
-                continue
-            if r.left() > self.width():
-                break
             if r.left() <= x <= r.right():
                 return idx
-        return -1
+            dist = min(abs(x - r.left()), abs(x - r.right()))
+            if dist < best_dist:
+                best_dist, best_idx = dist, idx
+        return best_idx if best_idx >= 0 and best_dist <= 12 else -1
 
     def _paint_content(self, painter: QPainter):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
