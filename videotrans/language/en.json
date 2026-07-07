@@ -841,5 +841,10 @@
     "flow_regenerate": "Regenerate",
     "flow_reedit": "Re-edit",
     "flow_regenerate_done": "Regenerated successfully",
-    "flow_export": "Export"
+    "flow_export": "Export",
+    "flow_proof_source": "Proofread transcript",
+    "flow_proof_target": "Proofread translation",
+    "flow_proof_hint": "Review and edit each line, then click Next to continue",
+    "flow_proof_next": "Next",
+    "flow_retranslate": "Retranslate"
 }

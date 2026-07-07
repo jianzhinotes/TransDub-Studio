@@ -59,6 +59,8 @@ class DubbingStudioDialog(QDialog):
     regenerate_requested = Signal(str)
     # 内嵌模式点"返回"时发出，交由外层工作区切回上一态
     back_requested = Signal()
+    # 内嵌中途配音校对点"下一步"时发出，交由外层继续流水线
+    proof_done = Signal()
 
     def __init__(self, parent=None, language=None, cache_folder=None,
                  video_path=None, source_wav=None, project_dir=None, embedded=False):
@@ -167,9 +169,11 @@ class DubbingStudioDialog(QDialog):
             btn.clicked.connect(fn)
             bottom.addWidget(btn)
         bottom.addStretch(1)
-        # 内嵌编辑态：导出成品；工程弹窗：重新生成；流水线：继续合成
-        if self._embedded:
+        # 内嵌工程重编辑：导出成品；内嵌中途配音校对：下一步；工程弹窗：重新生成；流水线：继续合成
+        if self._embedded and self._project_mode:
             main_text = tr("flow_export")
+        elif self._embedded:
+            main_text = tr("flow_proof_next")
         elif self._project_mode:
             main_text = tr("flow_regenerate")
         else:
@@ -400,7 +404,11 @@ class DubbingStudioDialog(QDialog):
         cleanup_previews(self.cache_folder)
         self._teardown()
         self._accepting = True
-        self.accept()
+        if self._embedded:
+            # 内嵌中途配音校对：不 accept，发信号交外层继续流水线
+            self.proof_done.emit()
+        else:
+            self.accept()
 
     def _regenerate(self):
         """工程模式：保存编辑到工程，交由调用方跑 RealignWorker 只重对齐+合成。"""

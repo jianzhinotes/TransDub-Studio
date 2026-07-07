@@ -27,6 +27,7 @@ class WorkspacePage(QWidget):
         self.setObjectName('pageWorkspace')
         self._realign = None
         self._editor = None
+        self._proof = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -81,10 +82,14 @@ class WorkspacePage(QWidget):
     # ---- 任务消息（FlowWidget 把 win_action.flow_observer 指向这里） ----
     def on_message(self, uuid: str, d: dict):
         t = d.get('type')
+        # 分步内嵌校对：识别后/翻译后/二次识别后校字幕，配音后校对齐
+        if t in ('edit_subtitle_source', 'edit_subtitle_target',
+                 'edit_recogn2_subtitle', 'edit_dubbing'):
+            self._enter_proof(t, d)
+            return
         self.progress_page.on_message(uuid, d)
         if t == 'succeed' and uuid:
             self._load_result(uuid)
-            self._enter_editing_for(uuid)   # 处理完自动进入内嵌编辑工作台校对
 
     def _load_result(self, uuid: str):
         """把成品视频加载进左侧预览区（返回完成态时可与原片切换对比）。
@@ -98,6 +103,73 @@ class WorkspacePage(QWidget):
             vids = sorted(Path(target_dir).rglob('*.mp4'), key=lambda p: p.stat().st_mtime)
             output = vids[-1].as_posix() if vids else None
         self.preview.show_result(source, output)
+
+    # ---- 分步内嵌校对 ----
+    def _enter_proof(self, mtype: str, d: dict):
+        from videotrans.configure.config import app_cfg
+        wa = self.flow.win_action
+        if mtype == 'edit_dubbing':
+            # 配音校对：内嵌配音工作台（时间轴/卡片/重配/A-B）
+            parts = d['text'].split('<|>')
+            cache_folder = parts[0]
+            language = parts[1] if len(parts) > 1 else ''
+            video_path = parts[2] if len(parts) > 2 and parts[2] else None
+            source_wav = parts[3] if len(parts) > 3 and parts[3] else None
+            self.preview.stop()
+            self._destroy_editor()
+            from videotrans.component.timeline.studio import DubbingStudioDialog
+            self._editor = DubbingStudioDialog(
+                cache_folder=cache_folder, language=language, video_path=video_path,
+                source_wav=source_wav, embedded=True, parent=self)
+            # 内嵌配音校对：主按钮"下一步"继续流水线（保存 queue_tts.json 已在 studio 内）
+            self._editor.proof_done.connect(self._resume_pipeline)
+            self._editor.back_requested.connect(self._terminate_pipeline)
+            self._top.addWidget(self._editor)
+            self._top.setCurrentWidget(self._editor)
+            return
+
+        # 字幕/译文校对
+        from videotrans.flowui.inline_subtitle_editor import (
+            InlineSubtitleEditor, MODE_SOURCE, MODE_TARGET)
+        self._destroy_proof()
+        if mtype == 'edit_subtitle_source':
+            self._proof = InlineSubtitleEditor(
+                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_source_sub)
+        elif mtype == 'edit_recogn2_subtitle':
+            self._proof = InlineSubtitleEditor(
+                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_target_sub)
+        else:  # edit_subtitle_target
+            main = self.flow.main
+            self._proof = InlineSubtitleEditor(
+                mode=MODE_TARGET, sub_path=app_cfg.onlyone_target_sub,
+                source_sub=app_cfg.onlyone_source_sub if app_cfg.onlyone_trans else None,
+                translate_type=main.translate_type.currentIndex(),
+                source_code=main.source_language.currentText(),
+                target_code=main.target_language.currentText())
+        self._proof.proofDone.connect(self._resume_pipeline)
+        self._proof.proofTerminate.connect(self._terminate_pipeline)
+        self._top.addWidget(self._proof)
+        self._top.setCurrentWidget(self._proof)
+
+    def _destroy_proof(self):
+        p = getattr(self, '_proof', None)
+        if p:
+            self._top.removeWidget(p)
+            p.deleteLater()
+            self._proof = None
+
+    def _resume_pipeline(self):
+        """校对完：结束 worker 的 countdown 等待，切回进度态。"""
+        self._destroy_proof()
+        self._destroy_editor()
+        self.show_processing()
+        self.flow.win_action.set_djs_timeout()
+
+    def _terminate_pipeline(self):
+        self._destroy_proof()
+        self._destroy_editor()
+        self.flow.win_action.update_status('stop')
+        self.show_processing()
 
     def _enter_editing_for(self, uuid: str):
         # 复用进度卡片计算的工程目录（其 target_dir 是正确的视频名子文件夹）

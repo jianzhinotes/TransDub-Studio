@@ -841,5 +841,10 @@
     "flow_regenerate": "重新生成成品",
     "flow_reedit": "重新编辑",
     "flow_regenerate_done": "已重新生成成品",
-    "flow_export": "导出成品"
+    "flow_export": "导出成品",
+    "flow_proof_source": "校对识别字幕",
+    "flow_proof_target": "校对翻译译文",
+    "flow_proof_hint": "逐句检查并修改，满意后点「下一步」继续",
+    "flow_proof_next": "下一步",
+    "flow_retranslate": "重译"
 }

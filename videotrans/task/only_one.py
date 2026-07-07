@@ -49,7 +49,7 @@ class Worker(QThread):
             if self._exit(): return
             self._post(text=Path(trk.cfg.source_sub).read_text(encoding='utf-8'), type='replace_subtitle')
 
-            if float(settings.get('countdown_sec', 0)) > 0 and not getattr(app_cfg, 'flow_no_pause', False):
+            if float(settings.get('countdown_sec', 0)) > 0:
                 app_cfg.set_countdown(86400)
                 # 等待修改识别出的字幕
                 self._post(text=trk.cfg.source_sub, type='edit_subtitle_source')
@@ -72,7 +72,7 @@ class Worker(QThread):
             if trk.should_dubbing:
 
                 self._post(text=Path(trk.cfg.target_sub).read_text(encoding='utf-8'), type='replace_subtitle')
-                if float(settings.get('countdown_sec', 0)) > 0 and not getattr(app_cfg, 'flow_no_pause', False):
+                if float(settings.get('countdown_sec', 0)) > 0:
                     app_cfg.set_countdown(86400)
                     # 传递过去临时目录，用于获取 speaker.json，等待修改待配音的字幕
                     self._post(text=f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}<|>{trk.cfg.tts_type}', type="edit_subtitle_target")
@@ -85,7 +85,7 @@ class Worker(QThread):
                 if self._exit(): return
                 trk.dubbing()
 
-                if not trk.ignore_align and float(settings.get('countdown_sec', 0)) > 0 and not getattr(app_cfg, 'flow_no_pause', False):
+                if not trk.ignore_align and float(settings.get('countdown_sec', 0)) > 0:
                     for it in trk.queue_tts:
                         if self._exit(): return
                         # 当前配音时长,0=不存在配音文件
@@ -133,7 +133,7 @@ class Worker(QThread):
 
             if self._exit(): return
             trk.recogn2pass()
-            if trk.should_recogn2 and not getattr(app_cfg, 'flow_no_pause', False):
+            if trk.should_recogn2:
                 app_cfg.set_countdown(86400)
                 # 等待修改二次识别出的字幕
                 self._post(text=f'{trk.cfg.target_sub}', type="edit_recogn2_subtitle")

@@ -723,6 +723,13 @@ class WinAction(WinActionBase):
             self.main.retrybtn.setVisible(True if self.retry_queue_mp4 else False)
             return
 
+        # flow 模式：四个校对暂停点由工作区内嵌处理（flow_observer 已在本方法顶部接管），
+        # 这里不再弹窗；经典模式继续走下面的弹窗
+        if getattr(app_cfg, 'flow_inline_edit', False) and d['type'] in (
+                'edit_dubbing', 'edit_subtitle_source', 'edit_recogn2_subtitle',
+                'edit_subtitle_target'):
+            return
+
         if d['type'] == 'edit_dubbing':
             # 防御式解析：后两段(视频路径/原声wav)为可选，兼容旧格式消息
             parts = d['text'].split('<|>')
