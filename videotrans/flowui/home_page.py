@@ -187,18 +187,30 @@ class HomePage(QWidget):
             key, _color = self._STATUS_TEXT.get(e.get('status'), ('flow_status_running', '#f39c12'))
             when = time.strftime('%m-%d %H:%M', time.localtime(e.get('ts', 0)))
             label = f"{name}   →{e.get('target_language', '')}   {when}   [{tr(key)}]"
+            # 有可重开工程的任务，明确标注可点击重新编辑
+            editable = bool(self._find_project(e))
+            if editable:
+                label += f"   ✏️ {tr('flow_reedit')}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, e)
-            item.setToolTip(e.get('video_path', ''))
+            item.setToolTip(tr('flow_reedit_hint') if editable else e.get('video_path', ''))
             self.recent_list.addItem(item)
+
+    def _find_project(self, e) -> str:
+        # 优先用回填的真实工程路径；否则在输出目录按视频名实时查找（兜底）
+        proj = e.get('project_dir')
+        if proj and Path(proj).is_dir():
+            return proj
+        from videotrans.task.project import find_project
+        return find_project(e.get('target_dir', ''), Path(e.get('video_path', '')).stem)
 
     def _on_recent_clicked(self, item):
         e = item.data(Qt.ItemDataRole.UserRole)
         if not e:
             return
         # 有可编辑工程 → 打开工作台重新编辑；成功任务 → 打开输出目录；否则重新发起
-        proj = e.get('project_dir')
-        if proj and Path(proj).is_dir():
+        proj = self._find_project(e)
+        if proj:
             self.edit_requested.emit(proj)
         elif e.get('status') == recent_tasks.STATUS_SUCCEED and e.get('target_dir') \
                 and Path(e['target_dir']).is_dir():

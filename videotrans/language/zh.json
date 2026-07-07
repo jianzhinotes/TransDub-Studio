@@ -846,5 +846,6 @@
     "flow_proof_target": "校对翻译译文",
     "flow_proof_hint": "逐句检查并修改，满意后点「下一步」继续",
     "flow_proof_next": "下一步",
-    "flow_retranslate": "重译"
+    "flow_retranslate": "重译",
+    "flow_reedit_hint": "点击即可重新编辑该任务（改字幕/译文/配音后重新导出）"
 }

@@ -90,6 +90,15 @@ class WorkspacePage(QWidget):
         self.progress_page.on_message(uuid, d)
         if t == 'succeed' and uuid:
             self._load_result(uuid)
+            self._backfill_project_dir(uuid)
+
+    def _backfill_project_dir(self, uuid: str):
+        """完成后把真实工程目录回填进最近任务，供下次从首页重新打开编辑。"""
+        card = self.progress_page.cards.get(uuid)
+        pd = card._project_dir() if card else None
+        if pd:
+            from videotrans.flowui import recent_tasks
+            recent_tasks.update_fields(card.video_path, project_dir=pd)
 
     def _load_result(self, uuid: str):
         """把成品视频加载进左侧预览区（返回完成态时可与原片切换对比）。

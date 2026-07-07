@@ -53,12 +53,17 @@ def append(entry: dict, path: str = None) -> list:
 
 
 def update_status(video_path: str, status: str, path: str = None) -> None:
+    update_fields(video_path, path=path, status=status)
+
+
+def update_fields(video_path: str, path: str = None, **fields) -> None:
+    """更新某条最近任务的任意字段（如 status、project_dir）。"""
     path = path or _default_path()
     entries = load(path)
     changed = False
     for e in entries:
         if e.get('video_path') == video_path:
-            e['status'] = status
+            e.update(fields)
             changed = True
     if changed:
         try:

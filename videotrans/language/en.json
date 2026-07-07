@@ -846,5 +846,6 @@
     "flow_proof_target": "Proofread translation",
     "flow_proof_hint": "Review and edit each line, then click Next to continue",
     "flow_proof_next": "Next",
-    "flow_retranslate": "Retranslate"
+    "flow_retranslate": "Retranslate",
+    "flow_reedit_hint": "Click to re-edit this task (subtitles/translation/dubbing, then re-export)"
 }

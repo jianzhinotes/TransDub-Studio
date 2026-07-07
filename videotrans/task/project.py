@@ -27,6 +27,19 @@ def project_dir_for(target_dir: str, noextname: str) -> str:
     return str(Path(target_dir) / f'{noextname}{PROJECT_EXT}')
 
 
+def find_project(root_dir: str, video_stem: str) -> str:
+    """在输出根目录下按视频名递归查找工程（工程实际在 {视频名}-{ext}/ 子文件夹内）。"""
+    if not root_dir:
+        return None
+    root = Path(root_dir)
+    if not root.is_dir():
+        return None
+    for p in root.rglob(f'*{PROJECT_EXT}'):
+        if p.is_dir() and p.stem == video_stem:
+            return str(p)
+    return None
+
+
 def _copy_if_diff(src, dst):
     if Path(src).resolve() != Path(dst).resolve():
         shutil.copy2(src, dst)
