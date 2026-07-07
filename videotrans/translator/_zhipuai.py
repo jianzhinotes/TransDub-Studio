@@ -8,7 +8,7 @@ class ZhipuAI(OpenAICampat):
 
     def __post_init__(self):
         self.ainame ='zhipuai'
-        self.max_tokens =int(params.get('zhipu_max_token',4095))
+        self.max_tokens =int(params.get('zhipu_max_token') or 4095)
         self.model_name = params.get('zhipu_model', "glm-4.5-flash")
         self.api_url = 'https://open.bigmodel.cn/api/paas/v4/'
         self.api_key = params.get('zhipu_key', '')

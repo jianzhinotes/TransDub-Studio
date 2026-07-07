@@ -57,7 +57,7 @@ class Gemini(BaseTrans):
                 
             generate_content_config = types.GenerateContentConfig(
                 temperature=float(settings.get('aitrans_temperature',0.1)),
-                max_output_tokens=int(params.get("gemini_maxtoken",65530)),
+                max_output_tokens=int(params.get("gemini_maxtoken") or 65530),
                 safety_settings=[
                     types.SafetySetting(
                         category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
