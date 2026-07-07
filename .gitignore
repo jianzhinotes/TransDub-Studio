@@ -71,3 +71,4 @@ Thumbs.db
 
 test.py
 videotrans/recent_tasks.json
+videotrans/.secret_salt

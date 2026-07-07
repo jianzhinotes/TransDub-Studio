@@ -203,13 +203,13 @@ class DubbingStudioDialog(QDialog):
         layout.addLayout(bottom)
 
         # ---- 接线 ----
-        self.timeline.seekRequested.connect(self.player.seek)
+        self.timeline.seekRequested.connect(self._seek)
         self.timeline.blockClicked.connect(self._on_block_clicked)
         self.timeline.subtitle_track.timesEditRequested.connect(self._on_times_edited)
         self.player.positionChanged.connect(self._on_position)
         self.player.durationChanged.connect(self._on_duration)
 
-        self.cards.seekRequested.connect(self.player.seek)
+        self.cards.seekRequested.connect(self._seek)
         self.cards.playRequested.connect(self._play_single_line)
         self.cards.redubRequested.connect(self._on_redub_requested)
         self.redub_queue.started.connect(self._on_redub_started)
@@ -280,6 +280,11 @@ class DubbingStudioDialog(QDialog):
             self._duration_ms = max(self._duration_ms, int(ms))
             self.state.duration_ms = self._duration_ms
             self.timeline.scale.set_duration(self._duration_ms)
+
+    def _seek(self, ms: int):
+        # 立即移动播放头 + 高亮（不等 positionChanged，暂停态该信号可能不发）
+        self.player.seek(ms)
+        self._on_position(ms)
 
     def _on_position(self, ms: int):
         self.timeline.set_position(ms)

@@ -23,20 +23,20 @@ class EditableSubtitleTrack(SubtitleTrack):
 
     # ---- 命中检测 ----
     def _hit_test(self, pos):
-        """返回 (idx, mode)；mode ∈ 'left'|'right'|'move'|None。"""
+        """返回 (idx, mode)；mode ∈ 'left'|'right'|'move'|None。
+        一列只有一个字幕块，按 x 命中即可（不要求 y 落在块内，便于点选/拖动整块）。"""
+        x = pos.x()
         for idx in range(len(self._items)):
             r = self._block_rect(idx)
-            if r.right() < pos.x() - EDGE_PX:
+            if r.right() < x - EDGE_PX:
                 continue
-            if r.left() > pos.x() + EDGE_PX:
+            if r.left() > x + EDGE_PX:
                 break
-            if not (r.top() <= pos.y() <= r.bottom()):
-                continue
-            if abs(pos.x() - r.left()) <= EDGE_PX:
+            if abs(x - r.left()) <= EDGE_PX:
                 return idx, 'left'
-            if abs(pos.x() - r.right()) <= EDGE_PX:
+            if abs(x - r.right()) <= EDGE_PX:
                 return idx, 'right'
-            if r.contains(pos):
+            if r.left() <= x <= r.right():
                 return idx, 'move'
         return -1, None
 

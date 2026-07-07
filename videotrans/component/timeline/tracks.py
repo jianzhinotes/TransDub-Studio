@@ -215,13 +215,15 @@ class SubtitleTrack(_BaseTrack):
         return QRectF(x0, 4.0, max(x1 - x0, 2.0), self.height() - 8.0)
 
     def _index_at(self, pos) -> int:
+        # 一列只有一个字幕块，按 x 命中即可（不要求 y 落在块内，便于点选整块）
+        x = pos.x()
         for idx in range(len(self._items)):
             r = self._block_rect(idx)
             if r.right() < 0:
                 continue
             if r.left() > self.width():
                 break
-            if r.contains(pos):
+            if r.left() <= x <= r.right():
                 return idx
         return -1
 
