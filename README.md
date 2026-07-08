@@ -1,12 +1,35 @@
-# ✨ TransDub Studio
-
 <div align="center">
 
-**A CapCut/ElevenLabs-inspired AI video translation & dubbing studio**
+# ✨ TransDub Studio
 
-[中文说明](docs/README_CN.md) · [Upstream pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [License: GPL-3.0](LICENSE)
+### Turn any video into another language — transcribe, translate, clone the voice, and dub — **100% on your own machine.**
 
-Author: **jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
+A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Dubbing Studio.
+
+[![Latest release](https://img.shields.io/github/v/release/jianzhinotes/TransDub-Studio?color=2E7CF6&label=%E2%AC%87%EF%B8%8F%20download&sort=semver)](https://github.com/jianzhinotes/TransDub-Studio/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jianzhinotes/TransDub-Studio/total?color=44b556&label=downloads)](https://github.com/jianzhinotes/TransDub-Studio/releases)
+[![Stars](https://img.shields.io/github/stars/jianzhinotes/TransDub-Studio?style=flat&color=e0a94f)](https://github.com/jianzhinotes/TransDub-Studio/stargazers)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+
+**[⬇️ Download for Windows &amp; macOS](https://github.com/jianzhinotes/TransDub-Studio/releases/latest)** · [📖 中文说明](docs/README_CN.md) · [🚀 Why it's different](#why)
+
+<br>
+
+<!-- ============================================================
+     👇 DEMO GOES HERE — this is the single highest-leverage asset.
+     Record a 30–60s before/after clip (English video → Chinese dub
+     with a cloned voice), export as a GIF, save it to
+     docs/assets/demo.gif, then REPLACE the italic line below with:
+         ![TransDub Studio demo](docs/assets/demo.gif)
+     (A screen recording of the timeline dubbing studio works great too.)
+     ============================================================ -->
+
+🎬 *A 60-second demo lands here soon — meanwhile, [download it](https://github.com/jianzhinotes/TransDub-Studio/releases/latest) and try a clip in ~2 minutes.*
+
+<br>
+
+<sub>Author **jianzhinotes** · <jianzhi.notes@gmail.com> · built on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · GPL-3.0</sub>
 
 </div>
 
@@ -15,6 +38,8 @@ Author: **jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail
 **TransDub Studio** is a customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), rebuilt around a modern, CapCut/ElevenLabs-style workflow for AI video translation, subtitle translation, voice cloning, and dubbing — but running **on your own machine**.
 
 `speech recognition → subtitle translation → AI dubbing / voice cloning → audio-video synthesis`
+
+<a id="why"></a>
 
 ## 🚀 Why TransDub Studio — vs CapCut & ElevenLabs
 

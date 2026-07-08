@@ -1,12 +1,34 @@
-# ✨ TransDub Studio
-
 <div align="center">
 
-**贴近剪映 / ElevenLabs 体验的 AI 视频翻译配音工作台**
+# ✨ TransDub Studio
 
-[English](../README.md) · [原项目 pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · [许可证 GPL-3.0](../LICENSE)
+### 把任意视频转成另一种语言——识别、翻译、克隆音色、配音，**全程跑在你自己的电脑上。**
 
-作者：**jianzhinotes** · [jianzhi.notes@gmail.com](mailto:jianzhi.notes@gmail.com) · [GitHub ⭐](https://github.com/jianzhinotes/TransDub-Studio)
+**免费、本地、开源**的剪映配音 / ElevenLabs Dubbing Studio 平替。
+
+[![最新版本](https://img.shields.io/github/v/release/jianzhinotes/TransDub-Studio?color=2E7CF6&label=%E2%AC%87%EF%B8%8F%20%E4%B8%8B%E8%BD%BD&sort=semver)](https://github.com/jianzhinotes/TransDub-Studio/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/jianzhinotes/TransDub-Studio/total?color=44b556&label=downloads)](https://github.com/jianzhinotes/TransDub-Studio/releases)
+[![Stars](https://img.shields.io/github/stars/jianzhinotes/TransDub-Studio?style=flat&color=e0a94f)](https://github.com/jianzhinotes/TransDub-Studio/stargazers)
+[![许可证 GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](../LICENSE)
+![平台](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+
+**[⬇️ 下载 Windows / macOS 安装包](https://github.com/jianzhinotes/TransDub-Studio/releases/latest)** · [📖 English](../README.md) · [🚀 凭什么不一样](#why)
+
+<br>
+
+<!-- ============================================================
+     👇 演示放这里 —— 全项目最高杠杆的一块。录一段 30–60 秒的
+     原片→配音成品对比(英文视频 → 中文配音 + 音色克隆),导出成
+     GIF,存到 docs/assets/demo.gif,再把下面那行斜体替换成:
+         ![TransDub Studio 演示](assets/demo.gif)
+     (录一段时间轴配音工作台的操作也很好。)
+     ============================================================ -->
+
+🎬 *60 秒演示视频即将放这里——先[下载安装包](https://github.com/jianzhinotes/TransDub-Studio/releases/latest),两分钟就能上手试。*
+
+<br>
+
+<sub>作者 **jianzhinotes** · <jianzhi.notes@gmail.com> · 基于 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) · GPL-3.0</sub>
 
 </div>
 
@@ -15,6 +37,8 @@
 **TransDub Studio** 是基于 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) 深度重构的版本，围绕剪映/ElevenLabs 式的现代工作流重新设计了整套界面——但**跑在你自己的电脑上**。
 
 `语音识别 → 字幕翻译 → AI 配音 / 声音克隆 → 音视频合成`
+
+<a id="why"></a>
 
 ## 🚀 为什么选 TransDub Studio —— 对比剪映 / ElevenLabs
 
