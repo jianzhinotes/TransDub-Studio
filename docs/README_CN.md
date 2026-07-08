@@ -51,12 +51,34 @@
 
 经典完整界面（批量处理、全部渠道、高级参数）仍在 **工具 → 高级模式** 中。
 
-### 源码启动
+## 📦 安装（macOS）
+
+### 一键安装
+
+打开**终端**，粘贴这一行——自动安装 `uv`、克隆仓库、装好全部依赖：
 
 ```bash
-cd pyvideotrans
+curl -fsSL https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.sh | bash
+```
+
+之后每次启动：
+
+```bash
+cd ~/TransDub-Studio && uv run python sp.py
+```
+
+> 首次启动会按需下载本地识别模型（faster-whisper）。依赖和模型合计几个 GB，首次安装需要好点的网络和一点耐心——之后就完全本地运行了。
+
+### 手动安装（开发者）
+
+```bash
+git clone https://github.com/jianzhinotes/TransDub-Studio.git
+cd TransDub-Studio
+uv sync              # 首次，自动装 Python 3.10 + 依赖
 uv run python sp.py
 ```
+
+**环境要求：** macOS（Apple 芯片或 Intel），预留 5–8 GB 给依赖和模型。`uv` 会自动管理 Python 版本，无需额外安装。
 
 在此基础上，TransDub Studio 针对本地部署、DeepSeek 翻译质量、F5-TTS 原声克隆稳定性、macOS 应用体验和最终配音可靠性做了改进。
 

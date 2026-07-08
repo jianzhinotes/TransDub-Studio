@@ -53,11 +53,34 @@ The classic full-featured UI (batch processing, all 79 channels, advanced parame
 
 ### Run from source
 
+## 📦 Installation (macOS)
+
+### Quick install — one command
+
+Open **Terminal** and paste this. It installs `uv`, clones the repo, and sets up all dependencies:
+
 ```bash
-cd pyvideotrans
-uv sync            # first time only
+curl -fsSL https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.sh | bash
+```
+
+Then launch it anytime:
+
+```bash
+cd ~/TransDub-Studio && uv run python sp.py
+```
+
+> First launch downloads the local recognition model (faster-whisper) on demand. Dependencies + models take a few GB, so the first setup needs a good connection and some patience — after that it runs fully local.
+
+### Manual (developers)
+
+```bash
+git clone https://github.com/jianzhinotes/TransDub-Studio.git
+cd TransDub-Studio
+uv sync              # first time only, installs Python 3.10 + deps
 uv run python sp.py
 ```
+
+**Requirements:** macOS (Apple Silicon or Intel), ~5–8 GB free for dependencies and models. `uv` manages the Python version for you — nothing else to install.
 
 ## Major improvements over the upstream project
 
