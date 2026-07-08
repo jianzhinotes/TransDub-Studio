@@ -43,7 +43,8 @@ class FlowWidget(QStackedWidget):
         self.setCurrentIndex(PAGE_WORKSPACE)
 
     def _open_editor_from_home(self, proj_dir: str):
-        # 跨会话：从最近任务直接打开工作台编辑（模态），不切换页面
+        # 从最近任务打开内嵌编辑工作台：先切到工作区页再进编辑态，否则用户仍停在首页看不到
+        self.setCurrentIndex(PAGE_WORKSPACE)
         self.workspace.open_editor(proj_dir)
 
     # ---- 状态 ----
