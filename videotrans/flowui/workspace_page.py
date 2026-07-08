@@ -194,7 +194,8 @@ class WorkspacePage(QWidget):
     def show_editing(self, proj_dir: str):
         if not proj_dir or not Path(proj_dir).is_dir():
             return
-        self.preview.stop()
+        # 解绑工作区预览的视频层，避免与工作台的 QVideoWidget 在 macOS 冲突段错误
+        self.preview.release_video()
         self._destroy_editor()
         from videotrans.component.timeline.studio import DubbingStudioDialog
         self._editor = DubbingStudioDialog(project_dir=proj_dir, embedded=True, parent=self)
@@ -211,6 +212,7 @@ class WorkspacePage(QWidget):
 
     def _exit_editing(self):
         self._destroy_editor()
+        self.preview.resume_video()
         self.show_done()
 
     # ---- 导出（只重跑对齐+合成） ----

@@ -123,3 +123,20 @@ class VideoPreviewPanel(QWidget):
 
     def stop(self):
         self.player.stop()
+
+    def release_video(self):
+        """进入内嵌编辑工作台前解绑视频输出并隐藏——macOS 上两个 QVideoWidget
+        原生视频层同时活着会段错误，故编辑期间只保留工作台那一个。"""
+        try:
+            self.player.stop()
+            self.player.video_player.setVideoOutput(None)
+        except Exception:
+            pass
+        self.video_card.setVisible(False)
+
+    def resume_video(self):
+        try:
+            self.player.video_player.setVideoOutput(self.player.video_widget)
+        except Exception:
+            pass
+        self.video_card.setVisible(True)
