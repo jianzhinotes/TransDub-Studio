@@ -53,7 +53,18 @@
 
 ## 📦 安装
 
-`uv` 会自动管理 Python 3.10 运行环境，无需手动装别的。首次启动会按需下载本地识别模型（faster-whisper），之后核心流程完全本地运行。依赖和模型合计几个 GB，首次安装请给好点的网络和一点耐心。
+### 最简单 —— 下载安装器
+
+到 [**Releases**](https://github.com/jianzhinotes/TransDub-Studio/releases) 页面下载对应安装器:
+
+- **Windows:** `TransDub-Studio-Setup-<版本>.exe` → 双击,按向导走。
+- **macOS:** `TransDub-Studio-<版本>.dmg` → 打开,拖进 Applications,首次**右键 → 打开**(未签名版)。
+
+安装器很小;首次启动时下载运行环境 + 模型(几个 GB),之后完全本地运行。构建**未签名**,所以 Windows SmartScreen 会提示"更多信息 → 仍要运行",macOS 首次需要右键打开。
+
+> 更喜欢命令行,或你的版本还没发布安装器?用下面的一行命令。
+
+`uv` 会自动管理 Python 3.10 运行环境,无需手动装别的。首次启动会按需下载本地识别模型(faster-whisper),之后核心流程完全本地运行。依赖和模型合计几个 GB,首次安装请给好点的网络和一点耐心。
 
 ### macOS — 一键安装
 

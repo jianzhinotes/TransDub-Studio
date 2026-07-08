@@ -55,6 +55,17 @@ The classic full-featured UI (batch processing, all 79 channels, advanced parame
 
 ## 📦 Installation
 
+### Easiest — download an installer
+
+Grab the latest installer from the [**Releases**](https://github.com/jianzhinotes/TransDub-Studio/releases) page:
+
+- **Windows:** `TransDub-Studio-Setup-<version>.exe` → double-click, follow the wizard.
+- **macOS:** `TransDub-Studio-<version>.dmg` → open, drag to Applications, then **right-click → Open** the first time (unsigned build).
+
+The installer is small; on first launch it downloads the runtime + models (a few GB) and then runs fully local. Builds are **unsigned**, so Windows SmartScreen shows *More info → Run anyway* and macOS needs the right-click-Open once.
+
+> Prefer the command line, or no installer published yet for your version? Use the one-liners below.
+
 `uv` manages the Python 3.10 runtime for you, so there's nothing else to install by hand. First launch downloads the recognition model (faster-whisper) on demand; after that the core pipeline runs fully local. Dependencies + models take a few GB, so give the first setup a good connection and some patience.
 
 ### macOS — one command
