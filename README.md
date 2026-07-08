@@ -53,11 +53,13 @@ The classic full-featured UI (batch processing, all 79 channels, advanced parame
 
 ### Run from source
 
-## 📦 Installation (macOS)
+## 📦 Installation
 
-### Quick install — one command
+`uv` manages the Python 3.10 runtime for you, so there's nothing else to install by hand. First launch downloads the recognition model (faster-whisper) on demand; after that the core pipeline runs fully local. Dependencies + models take a few GB, so give the first setup a good connection and some patience.
 
-Open **Terminal** and paste this. It installs `uv`, clones the repo, and sets up all dependencies:
+### macOS — one command
+
+Open **Terminal** and paste:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.sh | bash
@@ -69,9 +71,23 @@ Then launch it anytime:
 cd ~/TransDub-Studio && uv run python sp.py
 ```
 
-> First launch downloads the local recognition model (faster-whisper) on demand. Dependencies + models take a few GB, so the first setup needs a good connection and some patience — after that it runs fully local.
+### Windows — one command
 
-### Manual (developers)
+Install [Git for Windows](https://git-scm.com/download/win) first, then in **PowerShell** paste:
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.ps1 | iex"
+```
+
+Then launch it anytime:
+
+```powershell
+cd $HOME\TransDub-Studio; uv run python sp.py
+```
+
+> On Windows, dependencies pull the **CUDA (GPU) build** of PyTorch. With an NVIDIA GPU + recent driver you get GPU acceleration automatically; without one it still runs on CPU (just slower). The macOS build uses the CPU/Metal PyTorch wheel.
+
+### Manual (any platform)
 
 ```bash
 git clone https://github.com/jianzhinotes/TransDub-Studio.git
@@ -80,7 +96,7 @@ uv sync              # first time only, installs Python 3.10 + deps
 uv run python sp.py
 ```
 
-**Requirements:** macOS (Apple Silicon or Intel), ~5–8 GB free for dependencies and models. `uv` manages the Python version for you — nothing else to install.
+**Requirements:** macOS (Apple Silicon or Intel) or Windows 10/11, ~5–8 GB free for dependencies and models.
 
 ## Major improvements over the upstream project
 

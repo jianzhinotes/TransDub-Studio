@@ -51,11 +51,13 @@
 
 经典完整界面（批量处理、全部渠道、高级参数）仍在 **工具 → 高级模式** 中。
 
-## 📦 安装（macOS）
+## 📦 安装
 
-### 一键安装
+`uv` 会自动管理 Python 3.10 运行环境，无需手动装别的。首次启动会按需下载本地识别模型（faster-whisper），之后核心流程完全本地运行。依赖和模型合计几个 GB，首次安装请给好点的网络和一点耐心。
 
-打开**终端**，粘贴这一行——自动安装 `uv`、克隆仓库、装好全部依赖：
+### macOS — 一键安装
+
+打开**终端**，粘贴这一行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.sh | bash
@@ -67,9 +69,23 @@ curl -fsSL https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/i
 cd ~/TransDub-Studio && uv run python sp.py
 ```
 
-> 首次启动会按需下载本地识别模型（faster-whisper）。依赖和模型合计几个 GB，首次安装需要好点的网络和一点耐心——之后就完全本地运行了。
+### Windows — 一键安装
 
-### 手动安装（开发者）
+先装 [Git for Windows](https://git-scm.com/download/win)，然后在 **PowerShell** 里粘贴：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/jianzhinotes/TransDub-Studio/main/install.ps1 | iex"
+```
+
+之后每次启动：
+
+```powershell
+cd $HOME\TransDub-Studio; uv run python sp.py
+```
+
+> Windows 上依赖会自动装 **CUDA（GPU）版 PyTorch**：有 NVIDIA 显卡 + 较新驱动就自动 GPU 加速，没有则回退 CPU（慢一些但能跑）。macOS 用的是 CPU/Metal 版。
+
+### 手动安装（任意平台）
 
 ```bash
 git clone https://github.com/jianzhinotes/TransDub-Studio.git
@@ -78,7 +94,7 @@ uv sync              # 首次，自动装 Python 3.10 + 依赖
 uv run python sp.py
 ```
 
-**环境要求：** macOS（Apple 芯片或 Intel），预留 5–8 GB 给依赖和模型。`uv` 会自动管理 Python 版本，无需额外安装。
+**环境要求：** macOS（Apple 芯片或 Intel）或 Windows 10/11，预留 5–8 GB 给依赖和模型。
 
 在此基础上，TransDub Studio 针对本地部署、DeepSeek 翻译质量、F5-TTS 原声克隆稳定性、macOS 应用体验和最终配音可靠性做了改进。
 
