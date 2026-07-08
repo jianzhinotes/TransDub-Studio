@@ -54,6 +54,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.exe
+          body_path: packaging/RELEASE_NOTES.md
 
   # ----------------------------------------------------------------- macOS ---
   macos:
@@ -81,3 +82,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.dmg
+          body_path: packaging/RELEASE_NOTES.md
