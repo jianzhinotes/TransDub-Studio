@@ -127,6 +127,12 @@ class SpeakerCard(QFrame):
     def _on_head_click(self, event):
         self.seekRequested.emit(int(self._state.items[self.idx]['start_time']))
 
+    def mousePressEvent(self, event):
+        # 点卡片任意空白处即选中并跳转到该句（译文框/下拉/按钮等子控件各自照常）
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.seekRequested.emit(int(self._state.items[self.idx]['start_time']))
+        super().mousePressEvent(event)
+
     def set_active(self, active: bool):
         border = '#2E7CF6' if active else '#2E3947'
         self.setStyleSheet(
