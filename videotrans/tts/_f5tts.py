@@ -239,16 +239,26 @@ class F5TTS(GradioBase):
                 failed = retry_failed
 
             if failed:
+                # 重试后仍可疑的段落不再终止整个任务（检测本身会误报，
+                # 例如 whisper 把中文幻听成法语/英语短句）。改为标记该行，
+                # 流程继续走到配音校对步，由用户在工作台试听后决定单句重配或放行。
+                for idx, item, transcript in failed:
+                    item["lang_leak"] = transcript[:120]
                 details = "；".join(
                     f"第 {idx + 1} 段：{transcript[:80]}"
                     for idx, _, transcript in failed[:5]
                 )
-                raise DubbingSrtError(
-                    f"F5-TTS 仍有 {len(failed)} 段混入字幕之外的英文原声，"
-                    f"已停止合成，避免输出有问题的成品。{details}"
+                logger.warning(
+                    "F5-TTS 仍有 %s 段疑似混入字幕之外的原声，已标记待人工校对：%s",
+                    len(failed), details,
                 )
-            logger.debug("F5-TTS 英文原声泄漏检查通过")
-            self.signal(text="F5-TTS 配音内容检查通过")
+                self.signal(
+                    text=f"⚠️ {len(failed)} 段配音疑似混入原声，已标记，"
+                         f"请在配音校对步试听并按需单句重配（{details}）"
+                )
+            else:
+                logger.debug("F5-TTS 英文原声泄漏检查通过")
+                self.signal(text="F5-TTS 配音内容检查通过")
         finally:
             del model
             gc.collect()

@@ -96,6 +96,8 @@ class RedubQueue(QObject):
                     seconds = 0.0
             except Exception:
                 seconds = 0.0
+            # 人工重配视为已处理，清除自动检查打的"疑似混入原声"标记
+            item.pop('lang_leak', None)
             self._state.set_dubbing_s(idx, seconds)
             self._state.mark_clean(idx)
             self.finished.emit(idx, True, '')

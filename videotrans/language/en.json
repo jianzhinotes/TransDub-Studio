@@ -847,5 +847,7 @@
     "flow_proof_hint": "Review and edit each line, then click Next to continue",
     "flow_proof_next": "Next",
     "flow_retranslate": "Retranslate",
-    "flow_reedit_hint": "Click to re-edit this task (subtitles/translation/dubbing, then re-export)"
+    "flow_reedit_hint": "Click to re-edit this task (subtitles/translation/dubbing, then re-export)",
+    "Suspected original audio": "Suspected original audio",
+    "Auto-check heard unexpected speech in this line": "Auto-check heard unexpected speech in this line"
 }

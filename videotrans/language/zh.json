@@ -847,5 +847,7 @@
     "flow_proof_hint": "逐句检查并修改，满意后点「下一步」继续",
     "flow_proof_next": "下一步",
     "flow_retranslate": "重译",
-    "flow_reedit_hint": "点击即可重新编辑该任务（改字幕/译文/配音后重新导出）"
+    "flow_reedit_hint": "点击即可重新编辑该任务（改字幕/译文/配音后重新导出）",
+    "Suspected original audio": "疑似混入原声",
+    "Auto-check heard unexpected speech in this line": "自动检查在这句配音里听到了字幕之外的语音"
 }

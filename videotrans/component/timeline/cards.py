@@ -72,6 +72,11 @@ class SpeakerCard(QFrame):
         self.time_label.mousePressEvent = self._on_head_click
         head.addWidget(self.time_label)
         head.addStretch(1)
+        self.leak_badge = QLabel('⚠ ' + tr('Suspected original audio'))
+        self.leak_badge.setStyleSheet(
+            'color:#fff;background:#c9463d;border-radius:3px;padding:1px 6px;')
+        self.leak_badge.setVisible(False)
+        head.addWidget(self.leak_badge)
         self.dirty_badge = QLabel(tr('Needs re-dub'))
         self.dirty_badge.setStyleSheet(
             'color:#161B22;background:#e0a94f;border-radius:3px;padding:1px 6px;')
@@ -160,6 +165,11 @@ class SpeakerCard(QFrame):
             msg = f'{dubbing}s'
         self.status_label.setText(msg)
         self.status_label.setStyleSheet(f'color:{_STATUS_COLOR[kind]};')
+        leak = str(item.get('lang_leak') or '')
+        self.leak_badge.setVisible(bool(leak))
+        if leak:
+            self.leak_badge.setToolTip(
+                tr('Auto-check heard unexpected speech in this line') + f':\n{leak}')
         self.dirty_badge.setVisible(self._state.is_dirty(self.idx))
         self.text_edit.sync_text(str(item.get('text') or ''))
 
