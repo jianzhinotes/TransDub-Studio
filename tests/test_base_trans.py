@@ -75,3 +75,31 @@ class TestBaseTransRunTextChunking:
         assert len(chunks) == 4  # 10 items, 3 per chunk = 4 chunks
         assert len(chunks[0]) == 3
         assert len(chunks[-1]) == 1
+
+
+class TestDeepSeekBatchCap:
+    """长视频不能把整份字幕塞进一次请求，否则 DeepSeek 报 content too long。"""
+
+    def _deepseek(self, monkeypatch, n):
+        from videotrans.configure.config import settings
+        from videotrans.translator._deepseek import DeepSeek
+        monkeypatch.setitem(settings, "aisendsrt", True)
+        items = [_make_srt_item(f"line {i}", line=i + 1) for i in range(n)]
+        # translate_type=4 == DEEPSEEK_INDEX，令 aisendsrt 生效
+        return DeepSeek(text_list=items, translate_type=4,
+                        source_code="en", target_code="zh-cn")
+
+    def test_long_srt_is_capped(self, monkeypatch):
+        from videotrans.translator._deepseek import DEEPSEEK_SRT_BATCH
+        d = self._deepseek(monkeypatch, 800)
+        assert d.aisendsrt is True
+        assert d.trans_thread <= DEEPSEEK_SRT_BATCH  # 旧代码会是 800
+
+    def test_short_srt_single_batch(self, monkeypatch):
+        d = self._deepseek(monkeypatch, 30)
+        assert d.trans_thread == 30  # 短字幕仍一次发完，保留上下文
+
+    def test_max_tokens_not_near_context_limit(self, monkeypatch):
+        d = self._deepseek(monkeypatch, 5)
+        # 输出预留必须远小于模型上下文，否则连短字幕也被拒
+        assert d.max_tokens == 16384
