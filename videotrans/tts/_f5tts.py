@@ -83,6 +83,7 @@ class F5TTS(GradioBase):
                 candidates.append((score, ref_wav, ref_text, index, duration_ms))
         if not candidates:
             return None, None
+        candidates = self._keep_dominant_speaker(candidates)
         score, ref_wav, ref_text, index, duration_ms = min(candidates, key=lambda item: item[0])
         if ref_text[-1:] not in ".!?。！？":
             ref_text += "."
@@ -92,6 +93,35 @@ class F5TTS(GradioBase):
             index, duration_ms, score, ref_wav, ref_text
         )
         return ref_wav, ref_text
+
+    @staticmethod
+    def _keep_dominant_speaker(candidates):
+        """多说话人视频（访谈等）里只保留主讲人的片段做克隆参考。
+
+        对候选片段做声纹聚类，按说话总时长判定主讲人簇（访谈里说得最多的
+        通常就是被采访者），其余簇的片段剔除。聚类不可靠（单说话人/样本少/
+        依赖异常）时原样返回，不影响原有选择逻辑。
+        candidates 元素: (score, ref_wav, ref_text, index, duration_ms)
+        """
+        try:
+            from videotrans.util.speaker_cluster import cluster_speakers
+            labels = cluster_speakers([c[1] for c in candidates])
+            if not labels:
+                return candidates
+            totals = {}
+            for pos, label in labels.items():
+                totals[label] = totals.get(label, 0) + candidates[pos][4]
+            dominant = max(totals, key=totals.get)
+            kept = [c for pos, c in enumerate(candidates)
+                    if labels.get(pos, dominant) == dominant]
+            logger.debug(
+                "声纹聚类保留主讲人片段 %s/%s (各簇时长 %s)",
+                len(kept), len(candidates), totals,
+            )
+            return kept or candidates
+        except Exception as e:
+            logger.warning(f"声纹聚类失败,退回原候选: {e}")
+            return candidates
 
     def _exec(self) -> None:
         super()._exec()
