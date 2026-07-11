@@ -851,5 +851,6 @@
     "Suspected original audio": "Suspected original audio",
     "Auto-check heard unexpected speech in this line": "Auto-check heard unexpected speech in this line",
     "flow_fresh_run": "Fresh run (redo recognition & translation)",
-    "flow_fresh_run_tip": "Unchecked: reuse this video's previous recognition/translation results and only redo dubbing & merge. Checked: delete previous outputs for this video and start over."
+    "flow_fresh_run_tip": "Unchecked: reuse this video's previous recognition/translation results and only redo dubbing & merge. Checked: delete previous outputs for this video and start over.",
+    "Reused {} cached dubbing lines": "Reused {} cached dubbing lines"
 }

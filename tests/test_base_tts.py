@@ -72,17 +72,23 @@ class TestBaseTTSGetters:
         btts = BaseTTS(queue_tts=[{"text": "hello", "volume": "-50%"}])
         assert btts.get_volume() == 0.5
 
-    def test_get_pitch_zero_hz_returns_default(self):
-        # _cleantts normalizes 'hz' to 'Hz'; get_pitch regex [hz%] misses 'H'
+    # get_pitch 解析 '+NHz' 为数值偏移（minimaxi 等把它当半音用并钳到 ±12）。
+    # 旧断言的 1.0 是历史 bug：当时正则漏了大写 H，解析失败回退默认值。
+    def test_get_pitch_zero_hz(self):
         btts = BaseTTS(queue_tts=[{"text": "hello", "pitch": "+0Hz"}])
-        assert btts.get_pitch() == 1.0
+        assert btts.get_pitch() == 0.0
 
-    def test_get_pitch_positive_hz_returns_default(self):
+    def test_get_pitch_positive_hz(self):
         btts = BaseTTS(queue_tts=[{"text": "hello", "pitch": "+12Hz"}])
-        assert btts.get_pitch() == 1.0
+        assert btts.get_pitch() == 12.0
 
-    def test_get_pitch_negative_hz_returns_default(self):
+    def test_get_pitch_negative_hz(self):
         btts = BaseTTS(queue_tts=[{"text": "hello", "pitch": "-6Hz"}])
+        assert btts.get_pitch() == -6.0
+
+    def test_get_pitch_invalid_returns_default(self):
+        btts = BaseTTS(queue_tts=[{"text": "hello"}])
+        btts.pitch = "abc"
         assert btts.get_pitch() == 1.0
 
 

@@ -985,14 +985,18 @@ class TransCreate(BaseTask):
         if len([it.get("ref_wav") for it in self.queue_tts if it.get("ref_wav")]) > 0:
             self._create_ref_from_vocal()
 
-        # 调用配音渠道
+        # 调用配音渠道；"重新处理"(clear_cache)时不从跨运行配音缓存恢复
         run_tts(
             queue_tts=self.queue_tts,
             language=self.cfg.target_language_code,
             uuid=self.uuid,
             tts_type=self.cfg.tts_type,
-            is_cuda=self.cfg.is_cuda
+            is_cuda=self.cfg.is_cuda,
+            use_cache=not self.cfg.clear_cache
         )
+        # BaseTTS 对 queue_tts 做了 deepcopy，泄漏检查打的标记要经 sidecar 拿回来，
+        # 否则配音工作台看不到"疑似混入原声"徽标
+        self._merge_lang_leak_marks()
         # 为每条字幕保留原始配音片段
         if settings.get('save_segment_audio', False):
             outname = self.cfg.target_dir + f'/segment_audio_{self.cfg.noextname}'
@@ -1004,6 +1008,22 @@ class TransCreate(BaseTask):
                     shutil.copy2(it['filename'], name)
 
     # 多线程实现裁剪参考音频
+    def _merge_lang_leak_marks(self):
+        """把 F5 泄漏检查写的 sidecar 标记按 filename 合并回本队列。"""
+        try:
+            leak_file = Path(f'{self.cfg.cache_folder}/lang_leak.json')
+            if not leak_file.is_file():
+                return
+            marks = json.loads(leak_file.read_text(encoding='utf-8'))
+            if not isinstance(marks, dict):
+                return
+            for it in self.queue_tts:
+                m = marks.get(Path(it.get('filename') or '').name)
+                if m:
+                    it['lang_leak'] = m
+        except Exception as e:
+            logger.warning(f'合并配音泄漏标记失败,忽略: {e}')
+
     def _create_ref_from_vocal(self):
         # 保底原始音频用于克隆时参考音频
         vocal = self.cfg.source_wav

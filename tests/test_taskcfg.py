@@ -220,12 +220,12 @@ class TestTaskCfgSTT:
         cfg = TaskCfgSTT(uuid=uid, source_language_code="en")
         assert cfg.uuid == uid
         assert cfg.source_language_code == "en"
-        # STT-specific defaults
+        # STT-specific defaults（fix_punc/rephrase 均为 int 模式值：0=默认不处理）
         assert cfg.remove_noise is False
         assert cfg.enable_diariz is False
         assert cfg.nums_diariz == 0
-        assert cfg.fix_punc is False
-        assert cfg.rephrase == 2
+        assert cfg.fix_punc == 0
+        assert cfg.rephrase == 0
 
     def test_stt_specific_fields(self):
         cfg = TaskCfgSTT(
@@ -233,14 +233,14 @@ class TestTaskCfgSTT:
             model_name="large-v3-turbo",
             detect_language="en",
             remove_noise=True,
-            fix_punc=True,
+            fix_punc=1,
             rephrase=1,
         )
         assert cfg.recogn_type == 0
         assert cfg.model_name == "large-v3-turbo"
         assert cfg.detect_language == "en"
         assert cfg.remove_noise is True
-        assert cfg.fix_punc is True
+        assert cfg.fix_punc == 1
         assert cfg.rephrase == 1
 
 

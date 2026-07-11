@@ -11,7 +11,13 @@ from tenacity import RetryError
 from videotrans.configure.base import BaseCon
 from videotrans.configure.config import tr, settings, logger, ROOT_DIR
 from videotrans.configure import config
-from videotrans.util.help_misc import vail_file,pygameaudio,get_tts_type
+from videotrans.util.help_misc import vail_file,pygameaudio,get_tts_type,get_md5
+
+# 跨运行配音缓存：同一句话+同音色+同参数的合成结果直接复用，重跑不再全量重配。
+# 键含参考音频内容指纹，参考变了自动失效。
+DUBB_CACHE_DIR = f'{config.TEMP_ROOT}/dubb_cache'
+_DUBB_CACHE_MAX_AGE_S = 30 * 86400
+_dubb_cache_pruned = False
 
 """
 edge-tts 当前线程中async异步任务
@@ -57,6 +63,8 @@ class BaseTTS(BaseCon):
     api_url: str = field(default='', init=False)
     # 启用CUDA，仅 qwen3-tts-local 游戏哦啊
     is_cuda: bool = False
+    # 是否允许从跨运行配音缓存恢复（勾选"重新处理"时为 False；生成结果总是写入缓存）
+    use_cache: bool = True
 
     def __post_init__(self):
         super().__post_init__()
@@ -64,6 +72,87 @@ class BaseTTS(BaseCon):
         self.queue_tts = copy.deepcopy(self.queue_tts)
         self.len = len(self.queue_tts)
         self._cleantts()
+
+    # ---- 跨运行配音缓存 ----
+    @staticmethod
+    def _file_sig(path) -> str:
+        """音频文件内容指纹：前 1MB md5 + 大小，秒级且足够区分。"""
+        try:
+            p = Path(path)
+            if not p.is_file():
+                return ''
+            import hashlib
+            with open(p, 'rb') as f:
+                head = f.read(1 << 20)
+            return f'{hashlib.md5(head).hexdigest()}-{p.stat().st_size}'
+        except Exception:
+            return ''
+
+    def _dubb_cache_key(self, item) -> Optional[str]:
+        try:
+            payload = '|'.join(str(x) for x in [
+                self.tts_type, self.language, getattr(self, 'model_name', ''), self.api_url,
+                item.get('text', ''), item.get('role', ''),
+                item.get('rate', self.rate), item.get('volume', self.volume),
+                item.get('pitch', self.pitch), item.get('ref_text', ''),
+                self._file_sig(item.get('ref_wav', '')),
+                self._file_sig(getattr(self, 'safe_ref_wav', '') or ''),
+            ])
+            return get_md5(payload)
+        except Exception:
+            return None
+
+    def _dubb_cache_path(self, item) -> Optional[Path]:
+        key = self._dubb_cache_key(item)
+        if not key:
+            return None
+        suffix = Path(item.get('filename') or '').suffix or '.wav'
+        return Path(DUBB_CACHE_DIR) / f'{key}{suffix}'
+
+    def _dubb_cache_restore(self) -> None:
+        """_exec 前调用：命中缓存的行直接落到目标 filename，各渠道的 vail_file 跳过逻辑随即生效。"""
+        global _dubb_cache_pruned
+        import shutil
+        Path(DUBB_CACHE_DIR).mkdir(parents=True, exist_ok=True)
+        if not _dubb_cache_pruned:
+            _dubb_cache_pruned = True
+            now = time.time()
+            try:
+                for f in Path(DUBB_CACHE_DIR).iterdir():
+                    if f.is_file() and now - f.stat().st_mtime > _DUBB_CACHE_MAX_AGE_S:
+                        f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        hits = 0
+        for item in self.queue_tts:
+            if not item.get('text', '').strip() or vail_file(item.get('filename')):
+                continue
+            cache = self._dubb_cache_path(item)
+            if cache and vail_file(cache):
+                try:
+                    shutil.copy2(cache, item['filename'])
+                    hits += 1
+                except Exception as e:
+                    logger.debug(f'配音缓存恢复失败,忽略: {e}')
+        if hits:
+            logger.debug(f'配音缓存命中 {hits}/{self.len} 条')
+            self.signal(text=tr('Reused {} cached dubbing lines', hits))
+
+    def _dubb_cache_store(self) -> None:
+        """_exec 后调用：把本次成功生成且未被标记疑似泄漏的行写入缓存。"""
+        import shutil
+        try:
+            Path(DUBB_CACHE_DIR).mkdir(parents=True, exist_ok=True)
+            for item in self.queue_tts:
+                if not item.get('text', '').strip() or not vail_file(item.get('filename')):
+                    continue
+                if item.get('lang_leak'):
+                    continue
+                cache = self._dubb_cache_path(item)
+                if cache and not cache.exists():
+                    shutil.copy2(item['filename'], cache)
+        except Exception as e:
+            logger.debug(f'配音缓存写入失败,忽略: {e}')
 
     # 子类未重写 _exec()方法: run() ->_exec() ->__local_mul_thread() -> _item_task() -> _run()
     # 子类重写  _exec()方法 run() -> _exec()
@@ -76,6 +165,8 @@ class BaseTTS(BaseCon):
         if hasattr(self, '_download'):
             self.signal(text=f"Check and downloading models...")
             self._download()
+        if not self.play and not self.is_test and self.use_cache and settings.get('dubb_cache', True):
+            self._dubb_cache_restore()
         loop = None
         try:
             # edge-tts:检查 self._exec 是不是一个异步函数 (coroutine)
@@ -145,6 +236,9 @@ class BaseTTS(BaseCon):
                 raise self.error.last_attempt.exception() if isinstance(self.error, RetryError) else self.error
 
             raise DubbingSrtError(tr("Dubbing failed") + str(self.error))
+        # 成功的行写入跨运行缓存（部分成功也写，方便失败重试时命中）
+        if not self.play and not self.is_test and settings.get('dubb_cache', True):
+            self._dubb_cache_store()
         logger.debug(f'本次 {_tts_name} 配音成功 {succeed_nums} 个，失败 {self.len - succeed_nums} 个')
         self.signal(text=tr("Dubbing succeeded {}，failed {}", succeed_nums, self.len - succeed_nums))
         if self.tts_type == 8 and succeed_nums != self.len:

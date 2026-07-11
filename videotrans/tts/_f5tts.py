@@ -232,6 +232,25 @@ class F5TTS(GradioBase):
         )
         return "".join(segment.text for segment in segments).strip()
 
+    def _write_leak_sidecar(self, failed) -> None:
+        """BaseTTS 对 queue_tts 做了 deepcopy，直接改条目传不回调用方。
+        把 {文件名: 转写} 写到配音目录的 lang_leak.json，由 trans_create 合并回真正的队列。"""
+        try:
+            import json
+            marks = {}
+            for _, item, transcript in failed:
+                name = Path(item.get("filename") or "").name
+                if name:
+                    marks[name] = transcript[:120]
+            if not marks:
+                return
+            first = next((it for it in self.queue_tts if it.get("filename")), None)
+            if first:
+                sidecar = Path(first["filename"]).parent / "lang_leak.json"
+                sidecar.write_text(json.dumps(marks, ensure_ascii=False), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"写配音泄漏标记文件失败,忽略: {e}")
+
     def _verify_chinese_outputs(self) -> None:
         from faster_whisper import WhisperModel
 
@@ -283,6 +302,7 @@ class F5TTS(GradioBase):
                 # 流程继续走到配音校对步，由用户在工作台试听后决定单句重配或放行。
                 for idx, item, transcript in failed:
                     item["lang_leak"] = transcript[:120]
+                self._write_leak_sidecar(failed)
                 details = "；".join(
                     f"第 {idx + 1} 段：{transcript[:80]}"
                     for idx, _, transcript in failed[:5]

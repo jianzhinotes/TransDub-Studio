@@ -851,5 +851,6 @@
     "Suspected original audio": "疑似混入原声",
     "Auto-check heard unexpected speech in this line": "自动检查在这句配音里听到了字幕之外的语音",
     "flow_fresh_run": "重新处理（重做识别和翻译）",
-    "flow_fresh_run_tip": "不勾选：复用该视频上次的识别/翻译结果，只重做配音和合成（推荐）。勾选：删除该视频之前的输出，全部从头跑。"
+    "flow_fresh_run_tip": "不勾选：复用该视频上次的识别/翻译结果，只重做配音和合成（推荐）。勾选：删除该视频之前的输出，全部从头跑。",
+    "Reused {} cached dubbing lines": "复用缓存配音 {} 条"
 }

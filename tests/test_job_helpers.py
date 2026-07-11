@@ -1,9 +1,9 @@
 """
-Tests for videotrans/task/job.py helper functions.
+Tests for the channel-name helpers (moved from task/job.py to util/help_misc.py).
 These are pure functions that don't require Qt or heavy deps.
 """
 
-from videotrans.task.job import _get_type_name, get_recogn_type, get_tanslate_type, get_tts_type
+from videotrans.util.help_misc import _get_type_name, get_recogn_type, get_tanslate_type, get_tts_type
 
 
 class TestGetTypeName:
