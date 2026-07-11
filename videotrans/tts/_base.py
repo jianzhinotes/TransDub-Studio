@@ -97,6 +97,9 @@ class BaseTTS(BaseCon):
                 item.get('pitch', self.pitch), item.get('ref_text', ''),
                 self._file_sig(item.get('ref_wav', '')),
                 self._file_sig(getattr(self, 'safe_ref_wav', '') or ''),
+                # 渠道可通过该属性把额外的推理参数纳入键（如 F5 的 nfe/seed），
+                # 避免参数调整后仍命中旧质量的缓存
+                getattr(self, 'dubb_cache_extra', ''),
             ])
             return get_md5(payload)
         except Exception:

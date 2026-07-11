@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Union
 
 from gradio_client import  handle_file
-from videotrans.configure.config import ROOT_DIR, logger
+from videotrans.configure.config import ROOT_DIR, logger, settings
 from videotrans.configure.excepts import DubbingSrtError
 from videotrans.tts._gradio import GradioBase
 from videotrans.util.help_misc import vail_file
@@ -25,6 +25,9 @@ class F5TTS(GradioBase):
         self.ainame = "f5tts"
         super().__post_init__()
         self.safe_ref_wav, self.safe_ref_text = self._select_safe_reference()
+        # nfe/seed 影响输出音质，纳入配音缓存键，防止调参后命中旧缓存
+        self.dubb_cache_extra = (
+            f"nfe{int(settings.get('f5tts_nfe') or 32)}-seed{int(settings.get('f5tts_seed', 42))}")
 
     @staticmethod
     def _reference_text_penalty(text: str) -> int:
@@ -330,15 +333,19 @@ class F5TTS(GradioBase):
         gen_text = data_item['text'].strip()
         if gen_text[-1:] not in ".!?。！？":
             gen_text += "。"
+        # nfe: F5 默认 32 步；16 是曾经的 Apple Silicon 轻量模式（省一半时间但损失音质细节）。
+        # seed: 固定种子保证全片音色一致，逐句随机会导致音色漂移；设为负数恢复随机。
+        nfe = int(settings.get('f5tts_nfe') or 32)
+        seed = int(settings.get('f5tts_seed', 42))
         kwargs={
             "ref_audio_input":handle_file(ref_wav),
             "ref_text_input":ref_text,
             "gen_text_input":gen_text,
             "remove_silence":True,
-            "randomize_seed":True,
-            "seed_input":0,  # 开启随机后，这个数字会被忽略，填多少都行
+            "randomize_seed":seed < 0,
+            "seed_input":max(seed, 0),
             "cross_fade_duration_slider":0.0, # 默认交叉淡入淡出时长
-            "nfe_slider":16,            # Apple Silicon 轻量模式：降低发热并缩短推理时间
+            "nfe_slider":nfe,
             "speed_slider":speed_slider,
             "api_name":'/basic_tts'
         }

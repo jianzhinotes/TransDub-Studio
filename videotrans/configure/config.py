@@ -359,6 +359,10 @@ class AppSettings:
             "dubb_cache": True,
             # DeepSeek 整字幕翻译单批最大行数
             "deepseek_srt_batch": 100,
+            # F5-TTS 扩散步数：32=原始质量（默认），16=省一半时间但音质细节下降
+            "f5tts_nfe": 32,
+            # F5-TTS 随机种子：固定值保证全片音色一致；负数=逐句随机（旧行为）
+            "f5tts_seed": 42,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,
