@@ -126,6 +126,11 @@ class ConfigPage(QWidget):
         op.addWidget(self.auto_align)
         self.keep_bgm = QCheckBox(tr('flow_keep_bgm'))
         op.addWidget(self.keep_bgm)
+        # 默认不勾选 = 复用输出目录里已有的识别/翻译字幕（增量重跑，只重做配音+合成）；
+        # 勾选 = 清空该视频的输出目录和缓存，全部从头跑
+        self.fresh_run = QCheckBox(tr('flow_fresh_run'))
+        self.fresh_run.setToolTip(tr('flow_fresh_run_tip'))
+        op.addWidget(self.fresh_run)
         clay.addWidget(opt_panel)
 
         clay.addStretch(1)
@@ -324,6 +329,7 @@ class ConfigPage(QWidget):
 
         main.subtitle_type.setCurrentIndex(self.subtitle_box.currentIndex())
         main.voice_autorate.setChecked(self.auto_align.isChecked())
+        main.clear_cache.setChecked(self.fresh_run.isChecked())
         main.is_separate.setChecked(self.keep_bgm.isChecked())
         if self.keep_bgm.isChecked():
             main.embed_bgm.setChecked(True)
