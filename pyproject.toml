@@ -256,6 +256,7 @@ dependencies = [
     "elevenlabs",
     "camb-sdk",
     "brotli>=1.2.0",
+    "mlx-whisper>=0.4.3 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

@@ -351,6 +351,14 @@ class AppSettings:
         return {
             "homedir": ROOT_DIR + "/output",
             "lang": "",
+            # Apple Silicon 上用 mlx-whisper(Metal) 代替 faster-whisper 识别，实测 large-v3-turbo 约 2.4x
+            "use_mlx_whisper": False,
+            # mlx 模型仓库覆盖（默认按 mlx-community/whisper-{model_name} 推导）
+            "mlx_whisper_repo": "",
+            # 跨运行配音缓存
+            "dubb_cache": True,
+            # DeepSeek 整字幕翻译单批最大行数
+            "deepseek_srt_batch": 100,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,

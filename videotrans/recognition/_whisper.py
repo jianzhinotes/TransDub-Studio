@@ -14,6 +14,11 @@ from videotrans.process import openai_whisper, faster_whisper
 from videotrans.configure.contants import FASTER_MODELS_DICT
 from videotrans.configure.excepts import SttTimeoutError
 
+# mlx-whisper（Apple Silicon Metal 加速）的 HF 仓库名与通用命名模式不一致的特例
+_MLX_REPO_SPECIAL = {
+    'large-v3': 'mlx-community/whisper-large-v3-mlx',
+}
+
 @dataclass
 class FasterAll(BaseRecogn):
     def __post_init__(self):
@@ -26,7 +31,23 @@ class FasterAll(BaseRecogn):
         self.local_dir = local_dir
         self.audio_duration=len(AudioSegment.from_wav(self.audio_file))
         self.speech_timestamps_file=None
+        self.mlx_local_dir=None
 
+
+    # ---- mlx-whisper（可选加速后端） ----
+    def _mlx_ready(self) -> bool:
+        """settings['use_mlx_whisper'] 开启且在 Apple Silicon 上、mlx_whisper 可导入。"""
+        if self.recogn_type != 0 or not settings.get('use_mlx_whisper'):
+            return False
+        import sys, platform, importlib.util
+        return (sys.platform == 'darwin' and platform.machine() == 'arm64'
+                and importlib.util.find_spec('mlx_whisper') is not None)
+
+    def _mlx_repo(self) -> str:
+        custom = settings.get('mlx_whisper_repo')
+        if custom:
+            return custom
+        return _MLX_REPO_SPECIAL.get(self.model_name, f'mlx-community/whisper-{self.model_name}')
 
     def _exec(self)->Union[List[SrtItem], None]:
         if self._exit(): return
@@ -35,11 +56,31 @@ class FasterAll(BaseRecogn):
         if self.recogn_type == 1:  # openai-whisper
             raws = self._openai()
         else:
-            raws = self._faster()
+            raws = None
+            if self._mlx_ready() and self.mlx_local_dir:
+                try:
+                    raws = self._mlx()
+                except Exception as e:
+                    logger.warning(f'mlx-whisper 识别失败，回退 faster-whisper: {e}')
+                    raws = None
+            if not raws:
+                raws = self._faster()
         return raws
 
     def _download(self):
         if self.recogn_type == 0:
+            if self._mlx_ready():
+                repo_id = self._mlx_repo()
+                local_dir = f"{ROOT_DIR}/models/mlx--{repo_id.replace('/', '--')}"
+                try:
+                    # model_id 传 repo_id：避免命中 FASTER_MODELS_DICT 的 modelscope
+                    # 回退分支（那会把 CT2 模型下进 mlx 目录）
+                    tools.check_and_down_hf(repo_id, repo_id, local_dir,
+                                            callback=self._process_callback)
+                    self.mlx_local_dir = local_dir
+                except Exception as e:
+                    logger.warning(f'mlx-whisper 模型 {repo_id} 下载失败，将使用 faster-whisper: {e}')
+                    self.mlx_local_dir = None
             if self.model_name in FASTER_MODELS_DICT:
                 repo_id = FASTER_MODELS_DICT[self.model_name]
             else:
@@ -85,6 +126,29 @@ class FasterAll(BaseRecogn):
         raws=self._new_process(callback=openai_whisper,title=title,is_cuda=self.is_cuda,kwargs=kwargs)
         return raws
 
+
+    def _mlx(self)->Union[List[SrtItem], None]:
+        from videotrans.process.mlx_stt import mlx_whisper_fun
+        title = f"STT use mlx-whisper {self.model_name}"
+        self.signal(text=title)
+        logs_file = f'{config.TEMP_DIR}/{self.uuid}/mlx-{self.detect_language}-{time.time()}.log'
+        _max_speech = max(int(float(settings.get('max_speech_duration_s', 5)) * 1000), 2000)
+        if self.recogn2pass:
+            _max_speech = max(int(float(settings.get('max_speech_duration_s2', 2)) * 1000), 500)
+        kwargs = {
+            "detect_language": self.detect_language,
+            "model_dir": self.mlx_local_dir,
+            "logs_file": logs_file,
+            "no_speech_threshold": float(settings.get('no_speech_threshold', 0.6)),
+            "condition_on_previous_text": settings.get('condition_on_previous_text', False),
+            "speech_timestamps": self.speech_timestamps_file,
+            "audio_file": self.audio_file,
+            "jianfan": self.jianfan,
+            "temperature": settings.get('temperature'),
+            "prompt": settings.get(f'initial_prompt_{self.detect_language}') if self.detect_language != 'auto' else None,
+            "max_speech_ms": _max_speech,
+        }
+        return self._new_process(callback=mlx_whisper_fun, title=title, is_cuda=False, kwargs=kwargs)
 
     def _faster(self)->Union[List[SrtItem], None]:
         title=f"STT use {self.model_name}"
