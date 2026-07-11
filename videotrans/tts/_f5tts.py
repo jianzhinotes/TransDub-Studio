@@ -15,7 +15,10 @@ from pydub import AudioSegment
 @dataclass
 class F5TTS(GradioBase):
 
-    MAX_REF_AUDIO_MS=5000
+    # F5-TTS 参考音频越接近 6-10s 干净人声，克隆音色越像；过短(3s 级)音色明显失真。
+    # 上限 12s（F5 官方建议 <15s），选择时以 8s 为最优目标。
+    MAX_REF_AUDIO_MS=12000
+    BEST_REF_AUDIO_MS=8000
     MAX_LANGUAGE_RETRIES=2
 
     def __post_init__(self):
@@ -34,6 +37,10 @@ class F5TTS(GradioBase):
         blocked_phrases = (
             "my name is", "welcome", "subscribe", "former cia", "officer",
             "today show", "fox news", "shark tank", "amazon", "youtube",
+            # 访谈对话口癖：这类句子多半是主持人/嘉宾互相对话，容易选中
+            # 非主讲人的声音当克隆模板，导致成品音色不像
+            "as you mentioned", "as you said", "thank you", "thanks for",
+            "great question", "welcome back", "joining us",
         )
         penalty += sum(12000 for phrase in blocked_phrases if phrase in lowered)
 
@@ -68,7 +75,9 @@ class F5TTS(GradioBase):
                 if position < 0.18 or position > 0.88:
                     edge_penalty = 8000
                 position_penalty = int(abs(position - 0.5) * 2500)
-                duration_penalty = abs(duration_ms - 3600)
+                # 以 BEST_REF_AUDIO_MS(8s) 为最优：长参考音色更像，且长句
+                # 多为主讲人连续陈述，降低选中访谈另一方声音的概率
+                duration_penalty = abs(duration_ms - self.BEST_REF_AUDIO_MS)
                 text_penalty = self._reference_text_penalty(ref_text)
                 score = text_penalty + edge_penalty + position_penalty + duration_penalty
                 candidates.append((score, ref_wav, ref_text, index, duration_ms))
