@@ -87,13 +87,22 @@ class F5TTS(GradioBase):
         if not candidates:
             return None, None
         candidates = self._keep_dominant_speaker(candidates)
-        score, ref_wav, ref_text, index, duration_ms = min(candidates, key=lambda item: item[0])
+        ranked = sorted(candidates, key=lambda item: item[0])
+        score, ref_wav, ref_text, index, duration_ms = ranked[0]
         if ref_text[-1:] not in ".!?。！？":
             ref_text += "."
+        # 备选参考（同簇次优）：主参考"有毒"时（ref_text 截半句导致 F5 把参考文本
+        # 续写进大量生成结果），泄漏重试第 2 轮起换用备选，而不是在坏参考上死磕
+        self.ref_backups = []
+        for _s, w, t, _i, _d in ranked[1:]:
+            if w != ref_wav:
+                self.ref_backups.append((w, t if t[-1:] in ".!?。！？" else t + "."))
+            if len(self.ref_backups) >= 3:
+                break
         logger.debug(
             "F5-TTS 使用安全短参考音频: index=%s duration=%sms score=%s "
-            "ref_wav=%s ref_text=%s",
-            index, duration_ms, score, ref_wav, ref_text
+            "ref_wav=%s ref_text=%s 备选=%s",
+            index, duration_ms, score, ref_wav, ref_text, len(self.ref_backups)
         )
         return ref_wav, ref_text
 
@@ -290,7 +299,11 @@ class F5TTS(GradioBase):
                 retry_failed = []
                 for idx, item, old_transcript in failed:
                     Path(item["filename"]).unlink(missing_ok=True)
+                    # 标记重试轮次：_run 据此偏移种子（第 2 轮起换备选参考），
+                    # 否则固定种子下重新生成的结果与上次完全相同
+                    item['lang_leak_retry'] = retry_index + 1
                     error = self._item_task(item, idx)
+                    item.pop('lang_leak_retry', None)
                     if error or not vail_file(item["filename"]):
                         retry_failed.append((idx, item, str(error or old_transcript)))
                         continue
@@ -329,6 +342,11 @@ class F5TTS(GradioBase):
         ref_wav,ref_text=self.get_ref_wav(data_item)
         if data_item.get("role") == "clone" and self.safe_ref_wav:
             ref_wav, ref_text = self.safe_ref_wav, self.safe_ref_text
+        # 泄漏重试：第 2 轮起换备选参考——主参考自身导致大面积串音时，换参考才有救
+        retry_no = int(data_item.get('lang_leak_retry') or 0)
+        if (retry_no >= 2 and data_item.get("role") == "clone"
+                and getattr(self, 'ref_backups', None)):
+            ref_wav, ref_text = self.ref_backups[(retry_no - 2) % len(self.ref_backups)]
         speed_slider = 0.5 if ref_text  and len(ref_text) < 10 else self.get_speed()
         gen_text = data_item['text'].strip()
         if gen_text[-1:] not in ".!?。！？":
@@ -337,6 +355,9 @@ class F5TTS(GradioBase):
         # seed: 固定种子保证全片音色一致，逐句随机会导致音色漂移；设为负数恢复随机。
         nfe = int(settings.get('f5tts_nfe') or 32)
         seed = int(settings.get('f5tts_seed', 42))
+        if seed >= 0 and retry_no:
+            # 固定种子下重试必须偏移种子，否则重新生成的结果与上次完全相同，重试形同虚设
+            seed += 9973 * retry_no
         kwargs={
             "ref_audio_input":handle_file(ref_wav),
             "ref_text_input":ref_text,
