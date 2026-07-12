@@ -200,11 +200,16 @@ class SpeakerCardList(QScrollArea):
             sig.connect(self._refresh_card)
         state.dirtyChanged.connect(lambda idx, _d: self._refresh_card(idx))
 
-        # 分批建卡，避免长任务卡死打开
+        # 分批建卡，避免长任务卡死打开。定时器带 receiver 上下文：
+        # 本控件销毁后未触发的批次自动取消，不会摸到已删对象（工作台中途退出时曾崩溃）
         self._next_idx = 0
-        QTimer.singleShot(0, self._build_batch)
+        QTimer.singleShot(0, self, self._build_batch)
 
     def _build_batch(self):
+        from shiboken6 import isValid
+        if not isValid(self):
+            # 兜底：本批回调与延迟删除同 tick 触发时，receiver 取消可能来不及
+            return
         end = min(self._next_idx + _BATCH_SIZE, len(self._state.items))
         for idx in range(self._next_idx, end):
             card = SpeakerCard(idx, self._state, self._roles)
@@ -215,7 +220,7 @@ class SpeakerCardList(QScrollArea):
             self._cards[idx] = card
         self._next_idx = end
         if end < len(self._state.items):
-            QTimer.singleShot(0, self._build_batch)
+            QTimer.singleShot(0, self, self._build_batch)
 
     def card(self, idx: int):
         return self._cards.get(idx)

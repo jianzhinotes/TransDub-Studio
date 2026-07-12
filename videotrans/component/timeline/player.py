@@ -147,9 +147,13 @@ class PreviewPlayer(QObject):
         self._postering = True
         self.video_audio.setMuted(True)
         self.video_player.play()
-        QTimer.singleShot(200, self._finish_poster)
+        # receiver 上下文：播放器随编辑态销毁后，海报回调自动取消，避免摸已删对象
+        QTimer.singleShot(200, self, self._finish_poster)
 
     def _finish_poster(self):
+        from shiboken6 import isValid
+        if not isValid(self):
+            return
         self.video_player.pause()
         self._postering = False
         self.set_audio_mode(self._mode)     # 恢复正确的静音状态
