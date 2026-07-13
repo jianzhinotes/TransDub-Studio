@@ -24,7 +24,14 @@ class F5TTS(GradioBase):
     def __post_init__(self):
         self.ainame = "f5tts"
         super().__post_init__()
-        self.safe_ref_wav, self.safe_ref_text = self._select_safe_reference()
+        # 参考质检模型（tiny whisper）与泄漏检查共用；不可用则跳过回读验证
+        validator = self._load_validator()
+        try:
+            self.safe_ref_wav, self.safe_ref_text = self._select_safe_reference(validator)
+            self._build_cluster_refs(validator)
+        finally:
+            del validator
+            gc.collect()
         # nfe/seed 影响输出音质，纳入配音缓存键，防止调参后命中旧缓存
         self.dubb_cache_extra = (
             f"nfe{int(settings.get('f5tts_nfe') or 32)}-seed{int(settings.get('f5tts_seed', 42))}")
@@ -56,10 +63,50 @@ class F5TTS(GradioBase):
                 penalty += 9000
         return penalty
 
-    def _select_safe_reference(self):
+    # ---- 参考音频自动质检与构建（全自动，无需人工指定） ----
+    @staticmethod
+    def _punct_ok(text: str) -> bool:
+        return (text or "")[-1:] in ".!?。！？"
+
+    @staticmethod
+    def _ensure_punct(text: str) -> str:
+        text = (text or "").strip()
+        return text if F5TTS._punct_ok(text) else text + "."
+
+    @staticmethod
+    def _text_similarity(a: str, b: str) -> float:
+        """转写与字幕文本的相似度（跨语言鲁棒：拉丁词 + CJK 单字为 token）。"""
+        import difflib
+
+        def norm(s):
+            tokens = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?|[一-鿿]", (s or "").lower())
+            return " ".join(tokens)
+
+        na, nb = norm(a), norm(b)
+        if not na or not nb:
+            return 0.0
+        return difflib.SequenceMatcher(None, na, nb).ratio()
+
+    def _load_validator(self):
+        try:
+            from faster_whisper import WhisperModel
+            return WhisperModel(str(self._get_validator_model_path()),
+                                device="cpu", compute_type="int8")
+        except Exception as e:
+            logger.warning(f"参考质检模型不可用，跳过回读验证: {e}")
+            return None
+
+    def _collect_candidates(self, allowed=None):
+        """收集克隆参考候选并打分。allowed 为 None 时考虑全部行，否则只看指定下标。
+
+        半句文本重罚：ref_text 掐在半句上时 F5 会把参考文本"续写"进生成结果
+        （曾导致 49 段串音 "First you've got..."）。
+        """
         candidates = []
         queue_len = max(len(self.queue_tts), 1)
         for index, item in enumerate(self.queue_tts):
+            if allowed is not None and index not in allowed:
+                continue
             if item.get("role") != "clone":
                 continue
             ref_wav = item.get("ref_wav", "")
@@ -82,29 +129,142 @@ class F5TTS(GradioBase):
                 # 多为主讲人连续陈述，降低选中访谈另一方声音的概率
                 duration_penalty = abs(duration_ms - self.BEST_REF_AUDIO_MS)
                 text_penalty = self._reference_text_penalty(ref_text)
-                score = text_penalty + edge_penalty + position_penalty + duration_penalty
+                punct_penalty = 0 if self._punct_ok(ref_text) else 7000
+                score = (text_penalty + edge_penalty + position_penalty
+                         + duration_penalty + punct_penalty)
                 candidates.append((score, ref_wav, ref_text, index, duration_ms))
+        return candidates
+
+    def _validate_candidates(self, ranked, validator, need=4, max_try=8):
+        """回读验证：用 tiny whisper 把候选转写一遍，与字幕文本对不上的淘汰。
+
+        这一步专杀"文本与音频错位"的毒参考。validator 不可用时返回空列表，
+        调用方退回按分数排序的旧行为。
+        """
+        if not validator:
+            return []
+        passed = []
+        for cand in ranked[:max_try]:
+            try:
+                transcript = self._transcribe_one_for_validation(validator, cand[1])
+            except Exception as e:
+                logger.debug(f"参考回读失败,跳过候选: {e}")
+                continue
+            sim = self._text_similarity(transcript, cand[2])
+            if sim >= 0.5:
+                passed.append(cand)
+            else:
+                logger.debug(f"参考回读不匹配(sim={sim:.2f}),淘汰: {cand[2][:50]!r} vs {transcript[:50]!r}")
+            if len(passed) >= need:
+                break
+        return passed
+
+    def _compose_reference(self, pool, tag="main"):
+        """聚合式参考（ElevenLabs 思路）：主片段不足 7s 时拼接次优片段到 ~8-12s。
+
+        单一坏片段不再决定全片音色。pool 元素: (score, wav, text, index, duration_ms)。
+        返回 (wav_path, ref_text)。
+        """
+        _s, wav, text, _i, duration_ms = pool[0]
+        text = self._ensure_punct(text)
+        if duration_ms >= 7000 or len(pool) < 2:
+            return wav, text
+        try:
+            combined = AudioSegment.from_file(wav)
+            parts_text = [text]
+            for _s2, w2, t2, _i2, d2 in pool[1:]:
+                if len(combined) + d2 > self.MAX_REF_AUDIO_MS:
+                    continue
+                combined += AudioSegment.silent(duration=200) + AudioSegment.from_file(w2)
+                parts_text.append(self._ensure_punct(t2))
+                if len(combined) >= 7000:
+                    break
+            if len(parts_text) == 1:
+                return wav, text
+            out = Path(wav).parent / f"f5-composite-ref-{tag}.wav"
+            combined.export(out, format="wav")
+            logger.debug(f"F5-TTS 复合参考[{tag}]: {len(parts_text)} 段, {len(combined)}ms")
+            return out.as_posix(), " ".join(parts_text)
+        except Exception as e:
+            logger.warning(f"复合参考构建失败,退回单片段: {e}")
+            return wav, text
+
+    def _select_safe_reference(self, validator=None):
+        candidates = self._collect_candidates()
         if not candidates:
             return None, None
         candidates = self._keep_dominant_speaker(candidates)
         ranked = sorted(candidates, key=lambda item: item[0])
-        score, ref_wav, ref_text, index, duration_ms = ranked[0]
-        if ref_text[-1:] not in ".!?。！？":
-            ref_text += "."
-        # 备选参考（同簇次优）：主参考"有毒"时（ref_text 截半句导致 F5 把参考文本
-        # 续写进大量生成结果），泄漏重试第 2 轮起换用备选，而不是在坏参考上死磕
+        validated = self._validate_candidates(ranked, validator)
+        pool = validated or ranked[:4]
+        ref_wav, ref_text = self._compose_reference(pool, tag="main")
+        # 备选参考（同簇次优）：主参考仍导致大面积串音时，泄漏重试第 2 轮起换用
         self.ref_backups = []
-        for _s, w, t, _i, _d in ranked[1:]:
+        for _s, w, t, _i, _d in pool[1:]:
             if w != ref_wav:
-                self.ref_backups.append((w, t if t[-1:] in ".!?。！？" else t + "."))
+                self.ref_backups.append((w, self._ensure_punct(t)))
             if len(self.ref_backups) >= 3:
                 break
         logger.debug(
-            "F5-TTS 使用安全短参考音频: index=%s duration=%sms score=%s "
-            "ref_wav=%s ref_text=%s 备选=%s",
-            index, duration_ms, score, ref_wav, ref_text, len(self.ref_backups)
+            "F5-TTS 参考选择: 候选=%s 回读通过=%s ref_wav=%s ref_text=%s 备选=%s",
+            len(ranked), len(validated), ref_wav, ref_text, len(self.ref_backups)
         )
         return ref_wav, ref_text
+
+    def _build_cluster_refs(self, validator=None):
+        """多说话人模式：逐句归属说话人簇，各簇构建独立参考（各说各的音色）。
+
+        置信门槛：聚类可靠且次要说话人时长占比 ≥12% 才启用；否则维持
+        单一主讲人参考（旧行为）。可用 settings['f5tts_multi_speaker']=false 关闭。
+        """
+        if str(settings.get('f5tts_multi_speaker', True)).lower() == 'false':
+            return
+        lines = [(i, it) for i, it in enumerate(self.queue_tts)
+                 if it.get('role') == 'clone' and it.get('ref_wav')
+                 and Path(it.get('ref_wav', '')).is_file()]
+        if len(lines) < 12:
+            return
+        try:
+            from videotrans.util.speaker_cluster import label_speakers
+            labels = label_speakers([it['ref_wav'] for _, it in lines])
+        except Exception as e:
+            logger.warning(f'逐句声纹归属失败,维持单参考: {e}')
+            return
+        if not labels:
+            return
+        # 各簇时长占比
+        totals = {}
+        for pos, (i, it) in enumerate(lines):
+            if pos not in labels:
+                continue
+            d = max(int(it.get('end_time', 0) or 0) - int(it.get('start_time', 0) or 0), 0)
+            totals[labels[pos]] = totals.get(labels[pos], 0) + d
+        if len(totals) < 2 or sum(totals.values()) <= 0:
+            return
+        if min(totals.values()) / sum(totals.values()) < 0.12:
+            logger.debug('次要说话人占比过低,视为单说话人,维持单参考')
+            return
+        # 每簇独立选参考（同样走打分+回读验证+复合）
+        cluster_refs = {}
+        for label in totals:
+            allowed = {i for pos, (i, _it) in enumerate(lines) if labels.get(pos) == label}
+            cands = self._collect_candidates(allowed=allowed)
+            if not cands:
+                continue
+            ranked = sorted(cands, key=lambda item: item[0])
+            validated = self._validate_candidates(ranked, validator, need=3, max_try=6)
+            pool = validated or ranked[:3]
+            cluster_refs[label] = self._compose_reference(pool, tag=f"spk{label}")
+        if len(cluster_refs) < 2:
+            return
+        # 把归属写进条目：_run 按行取所属簇的参考；缓存键含 cluster_ref 指纹
+        assigned = 0
+        for pos, (i, it) in enumerate(lines):
+            label = labels.get(pos)
+            if label in cluster_refs:
+                it['cluster_ref'], it['cluster_ref_text'] = cluster_refs[label]
+                assigned += 1
+        logger.debug(f'多说话人参考启用: {len(cluster_refs)} 簇, 覆盖 {assigned}/{len(lines)} 行, 时长占比={totals}')
 
     @staticmethod
     def _keep_dominant_speaker(candidates):
@@ -340,8 +500,12 @@ class F5TTS(GradioBase):
 
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:
         ref_wav,ref_text=self.get_ref_wav(data_item)
-        if data_item.get("role") == "clone" and self.safe_ref_wav:
-            ref_wav, ref_text = self.safe_ref_wav, self.safe_ref_text
+        if data_item.get("role") == "clone":
+            if data_item.get('cluster_ref'):
+                # 多说话人：该行所属说话人簇的参考（各说各的音色）
+                ref_wav, ref_text = data_item['cluster_ref'], data_item.get('cluster_ref_text') or ref_text
+            elif self.safe_ref_wav:
+                ref_wav, ref_text = self.safe_ref_wav, self.safe_ref_text
         # 泄漏重试：第 2 轮起换备选参考——主参考自身导致大面积串音时，换参考才有救
         retry_no = int(data_item.get('lang_leak_retry') or 0)
         if (retry_no >= 2 and data_item.get("role") == "clone"

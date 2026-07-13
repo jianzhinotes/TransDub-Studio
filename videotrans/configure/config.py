@@ -363,6 +363,8 @@ class AppSettings:
             "f5tts_nfe": 32,
             # F5-TTS 随机种子：固定值保证全片音色一致；负数=逐句随机（旧行为）
             "f5tts_seed": 42,
+            # 多说话人自动分音色（声纹逐句归属，各簇独立参考）；false=全片单一主讲人音色
+            "f5tts_multi_speaker": True,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,

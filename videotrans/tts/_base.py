@@ -97,6 +97,8 @@ class BaseTTS(BaseCon):
                 item.get('pitch', self.pitch), item.get('ref_text', ''),
                 self._file_sig(item.get('ref_wav', '')),
                 self._file_sig(getattr(self, 'safe_ref_wav', '') or ''),
+                # 多说话人模式下该行实际使用的簇参考；簇归属变化时缓存自动失效
+                self._file_sig(item.get('cluster_ref', '')),
                 # 渠道可通过该属性把额外的推理参数纳入键（如 F5 的 nfe/seed），
                 # 避免参数调整后仍命中旧质量的缓存
                 getattr(self, 'dubb_cache_extra', ''),
