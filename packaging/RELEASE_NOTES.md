@@ -1,3 +1,40 @@
+## TransDub Studio v1.1.0 — Smart long-video dubbing orchestration
+
+This release turns TransDub Studio into an open-source, local-first intelligent dubbing
+orchestrator for Chinese long-form video. ASR, translation/LLM and TTS models remain replaceable
+backends.
+
+### Highlights
+
+- One-click default workflow covering recognition, whole-context translation, semantic
+  re-segmentation, target-duration planning, dubbing, quality checks, alignment and rendering.
+- Resumable smart-plan checkpoints and cache-safe segment recovery for interrupted long videos.
+- F5-TTS source-timeline reference extraction, speaker-aware references and ASR-verified Chinese
+  resume anchors to reduce copied English and speaker swaps.
+- High-risk preflight samples plus batch and per-clip language gates, with local repair of only the
+  affected segments.
+- Apple Silicon low-memory lifecycle management and automatic local F5 service recovery.
+- A responsive Dubbing Studio for long videos, with deferred waveform work, smart-plan inspection
+  and explicit A/B candidate synthesis.
+- Versioned `.tdproj` v2 project state, candidate history and quality reports.
+
+## TransDub Studio v1.1.0 — 中文长视频智能配音编排
+
+这一版将 TransDub Studio 明确升级为开源、本地优先、面向中文长视频的智能配音编排器；
+语音识别、翻译/LLM 和 TTS 模型都只是可替换后端。
+
+### 主要更新
+
+- 默认一键完成识别、全文翻译、语义重分段、目标时长编排、配音、质检、对齐和合成。
+- 智能编排断点与安全缓存恢复，长视频中断后不再从头生成。
+- F5-TTS 按原始时间轴裁剪参考、按说话人选参考，并使用 ASR 验收过的中文成品恢复缺失片段，减少夹杂英文和人物音色互换。
+- 生成前高风险预飞、批量加逐段语言门禁，只对问题片段进行局部返工。
+- Apple Silicon 低内存错峰加载与 F5 本地服务自动恢复。
+- 长视频配音工作台延迟加载重型波形，支持智能方案检查和显式 A/B 配音对比。
+- `.tdproj` v2 工程状态、候选历史和质量报告。
+
+---
+
 ## ⬇️ Download & install
 
 | Your OS | File | How to install |

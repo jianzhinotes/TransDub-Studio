@@ -4978,7 +4978,7 @@ wheels = [
 
 [[package]]
 name = "transdub-studio"
-version = "4.0"
+version = "1.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "absl-py" },

@@ -1,6 +1,6 @@
 [project]
 name = "transdub-studio"
-version = "4.00"
+version = "1.1.0"
 requires-python = ">=3.10, <3.11"
 dependencies = [
     "absl-py==2.0.0",
@@ -327,4 +327,3 @@ torchaudio = [
 ]
 
 faster-whisper = { url = "https://github.com/SYSTRAN/faster-whisper/archive/refs/heads/master.tar.gz" }
-
