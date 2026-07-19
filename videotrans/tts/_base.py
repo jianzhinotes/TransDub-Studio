@@ -99,6 +99,8 @@ class BaseTTS(BaseCon):
                 self._file_sig(getattr(self, 'safe_ref_wav', '') or ''),
                 # 多说话人模式下该行实际使用的簇参考；簇归属变化时缓存自动失效
                 self._file_sig(item.get('cluster_ref', '')),
+                # F5 泄漏重试可能改用同说话人的中文成品作为参考。
+                self._file_sig(item.get('chinese_anchor_ref', '')),
                 # 渠道可通过该属性把额外的推理参数纳入键（如 F5 的 nfe/seed），
                 # 避免参数调整后仍命中旧质量的缓存
                 getattr(self, 'dubb_cache_extra', ''),
@@ -260,6 +262,12 @@ class BaseTTS(BaseCon):
         # 单个字幕行，无需多线程
         if len(self.queue_tts) == 1 or self.dub_nums == 1:
             logger.debug(f'设定最大配音线程: {self.dub_nums},实际 单线程配音, 待配音字幕长度: {self.len}, 配音后暂停{self.wait_sec}s')
+            pending_total = sum(
+                1 for item in self.queue_tts
+                if item.get('text', '').strip() and not vail_file(item.get('filename'))
+            )
+            pending_done = 0
+            progress_started = time.monotonic()
             for k, item in enumerate(self.queue_tts):
                 if self._exit(): return
                 if not item.get('text').strip() or vail_file(item['filename']):
@@ -271,7 +279,16 @@ class BaseTTS(BaseCon):
                     # 发送终止信号，终止时会将 uuid 加入 app_cfg.stop_uid
                     raise error
 
-                self.signal(text=f'TTS[{k + 1}/{self.len}]')
+                pending_done += 1
+                formatter = getattr(self, '_format_tts_progress', None)
+                if callable(formatter):
+                    progress_text = formatter(
+                        pending_done, pending_total,
+                        time.monotonic() - progress_started,
+                    )
+                else:
+                    progress_text = f'TTS[{k + 1}/{self.len}]'
+                self.signal(text=progress_text)
                 time.sleep(self.wait_sec)
             self.signal(text=f'TTS ended')
             return

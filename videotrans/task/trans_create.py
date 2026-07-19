@@ -977,6 +977,15 @@ class TransCreate(BaseTask):
             queue_tts.append(tmp_dict)
 
         self.queue_tts = copy.deepcopy(queue_tts)
+        # v2 工程使用稳定单元 ID；旧流水线会忽略这些附加字段，生成行为不变。
+        from videotrans.dub.legacy_adapter import ensure_queue_unit_ids, make_project_id
+        ensure_queue_unit_ids(
+            self.queue_tts,
+            make_project_id(str(self.cfg.name or ''), self.cfg.target_language_code or ''),
+        )
+
+        if self.cfg.smart_orchestration:
+            self._smart_orchestrate_queue()
 
         if not self.queue_tts or len(self.queue_tts) < 1:
             raise RuntimeError(f'字幕长度为0，无法继续配音')
@@ -986,17 +995,20 @@ class TransCreate(BaseTask):
             self._create_ref_from_vocal()
 
         # 调用配音渠道；"重新处理"(clear_cache)时不从跨运行配音缓存恢复
-        run_tts(
-            queue_tts=self.queue_tts,
-            language=self.cfg.target_language_code,
-            uuid=self.uuid,
-            tts_type=self.cfg.tts_type,
-            is_cuda=self.cfg.is_cuda,
-            use_cache=not self.cfg.clear_cache
-        )
-        # BaseTTS 对 queue_tts 做了 deepcopy，泄漏检查打的标记要经 sidecar 拿回来，
-        # 否则配音工作台看不到"疑似混入原声"徽标
-        self._merge_lang_leak_marks()
+        leak_file = Path(f'{self.cfg.cache_folder}/lang_leak.json')
+        leak_file.unlink(missing_ok=True)
+        try:
+            run_tts(
+                queue_tts=self.queue_tts,
+                language=self.cfg.target_language_code,
+                uuid=self.uuid,
+                tts_type=self.cfg.tts_type,
+                is_cuda=self.cfg.is_cuda,
+                use_cache=not self.cfg.clear_cache
+            )
+        finally:
+            # 严格门禁抛错时也把标记合并回工作台；先删旧 sidecar，避免历史误报。
+            self._merge_lang_leak_marks()
         # 为每条字幕保留原始配音片段
         if settings.get('save_segment_audio', False):
             outname = self.cfg.target_dir + f'/segment_audio_{self.cfg.noextname}'
@@ -1006,6 +1018,86 @@ class TransCreate(BaseTask):
                 name = f'{outname}/{it["line"]}-{text[:60]}.wav'
                 if Path(it['filename']).exists():
                     shutil.copy2(it['filename'], name)
+
+    def _smart_orchestrate_queue(self):
+        """Run joint translation/segmentation/timing planning before TTS.
+
+        A persisted materialized queue is the resume checkpoint.  If a prior
+        one-click run was interrupted after planning, recognition and translation
+        caches plus this queue let the next run continue without repeating LLM work.
+        """
+        if not str(self.cfg.target_language_code or '').lower().startswith('zh'):
+            self.signal(text=tr('Smart orchestration currently keeps non-Chinese text unchanged'))
+            return
+        checkpoint_dir = Path(self.cfg.target_dir) / '.smart-plan'
+        checkpoint_queue = checkpoint_dir / 'smart_queue.json'
+        if not self.cfg.clear_cache and checkpoint_queue.is_file():
+            try:
+                cached = json.loads(checkpoint_queue.read_text(encoding='utf-8'))
+                if isinstance(cached, list) and cached:
+                    from videotrans.dub.llm_candidates import has_obvious_english_leak
+                    leaked = [item for item in cached
+                              if has_obvious_english_leak(item.get('text'))]
+                    if leaked:
+                        logger.warning(
+                            '旧智能编排断点含 %s 段普通英文残留，废弃并重新编排',
+                            len(leaked))
+                        raise ValueError('saved smart queue contains untranslated English')
+                    for item in cached:
+                        item['filename'] = str(
+                            Path(self.cfg.cache_folder) / Path(item['filename']).name)
+                        if item.get('ref_wav'):
+                            item['ref_wav'] = str(
+                                Path(self.cfg.cache_folder) / Path(item['ref_wav']).name)
+                    self.queue_tts = cached
+                    self._save_srt_target(self.queue_tts, self.cfg.target_sub)
+                    self.signal(text=tr('Resuming from saved smart orchestration'))
+                    return
+            except Exception as error:
+                logger.warning(f'智能编排断点读取失败，将重新编排: {error}')
+
+        self.signal(text=tr('Smart orchestration: optimizing translation, segments and timing'))
+        try:
+            from videotrans.dub.legacy_adapter import plan_to_queue
+            from videotrans.task.joint_dub import run_joint_preview
+            project, plan = run_joint_preview(
+                queue_tts=self.queue_tts,
+                source_video=str(self.cfg.name),
+                source_language=self.cfg.source_language_code,
+                target_language=self.cfg.target_language_code,
+                name=self.cfg.noextname,
+                candidate_dir=str(checkpoint_dir / 'candidates'),
+                limit=None,
+                synthesize=False,
+                project_dir=str(checkpoint_dir),
+                candidate_backend='auto',
+                candidate_cache_dir=str(checkpoint_dir / 'llm_cache'),
+            )
+            planned = plan_to_queue(project, plan)
+            if not planned:
+                raise RuntimeError('smart orchestration returned an empty queue')
+            from videotrans.dub.llm_candidates import has_obvious_english_leak
+            leaked = [item for item in planned
+                      if has_obvious_english_leak(item.get('text'))]
+            if leaked:
+                examples = '；'.join(
+                    f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
+                    for item in leaked[:5])
+                raise DubbingSrtError(
+                    f'智能编排译文门禁未通过：仍有 {len(leaked)} 段普通英文未翻译。{examples}')
+            self.queue_tts = planned
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint_queue.write_text(
+                json.dumps(self.queue_tts, ensure_ascii=False, indent=2),
+                encoding='utf-8')
+            self._save_srt_target(self.queue_tts, self.cfg.target_sub)
+            self.signal(text=tr('Smart orchestration complete'))
+        except DubbingSrtError:
+            raise
+        except Exception as error:
+            # One-click mode must remain usable offline or when an LLM is unavailable.
+            logger.exception(f'智能编排失败，保留现有译文继续配音: {error}', exc_info=True)
+            self.signal(text=tr('Smart orchestration used the local fallback'))
 
     # 多线程实现裁剪参考音频
     def _merge_lang_leak_marks(self):
@@ -1055,11 +1147,24 @@ class TransCreate(BaseTask):
         # 裁切对应片段为参考音频
         def _cutaudio_from_vocal(it):
             try:
-                logger.debug(f"裁切对应片段为参考音频：{it['startraw']}->{it['endraw']}\n当前{it=}")
+                # 智能编排会重写目标时间轴 startraw/endraw。克隆参考必须
+                # 始终从原视频的 source 时间轴裁剪，否则音频与 ref_text
+                # 错配，F5 会把英文参考直接复制进中文成品。
+                source_start = int(it.get('start_time_source', it.get('start_time', 0)) or 0)
+                source_end = int(it.get('end_time_source', it.get('end_time', 0)) or 0)
+                if source_end <= source_start:
+                    raise ValueError(
+                        f"参考音频源时间无效: {source_start}->{source_end}"
+                    )
+                source_startraw = ms_to_time_string(ms=source_start)
+                source_endraw = ms_to_time_string(ms=source_end)
+                logger.debug(
+                    f"按源时间轴裁剪参考音频：{source_startraw}->{source_endraw}\n当前{it=}"
+                )
                 cut_from_audio(
                     audio_file=vocal,
-                    ss=it['startraw'],
-                    to=it['endraw'],
+                    ss=source_startraw,
+                    to=source_endraw,
                     out_file=it['ref_wav']
                 )
             except Exception as e:

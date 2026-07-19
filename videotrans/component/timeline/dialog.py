@@ -26,22 +26,30 @@ class PrepWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, *, source_media, cache_dir, dubbed_audio=None,
-                 queue_tts=None, parent=None):
+                 queue_tts=None, prepare_original=True, prepare_dubbed=True,
+                 parent=None):
         super().__init__(parent=parent)
         self.source_media = source_media
         self.cache_dir = cache_dir
         self.dubbed_audio = dubbed_audio
         self.queue_tts = queue_tts
+        self.prepare_original = bool(prepare_original)
+        self.prepare_dubbed = bool(prepare_dubbed)
 
     def run(self):
         try:
-            peaks, duration_ms = extract_peaks(self.source_media, self.cache_dir)
-            self.originalReady.emit(peaks, duration_ms)
+            duration_ms = max([
+                int(item.get('end_time', 0) or 0)
+                for item in (self.queue_tts or [])
+            ] or [0])
+            if self.prepare_original:
+                peaks, duration_ms = extract_peaks(self.source_media, self.cache_dir)
+                self.originalReady.emit(peaks, duration_ms)
 
             dub_wav = self.dubbed_audio
-            if not dub_wav and self.queue_tts:
+            if self.prepare_dubbed and not dub_wav and self.queue_tts:
                 dub_wav = build_dub_preview_wav(self.queue_tts, duration_ms, self.cache_dir)
-            if dub_wav:
+            if self.prepare_dubbed and dub_wav:
                 dub_peaks, _ = extract_peaks(dub_wav, self.cache_dir)
                 self.dubbedReady.emit(dub_peaks, dub_wav)
         except Exception as e:

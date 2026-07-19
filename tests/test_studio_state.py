@@ -54,6 +54,7 @@ class TestStudioState:
         assert it['start_time_source'] == 500
         assert times == [0] and status == [0]
         assert not st.is_dirty(0)  # 时间编辑不需要重配
+        assert st.stale_reasons(0) == {'boundary_changed'}
 
     def test_mark_clean_after_redub(self):
         st = StudioState(_queue(), 5000)
@@ -62,6 +63,7 @@ class TestStudioState:
         st.mark_clean(0)
         assert st.items[0]['dubbing_s'] == 1.4
         assert not st.dirty_indices()
+        assert st.stale_reasons(0) == set()
 
     def test_save_shares_reference(self, tmp_path):
         q = _queue()

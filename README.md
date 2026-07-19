@@ -2,7 +2,7 @@
 
 # ✨ TransDub Studio
 
-### Turn any video into another language — transcribe, translate, clone the voice, and dub — **100% on your own machine.**
+### Open-source, local-first smart dubbing orchestration for Chinese long-form video — **models are replaceable backends.**
 
 A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Dubbing Studio.
 
@@ -35,9 +35,9 @@ A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Du
 
 ## What is TransDub Studio?
 
-**TransDub Studio** is a customized build of [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), rebuilt around a modern, CapCut/ElevenLabs-style workflow for AI video translation, subtitle translation, voice cloning, and dubbing — but running **on your own machine**.
+**TransDub Studio** is an open-source, local-first intelligent dubbing orchestrator built on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) and optimized for Chinese long-form video. Instead of treating recognition, translation and TTS as disconnected model calls, it coordinates whole-context translation, semantic segmentation, target duration, synthesis, language checks and local repair as one resumable workflow. ASR, LLM and TTS models remain replaceable backends rather than defining the product.
 
-`speech recognition → subtitle translation → AI dubbing / voice cloning → audio-video synthesis`
+`recognition → whole-context translation → semantic/timing orchestration → dubbing → quality gates and local repair → alignment/rendering`
 
 <a id="why"></a>
 
@@ -59,6 +59,8 @@ The polished editing experience of CapCut and ElevenLabs, but **local, private, 
 
 **Key advantages**
 
+- **🧠 One coordinated plan.** Translation, semantic boundaries, target duration, synthesis and quality feedback are optimized together. The default workflow is one click, while every decision remains inspectable in Dubbing Studio.
+- **🎬 Built for long-form Chinese dubbing.** Persistent checkpoints, segment-level retries, preflight validation and cache-safe resume avoid throwing away hours of successful work when a few clips fail.
 - **🔒 Local & private.** Recognition (faster-whisper), translation (local LLM / offline models), and voice cloning (F5-TTS) can all run offline. Nothing is uploaded unless *you* pick a cloud API. CapCut and ElevenLabs always send your media to their servers.
 - **💰 Free, no limits.** A fully free stack — faster-whisper + Google/local-LLM translation + Edge-TTS — costs nothing, has **no subscription, no watermark, no length or quota caps**. ElevenLabs bills per character/minute; CapCut gates dubbing behind membership and time limits.
 - **🎛 Your choice of engines.** 79 channels across recognition / translation / TTS. Free local, DeepSeek, OpenAI, Gemini, DeepL, ElevenLabs, Azure… mix them however you like — not locked to one vendor.
@@ -68,11 +70,11 @@ The polished editing experience of CapCut and ElevenLabs, but **local, private, 
 
 ## ✨ The new Flow UI (default)
 
-Launch the app and you land in a streamlined three-step flow:
+Launch the app and you land in a streamlined one-click flow:
 
 1. **Home** — drag & drop a video (or click to browse), see recent tasks with status chips, one-click reopen of results.
-2. **Configure** — everything on one page: source/target language, three channel cards (Speech Recognition / Translation / Dubbing) with live "configured / needs API key" status dots and inline API-key setup, model & voice pickers, and just three toggles (subtitles, auto-align, keep BGM). Your last choices are remembered.
-3. **Progress** — a per-task six-stage stepper (prepare → recognize → translate → dub → align → merge). At the dubbing pause the **Dubbing Studio** opens automatically: per-line speaker cards (source + translation side by side), editable timeline (drag subtitle blocks, stretch edges), per-line re-dub with voice switching, and instant original/dubbed A/B preview — all before the final render.
+2. **Start smart dubbing** — choose the target language and click once. Recognition, translation, semantic re-segmentation, duration planning, dubbing, quality checks, alignment and rendering run in dependency order. Engine, subtitle and alignment controls are folded into **Advanced settings**.
+3. **Progress** — a per-task six-stage stepper (prepare → recognize → translate → dub → align → merge). The default flow does not pause for routine proofreading; saved checkpoints resume recognition, translation and orchestration after interruption. Reopen the finished local project in **Dubbing Studio** only when you want detailed per-line editing and A/B review.
 
 The classic full-featured UI (batch processing, all 79 channels, advanced parameters) is still available via **Tools → Advanced Mode**.
 
@@ -266,4 +268,3 @@ This project relies on the work of pyVideoTrans and many open-source projects, i
 - [edge-tts](https://github.com/rany2/edge-tts)
 - [F5-TTS](https://github.com/SWivid/F5-TTS)
 - [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
-

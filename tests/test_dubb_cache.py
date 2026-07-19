@@ -79,3 +79,15 @@ class TestDubbCache:
 
         LeakTTS(queue_tts=_queue(tmp_path, 1, ['可疑句子']), language='zh-cn', tts_type=0).run()
         assert len(list(cache_dir.iterdir())) == 0  # 疑似泄漏的不入缓存
+
+    def test_chinese_anchor_changes_cache_key(self, tmp_path, cache_dir):
+        ref_a = tmp_path / 'anchor-a.wav'
+        ref_b = tmp_path / 'anchor-b.wav'
+        ref_a.write_bytes(b'RIFF-anchor-a')
+        ref_b.write_bytes(b'RIFF-anchor-b')
+        t = FakeTTS(queue_tts=_queue(tmp_path, 1, ['中文锚点']), language='zh-cn', tts_type=0)
+        item = t.queue_tts[0]
+        item['chinese_anchor_ref'] = str(ref_a)
+        key_a = t._dubb_cache_key(item)
+        item['chinese_anchor_ref'] = str(ref_b)
+        assert t._dubb_cache_key(item) != key_a

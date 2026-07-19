@@ -176,6 +176,10 @@ def initialize_full_app(start_window, app_instance):
     # 命令行参数
     parser = argparse.ArgumentParser()
     parser.add_argument('--lang', type=str, help='Set the application language (e.g., en, zh)')
+    parser.add_argument('--project', type=str,
+                        help='Open a .tdproj directly in Dubbing Studio')
+    parser.add_argument('--video', type=str,
+                        help='Open a video directly in the one-click smart dubbing page')
     cli_args, unknown = parser.parse_known_args()
     if cli_args.lang:
         os.environ['PYVIDEOTRANS_LANG'] = cli_args.lang.lower()
@@ -198,6 +202,16 @@ def initialize_full_app(start_window, app_instance):
         start_window.update_lable('Initializing UI...')
         QApplication.processEvents()
         start_window.main_window = MainWindow(width=w, height=h,callback=start_window.update_lable)
+        if cli_args.project and Path(cli_args.project).is_dir():
+            project_dir = str(Path(cli_args.project).resolve())
+            QTimer.singleShot(
+                0,
+                lambda: start_window.main_window.flow._open_editor_from_home(project_dir))
+        elif cli_args.video and Path(cli_args.video).is_file():
+            video_path = str(Path(cli_args.video).resolve())
+            QTimer.singleShot(
+                0,
+                lambda: start_window.main_window.flow.show_workspace([video_path]))
     except Exception as e:
         show_global_error_dialog(type(e), e, e.__traceback__)
         app_instance.quit()

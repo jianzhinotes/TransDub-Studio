@@ -378,6 +378,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         is_flow = mode == 'flow'
         # flow 模式：中途暂停照常，但校对界面内嵌进工作区（不弹窗）；经典模式弹窗校对
         app_cfg.flow_inline_edit = is_flow
+        if not is_flow:
+            self.win_action.smart_auto_mode = False
         self.ui_stack.setCurrentIndex(0 if is_flow else 1)
         self.toolBar.setVisible(not is_flow)
         if hasattr(self, 'action_toggle_uimode'):

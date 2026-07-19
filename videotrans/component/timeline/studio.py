@@ -18,9 +18,14 @@ from PySide6.QtWidgets import (
 from videotrans.configure.config import ROOT_DIR, logger, tr
 from videotrans.component.timeline.cards import SpeakerCardList
 from videotrans.component.timeline.dialog import PrepWorker
-from videotrans.component.timeline.dub_preview import build_dub_preview_wav, cleanup_previews
+from videotrans.component.timeline.dub_preview import (
+    build_dub_preview_wav, cleanup_previews, preview_loading_policy,
+)
 from videotrans.component.timeline.edit_logic import serializable
 from videotrans.component.timeline.edit_track import EditableSubtitleTrack
+from videotrans.component.timeline.joint_plan import (
+    JointPlanPreviewDialog, JointPlanningWorker, JointSynthesisWorker,
+)
 from videotrans.component.timeline.peaks import extract_peaks
 from videotrans.component.timeline.player import AUDIO_DUBBED, AUDIO_ORIGINAL, PreviewPlayer
 from videotrans.component.timeline.redub import RedubQueue
@@ -63,7 +68,8 @@ class DubbingStudioDialog(QDialog):
     proof_done = Signal()
 
     def __init__(self, parent=None, language=None, cache_folder=None,
-                 video_path=None, source_wav=None, project_dir=None, embedded=False):
+                 video_path=None, source_wav=None, project_dir=None, embedded=False,
+                 source_language=None, auto_plan=True):
         super().__init__(parent)
         self.project_dir = project_dir
         self._project_mode = bool(project_dir)
@@ -77,10 +83,14 @@ class DubbingStudioDialog(QDialog):
 
         # 数据：工程模式从 .tdproj 加载（filename 绝对化），否则读流水线 cache
         queue_tts = []
+        project_manifest = None
         if self._project_mode:
             from videotrans.task.project import load_project
             project, queue_tts = load_project(project_dir)
+            project_manifest = project
             language = project.get('target_language_code') or language
+            source_language = ((project.get('cfg') or {}).get('source_language_code')
+                               or source_language)
             cache_folder = project_dir
             video_path = project.get('source_video') or video_path
             source_wav = str(Path(project_dir) / 'source.wav')
@@ -92,14 +102,26 @@ class DubbingStudioDialog(QDialog):
                 except (json.JSONDecodeError, OSError) as e:
                     logger.warning(f'加载 queue_tts.json 失败: {e}')
         self.language = language
+        self.source_language = source_language or 'auto'
         self.cache_folder = cache_folder
-        self.state = StudioState(queue_tts, duration_ms=1, parent=self)
-        self._duration_ms = 1
+        self.video_path = video_path or ''
+        self.project_manifest = project_manifest
+        estimated_duration = max(
+            [int(item.get('end_time', 0) or 0) for item in queue_tts] or [1])
+        self._duration_ms = max(estimated_duration, 1)
+        self.state = StudioState(
+            queue_tts, duration_ms=self._duration_ms, parent=self)
+        self._auto_plan = bool(auto_plan)
         self._preview_rev = 0
         self._rebuild_worker = None
         self._rebuild_pending = False
         self._prev_preview_wav = None
         self._accepting = False
+        self._joint_worker = None
+        self._joint_synth_worker = None
+        self._joint_dialog = None
+        self._joint_project = None
+        self._joint_plan = None
 
         roles = self._compute_roles(queue_tts)
         self.redub_queue = RedubQueue(self.state, language, parent=self)
@@ -151,7 +173,8 @@ class DubbingStudioDialog(QDialog):
         hint = QLabel(tr("Drag block to move, drag edge to resize"))
         hint.setStyleSheet('color:#9AA7B4;font-size:12px;')
         layout.addWidget(hint)
-        self.timeline = TimelineView(1, subtitle_track_cls=EditableSubtitleTrack)
+        self.timeline = TimelineView(
+            self._duration_ms, subtitle_track_cls=EditableSubtitleTrack)
         self.wave_original = self.timeline.add_waveform_track(tr("Original audio"))
         self.wave_original.set_placeholder(tr("Generating waveform..."))
         self.wave_dubbed = self.timeline.add_waveform_track(tr("Dubbed audio"))
@@ -168,6 +191,13 @@ class DubbingStudioDialog(QDialog):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(fn)
             bottom.addWidget(btn)
+        self.joint_status = QLabel('')
+        self.joint_status.setStyleSheet('color:#9AA7B4;font-size:12px;')
+        bottom.addWidget(self.joint_status)
+        self.joint_btn = QPushButton(tr("Smart optimization"))
+        self.joint_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.joint_btn.clicked.connect(self._on_smart_button)
+        bottom.addWidget(self.joint_btn)
         bottom.addStretch(1)
         # 内嵌工程重编辑：导出成品；内嵌中途配音校对：下一步；工程弹窗：重新生成；流水线：继续合成
         if self._embedded and self._project_mode:
@@ -225,16 +255,27 @@ class DubbingStudioDialog(QDialog):
 
         # ---- 启动 ----
         self.player.load(video_path)
+        eager_waveform, eager_dubbed = preview_loading_policy(
+            self._duration_ms, len(self.state.items))
+        self._eager_dubbed_preview = eager_dubbed
+        if not eager_waveform:
+            self.wave_original.set_placeholder(tr('Waveform deferred for long video'))
+        if not eager_dubbed:
+            self.wave_dubbed.set_placeholder(tr('Use per-segment listening for long video'))
         self._prep_worker = PrepWorker(
             source_media=source_wav if source_wav and Path(source_wav).exists() else video_path,
             cache_dir=cache_folder,
             queue_tts=self.state.items,
+            prepare_original=eager_waveform,
+            prepare_dubbed=eager_dubbed,
         )
         self._prep_worker.originalReady.connect(self._on_original_ready)
         self._prep_worker.dubbedReady.connect(self._on_dubbed_ready)
         self._prep_worker.failed.connect(self._on_prep_failed)
         self._prep_worker.start()
         QTimer.singleShot(0, self.timeline.zoom_fit)
+        if self._auto_plan and self.state.items:
+            QTimer.singleShot(700, self._auto_start_joint_planning)
 
     # ---- 角色列表 ----
     def _compute_roles(self, queue_tts) -> list:
@@ -308,7 +349,8 @@ class DubbingStudioDialog(QDialog):
         self.timeline.subtitle_track.set_items(self.state.items)
 
     def _on_state_times_changed(self, idx: int):
-        self._rebuild_timer.start()
+        if self._eager_dubbed_preview:
+            self._rebuild_timer.start()
 
     # ---- 重配 ----
     def _on_redub_requested(self, idx: int):
@@ -328,7 +370,8 @@ class DubbingStudioDialog(QDialog):
             card.set_busy(False)
             card.refresh()
         if ok:
-            self._rebuild_timer.start()
+            if self._eager_dubbed_preview:
+                self._rebuild_timer.start()
         else:
             QMessageBox.warning(self, tr('anerror'), err[:600])
 
@@ -375,6 +418,145 @@ class DubbingStudioDialog(QDialog):
         if self._rebuild_pending:
             self._rebuild_pending = False
             self._rebuild_timer.start()
+
+    # ---- 默认后台智能编排；音频生成仍由用户确认 ----
+    def _auto_start_joint_planning(self):
+        if self._joint_worker is None and self._joint_plan is None:
+            self._start_joint_planning('auto')
+
+    def _on_smart_button(self):
+        if self._joint_worker is not None:
+            return
+        if self._joint_plan is not None and self._joint_project is not None:
+            self._show_joint_plan()
+        else:
+            self._start_joint_planning('auto')
+
+    def _start_joint_planning(self, candidate_backend: str):
+        if self._joint_worker is not None:
+            return
+        if candidate_backend == 'deepseek':
+            answer = QMessageBox.question(
+                self, tr('Joint planning'),
+                tr('This will call your configured DeepSeek API for the first 20 lines. Continue?'),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+        state_dir = (self.project_dir or
+                     str(Path(self.cache_folder) / 'joint-preview.tdproj'))
+        candidate_dir = str(Path(self.cache_folder) / 'joint_candidates')
+        self.joint_btn.setEnabled(False)
+        self.joint_btn.setText(tr('Optimizing...'))
+        self.joint_status.setText(tr('Smart optimization runs in background'))
+        worker = JointPlanningWorker(
+            queue_tts=serializable(self.state.items),
+            source_video=self.video_path,
+            source_language=self.source_language,
+            target_language=self.language,
+            name=Path(self.video_path).stem or 'untitled',
+            candidate_dir=candidate_dir,
+            project_dir=state_dir,
+            candidate_backend=candidate_backend,
+            limit=20,
+            parent=None,
+        )
+        worker.done.connect(self._on_joint_plan_done)
+        worker.failed.connect(self._on_joint_plan_failed)
+        self._joint_worker = worker
+        worker.start()
+
+    def _finish_joint_worker(self):
+        worker = self._joint_worker
+        self._joint_worker = None
+        self.joint_btn.setEnabled(True)
+        self.joint_btn.setText(tr('View smart version'))
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_joint_plan_done(self, _project, plan):
+        self._finish_joint_worker()
+        self._joint_project = _project
+        self._joint_plan = plan
+        generator = (plan.metadata or {}).get('candidate_generator', '')
+        self.joint_status.setText(
+            tr('{0} planned segments ({1})').format(len(plan.segments), generator))
+        self._show_joint_plan()
+
+    def _show_joint_plan(self):
+        if self._joint_plan is None or self._joint_project is None:
+            return
+        can_synthesize = bool(self.state.items and self.state.items[0].get('tts_type') is not None)
+        dialog = JointPlanPreviewDialog(
+            self._joint_plan, project=self._joint_project,
+            can_synthesize=can_synthesize, parent=self)
+        dialog.seekRequested.connect(self._seek)
+        dialog.synthesisRequested.connect(self._start_joint_synthesis)
+        self._joint_dialog = dialog
+        dialog.exec()
+        self._joint_dialog = None
+
+    def _on_joint_plan_failed(self, msg):
+        self._finish_joint_worker()
+        self.joint_btn.setText(tr('Retry smart optimization'))
+        self.joint_status.setText(tr('Joint planning failed'))
+        QMessageBox.warning(self, tr('Joint planning'), msg[:1000])
+
+    def _start_joint_synthesis(self, plan_id: str):
+        if self._joint_synth_worker is not None or self._joint_project is None:
+            return
+        answer = QMessageBox.question(
+            self._joint_dialog or self, tr('Generate A/B audio'),
+            tr('Generate planned audio for up to 20 segments using the current TTS backend? This may take a long time.'),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        first = self.state.items[0] if self.state.items else {}
+        tts_type = first.get('tts_type')
+        if tts_type is None:
+            QMessageBox.warning(self, tr('Generate A/B audio'), tr('No TTS backend is available.'))
+            return
+        if self._joint_dialog is not None:
+            self._joint_dialog.set_synthesis_busy(
+                True, tr('Generating planned audio...'))
+        self.joint_status.setText(tr('Generating planned audio...'))
+        worker = JointSynthesisWorker(
+            project=self._joint_project,
+            plan_id=plan_id,
+            candidate_dir=str(Path(self.cache_folder) / 'joint_candidates'),
+            tts_type=int(tts_type),
+            language=self.language,
+            project_dir=(self.project_dir or
+                         str(Path(self.cache_folder) / 'joint-preview.tdproj')),
+            parent=None,
+        )
+        worker.done.connect(self._on_joint_synthesis_done)
+        worker.failed.connect(self._on_joint_synthesis_failed)
+        self._joint_synth_worker = worker
+        worker.start()
+
+    def _finish_joint_synth_worker(self):
+        worker = self._joint_synth_worker
+        self._joint_synth_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_joint_synthesis_done(self, project, plan):
+        self._finish_joint_synth_worker()
+        self._joint_project = project
+        self._joint_plan = plan
+        ready = sum(1 for segment in plan.segments if segment.selected_audio_candidate_id)
+        self.joint_status.setText(
+            tr('A/B audio ready: {0}/{1} segments').format(ready, len(plan.segments)))
+        if self._joint_dialog is not None:
+            self._joint_dialog.update_result(project, plan)
+
+    def _on_joint_synthesis_failed(self, msg):
+        self._finish_joint_synth_worker()
+        self.joint_status.setText(tr('A/B audio generation failed'))
+        if self._joint_dialog is not None:
+            self._joint_dialog.set_synthesis_busy(False, tr('A/B audio generation failed'))
+        QMessageBox.warning(self, tr('Generate A/B audio'), msg[:1000])
 
     # ---- 退出路径 ----
     def _continue_synthesis(self):
@@ -456,8 +638,12 @@ class DubbingStudioDialog(QDialog):
     def _teardown(self):
         self._rebuild_timer.stop()
         self.player.stop()
-        for worker in (self._prep_worker, self._rebuild_worker):
+        for worker in (self._prep_worker, self._rebuild_worker,
+                       self._joint_worker, self._joint_synth_worker):
             if worker is not None and worker.isRunning():
+                cancel = getattr(worker, 'cancel', None)
+                if callable(cancel):
+                    cancel()
                 for name in ('originalReady', 'dubbedReady', 'failed', 'done'):
                     sig = getattr(worker, name, None)
                     if sig is not None:

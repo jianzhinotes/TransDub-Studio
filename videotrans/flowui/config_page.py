@@ -52,6 +52,7 @@ class ConfigPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(14)
+        self._advanced_visible = False
 
         # 顶栏：返回 + 文件摘要 + 输出目录
         top = QHBoxLayout()
@@ -71,6 +72,32 @@ class ConfigPage(QWidget):
         top.addWidget(self.outdir_btn)
         layout.addLayout(top)
 
+        # 默认只展示用户必须理解的一个选择；模型和工程参数全部折叠。
+        quick_panel = self._panel()
+        quick = QVBoxLayout(quick_panel)
+        quick.setContentsMargins(20, 20, 20, 20)
+        quick.setSpacing(12)
+        quick_title = QLabel('✨ ' + tr('flow_smart_ready_title'))
+        quick_title.setStyleSheet('font-size:20px;font-weight:bold;color:#E6E9EC;')
+        quick.addWidget(quick_title)
+        self.quick_summary = QLabel(tr('flow_smart_ready_summary'))
+        self.quick_summary.setWordWrap(True)
+        self.quick_summary.setStyleSheet(f'color:{tokens.TEXT_SECONDARY};')
+        quick.addWidget(self.quick_summary)
+        target_row = QHBoxLayout()
+        target_row.addWidget(QLabel(tr('Target lang')))
+        self.target_lang = QComboBox()
+        self.target_lang.addItems(list(LANGNAME_DICT.values()))
+        target_row.addWidget(self.target_lang, stretch=1)
+        quick.addLayout(target_row)
+        layout.addWidget(quick_panel)
+
+        self.advanced_btn = QPushButton(tr('flow_show_advanced'))
+        self.advanced_btn.setObjectName('linkBtn')
+        self.advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.advanced_btn.clicked.connect(self._toggle_advanced)
+        layout.addWidget(self.advanced_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
         # 可滚动配置内容（面板竖排铺满，任何窗口高度都协调）
         scroll = QScrollArea()
         scroll.setObjectName('cfgScroll')
@@ -82,7 +109,7 @@ class ConfigPage(QWidget):
         clay.setContentsMargins(0, 0, 0, 0)
         clay.setSpacing(14)
 
-        # 语言面板：源/目标各占一列
+        # 高级设置中的源语言；目标语言留在默认主面板。
         lang_panel = self._panel()
         lp = QHBoxLayout(lang_panel)
         lp.setContentsMargins(16, 14, 16, 14)
@@ -94,13 +121,6 @@ class ConfigPage(QWidget):
         self.source_lang.addItems(list(LANGNAME_DICT.values()))
         src_col.addWidget(self.source_lang)
         lp.addLayout(src_col, stretch=1)
-        tgt_col = QVBoxLayout()
-        tgt_col.setSpacing(6)
-        tgt_col.addWidget(self._sec_title(tr('Target lang')))
-        self.target_lang = QComboBox()
-        self.target_lang.addItems(list(LANGNAME_DICT.values()))
-        tgt_col.addWidget(self.target_lang)
-        lp.addLayout(tgt_col, stretch=1)
         clay.addWidget(lang_panel)
 
         # 三渠道卡竖排（全宽，舒展）
@@ -135,6 +155,8 @@ class ConfigPage(QWidget):
 
         clay.addStretch(1)
         scroll.setWidget(content)
+        scroll.setVisible(False)
+        self.advanced_scroll = scroll
         layout.addWidget(scroll, stretch=1)
 
         # 开始（固定底部）
@@ -142,9 +164,13 @@ class ConfigPage(QWidget):
         self.start_hint.setObjectName('startHint')
         self.start_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.start_hint)
-        self.start_btn = QPushButton('✨ ' + tr('flow_start'))
+        self.start_btn = QPushButton('✨ ' + tr('flow_smart_start'))
         self.start_btn.setObjectName('startBtn')
         self.start_btn.setMinimumHeight(50)
+        # Only an intentional click starts paid/local work; a leftover Enter key
+        # from launching the app must not activate the primary action.
+        self.start_btn.setAutoDefault(False)
+        self.start_btn.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_start)
         layout.addWidget(self.start_btn)
@@ -190,6 +216,9 @@ class ConfigPage(QWidget):
         self.files = list(files)
         self.files_label.setText(tr('flow_files_count').replace('{0}', str(len(self.files))))
         self.files_label.setToolTip('\n'.join(self.files))
+        name = Path(self.files[0]).name if self.files else ''
+        self.quick_summary.setText(
+            tr('flow_smart_file_summary').replace('{0}', name))
 
     def set_workers_ready(self, ready: bool):
         self._workers_ready = ready
@@ -203,6 +232,8 @@ class ConfigPage(QWidget):
         tgt = params.get('target_language')
         if tgt and tgt != '-':
             self.target_lang.setCurrentText(tgt)
+        elif self.target_lang.findText('简体中文') >= 0:
+            self.target_lang.setCurrentText('简体中文')
 
         for card, key in ((self.recogn_card, 'recogn_type'),
                           (self.trans_card, 'translate_type'),
@@ -290,6 +321,12 @@ class ConfigPage(QWidget):
         self.start_hint.setText('；'.join(reasons))
         self.start_btn.setDisabled(bool(reasons))
 
+    def _toggle_advanced(self):
+        self._advanced_visible = not self._advanced_visible
+        self.advanced_scroll.setVisible(self._advanced_visible)
+        self.advanced_btn.setText(tr(
+            'flow_hide_advanced' if self._advanced_visible else 'flow_show_advanced'))
+
     def _pick_outdir(self):
         self.flow.win_action.get_save_dir()
         if self.flow.main.target_dir:
@@ -342,6 +379,7 @@ class ConfigPage(QWidget):
             return
         if not self.apply_to_classic_ui():
             return
+        self.flow.win_action.smart_auto_mode = True
 
         from pathlib import Path as _P
         from videotrans.task.project import project_dir_for

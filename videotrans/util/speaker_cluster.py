@@ -13,7 +13,7 @@ from videotrans.configure.config import logger
 # 每片段最多分析的秒数；再长对声纹均值没有增益，白费计算
 _MAX_ANALYZE_S = 12.0
 # 低于该 silhouette 视为聚类不可靠（大概率单说话人）
-_MIN_SILHOUETTE = 0.12
+_MIN_SILHOUETTE = 0.25
 # 参与拟合的片段数上限（均匀抽样），控制耗时
 _MAX_CLIPS = 60
 

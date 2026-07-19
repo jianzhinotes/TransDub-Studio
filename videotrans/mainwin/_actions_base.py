@@ -46,6 +46,8 @@ class WinActionBase:
     uuid_queue_mp4: Dict = field(default_factory=dict, init=False)
     # Flow UI 消息镜像回调：update_data 收到的每条消息（含 only_one uito 通道）都会转发
     flow_observer: Optional[Any] = field(default=None, init=False)
+    # 仅由 Flow UI 的一键入口开启；经典高级模式保持原有人工校对行为。
+    smart_auto_mode: bool = field(default=False, init=False)
 
     def show_model_help(self):
 

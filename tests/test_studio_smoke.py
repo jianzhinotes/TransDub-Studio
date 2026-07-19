@@ -1,5 +1,6 @@
 """Dubbing Studio 离屏冒烟测试：需要真实 PySide6 + ffmpeg，CI mock 环境自动跳过。"""
 import importlib.util
+import inspect
 import json
 import os
 import shutil
@@ -55,12 +56,14 @@ def studio_env(tmp_path):
 
 
 class TestStudioSmoke:
-    def test_open_edit_and_persist(self, qapp, studio_env, tmp_path):
-        from videotrans.component.timeline.studio import DubbingStudioDialog
+    def test_open_edit_and_persist(self, qapp, studio_env, tmp_path, monkeypatch):
+        from videotrans.component.timeline.studio import (
+            DubbingStudioDialog, JointPlanPreviewDialog)
 
         dlg = DubbingStudioDialog(cache_folder=studio_env['cache'],
                                   language='zh-cn',
-                                  video_path=studio_env['video'])
+                                  video_path=studio_env['video'],
+                                  auto_plan=False)
         dlg.show()
         for _ in range(30):
             qapp.processEvents()
@@ -69,6 +72,26 @@ class TestStudioSmoke:
         assert dlg.cards.card(0) is not None
         assert dlg.cards.card(2) is not None
         assert dlg.cards.card(0).text_edit.toPlainText() == 'line 0'
+        # 联合编排必须由用户显式触发；打开工作台不会自动调用 API 或启动规划线程
+        assert dlg.joint_btn.menu() is None
+        assert dlg._joint_worker is None
+        assert inspect.signature(
+            DubbingStudioDialog.__init__).parameters['auto_plan'].default is True
+
+        # 离线规划在线程中完成，结果窗可打开；原 StudioState 不被规划预览改写
+        monkeypatch.setattr(JointPlanPreviewDialog, 'exec', lambda self: 0)
+        original_texts = [item['text'] for item in dlg.state.items]
+        dlg._start_joint_planning('rules')
+        worker = dlg._joint_worker
+        assert worker is not None
+        assert worker.wait(5000)
+        for _ in range(10):
+            qapp.processEvents()
+        assert dlg._joint_worker is None
+        assert [item['text'] for item in dlg.state.items] == original_texts
+        assert 'rules' in dlg.joint_status.text()
+        assert os.path.exists(os.path.join(studio_env['cache'],
+                                           'joint-preview.tdproj', 'dub_project.json'))
 
         # 截图非空
         png = tmp_path / 'studio.png'

@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-F5_SERVICE="/Users/jinxing/Documents/codex/f5-tts-service/start_service.sh"
+F5_STOP="/Users/jinxing/Documents/codex/f5-tts-service/停止F5-TTS.command"
 LOCK_DIR="/tmp/com.transdub.studio.local.lock"
 PID_FILE="$LOCK_DIR/python.pid"
 cd "$PROJECT_DIR"
@@ -22,6 +22,9 @@ APPLESCRIPT
 }
 
 cleanup_lock() {
+    if [[ -x "$F5_STOP" ]]; then
+        "$F5_STOP" >/dev/null 2>&1 || true
+    fi
     rm -f "$PID_FILE"
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
@@ -44,14 +47,6 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
 fi
 
 trap cleanup_lock EXIT INT TERM HUP
-
-if [[ -x "$F5_SERVICE" ]]; then
-    echo "正在确认 F5-TTS 原声克隆服务..."
-    "$F5_SERVICE"
-    if [[ $? -ne 0 ]]; then
-        echo "F5-TTS 未能启动，TransDub Studio 仍将打开，但原声克隆暂不可用。"
-    fi
-fi
 
 export PYVIDEOTRANS_LANG="zh"
 "$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/sp.py" --lang zh &

@@ -5,6 +5,7 @@
 """
 from PySide6.QtCore import QObject, Signal
 
+from videotrans.dub.schema import StaleReason
 from videotrans.component.timeline import edit_logic
 
 
@@ -20,6 +21,10 @@ class StudioState(QObject):
         self._items = queue_tts
         self.duration_ms = max(int(duration_ms), 1)
         self._dirty = set()
+        self._stale_reasons = {
+            idx: set(str(reason) for reason in (item.get('stale_reasons') or []))
+            for idx, item in enumerate(queue_tts)
+        }
 
     @property
     def items(self) -> list:
@@ -34,20 +39,21 @@ class StudioState(QObject):
             return
         self._items[idx]['text'] = text
         self.textChanged.emit(idx)
-        self._mark_dirty(idx)
+        self._mark_dirty(idx, StaleReason.TRANSLATION_CHANGED.value)
 
     def set_role(self, idx: int, role: str):
         if self._items[idx].get('role') == role:
             return
         self._items[idx]['role'] = role
         self.roleChanged.emit(idx)
-        self._mark_dirty(idx)
+        self._mark_dirty(idx, StaleReason.VOICE_CHANGED.value)
 
     def set_times(self, idx: int, start_ms: int, end_ms: int):
         it = self._items[idx]
         if int(it['start_time']) == int(start_ms) and int(it['end_time']) == int(end_ms):
             return
         edit_logic.sync_time_fields(it, start_ms, end_ms)
+        self.mark_stale(idx, StaleReason.BOUNDARY_CHANGED.value, requires_redub=False)
         self.timesChanged.emit(idx)
         self.statusChanged.emit(idx)   # 槽位时长变了，超时/缩短状态需重算
 
@@ -56,12 +62,28 @@ class StudioState(QObject):
         self.statusChanged.emit(idx)
 
     # ---- 待重配追踪 ----
-    def _mark_dirty(self, idx: int):
+    def mark_stale(self, idx: int, reason: str, *, requires_redub: bool = True):
+        reasons = self._stale_reasons.setdefault(idx, set())
+        reasons.add(str(reason))
+        self._items[idx]['stale_reasons'] = sorted(reasons)
+        if requires_redub:
+            self._mark_dirty(idx)
+
+    def stale_reasons(self, idx: int) -> set:
+        return set(self._stale_reasons.get(idx, set()))
+
+    def _mark_dirty(self, idx: int, reason: str = None):
+        if reason:
+            reasons = self._stale_reasons.setdefault(idx, set())
+            reasons.add(str(reason))
+            self._items[idx]['stale_reasons'] = sorted(reasons)
         if idx not in self._dirty:
             self._dirty.add(idx)
             self.dirtyChanged.emit(idx, True)
 
     def mark_clean(self, idx: int):
+        self._stale_reasons.pop(idx, None)
+        self._items[idx]['stale_reasons'] = []
         if idx in self._dirty:
             self._dirty.discard(idx)
             self.dirtyChanged.emit(idx, False)

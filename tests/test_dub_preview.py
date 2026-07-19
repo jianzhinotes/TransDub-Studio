@@ -7,6 +7,7 @@ pydub = pytest.importorskip("pydub")
 from videotrans.component.timeline.dub_preview import (
     build_dub_preview_wav,
     invalidate_dub_preview,
+    preview_loading_policy,
     preview_path,
 )
 
@@ -18,6 +19,11 @@ def _write_tone(path, seconds=1.0, sr=16000, amp=0.5):
 
 
 class TestBuildDubPreview:
+    def test_long_video_defers_expensive_whole_track_preview(self):
+        assert preview_loading_policy(26 * 60 * 1000, 537) == (False, False)
+        assert preview_loading_policy(3 * 60 * 1000, 50) == (True, True)
+        assert preview_loading_policy(3 * 60 * 1000, 500) == (True, False)
+
     def test_segments_positioned_with_silence_between(self, tmp_path):
         seg1 = _write_tone(tmp_path / "seg1.wav")
         seg2 = _write_tone(tmp_path / "seg2.wav")

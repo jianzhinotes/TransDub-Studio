@@ -180,6 +180,8 @@ class TaskCfgVTT(TaskCfgSTT, TaskCfgTTS, TaskCfgSTS):
     backaudio_volume: float = 0.8  # 背景音量
     batch:bool=False# 批量翻译模式或单视频翻译模式
     batch_size:int=0#0批量并发模式，>0 每批n个
+    # Flow UI 默认的一键模式：跳过人工校对暂停，并在 TTS 前执行联合智能编排。
+    smart_orchestration: bool = False
     
     def __repr__(self):
         _msg=[]

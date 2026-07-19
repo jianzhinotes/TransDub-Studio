@@ -11,6 +11,15 @@ logger = logging.getLogger('VideoTrans')
 
 PREVIEW_NAME = 'dub_preview.wav'
 _FRAME_RATE = 16000
+EAGER_WAVEFORM_MAX_MS = 5 * 60 * 1000
+EAGER_DUB_PREVIEW_MAX_ITEMS = 120
+
+
+def preview_loading_policy(duration_ms: int, item_count: int) -> tuple:
+    """长视频启动时跳过高成本整轨构建，保留逐段试听。"""
+    eager_waveform = int(duration_ms or 0) <= EAGER_WAVEFORM_MAX_MS
+    eager_dubbed = eager_waveform and int(item_count or 0) <= EAGER_DUB_PREVIEW_MAX_ITEMS
+    return eager_waveform, eager_dubbed
 
 
 def preview_path(cache_folder: str, name: str = PREVIEW_NAME) -> Path:

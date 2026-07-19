@@ -40,6 +40,19 @@ class GradioBase(BaseTTS):
                 )
         return thread_local.client
 
+    @staticmethod
+    def reset_thread_client() -> None:
+        """Discard a broken Gradio connection before a local-service retry."""
+        client = getattr(thread_local, "client", None)
+        if client is not None:
+            try:
+                close = getattr(client, "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+        thread_local.client = None
+
 
     # 实际发送进行推理
     @retry(retry=retry_if_not_exception_type(NO_RETRY_EXCEPT), stop=(stop_after_attempt(settings.get('retry_nums'))), wait=wait_fixed(2), before=before_log(logger, logging.INFO), after=after_log(logger, logging.INFO))
@@ -69,6 +82,7 @@ class GradioBase(BaseTTS):
                 "Failed to establish a new connection"
             ]
             err=str(e)
+            self.reset_thread_client()
             for _title in  _quit_errors:
                 if _title in err :
                     raise StopTask(f"{self.ainame} {tr('This channel needs deployed and started before available')}\n{self.api_url=}\n{err}") from e
@@ -76,12 +90,11 @@ class GradioBase(BaseTTS):
         except concurrent.futures.CancelledError as e:
             logger.exception(f'配音失败:{self.ainame}',exc_info=True)
             # 清理当前线程的客户端缓存，防止下次复用一个已损坏的连接
-            if hasattr(thread_local, "client"):
-                del thread_local.client
+            self.reset_thread_client()
             return str(e)+f"\n{self.api_url=}"
         except Exception as e:
-            return +f"{self.api_name} {self.api_url} \n{str(e)}"
+            self.reset_thread_client()
+            return f"{getattr(self, 'api_name', self.ainame)} {self.api_url} \n{str(e)}"
         return
-
 
 

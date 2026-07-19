@@ -458,6 +458,10 @@ class WinAction(WinActionBase):
         self.set_mode()
         self.cfg['app_mode'] = self.main.app_mode
         self.cfg['output_srt'] = self.main.output_srt.currentIndex()
+        self.cfg['smart_orchestration'] = bool(
+            getattr(self, 'smart_auto_mode', False)
+            and self.main.app_mode == 'biaozhun'
+            and len(self.queue_mp4) == 1)
 
         if self.main.recogn_type.currentIndex() == recognition.FASTER_WHISPER or self.main.app_mode == 'biaozhun':
             # 背景音量
@@ -668,6 +672,9 @@ class WinAction(WinActionBase):
 
     # 更新 UI
     def update_data(self, uuid: Union[str, None] = "", d: Union[SignMsg, None] = None):
+        if d and d.get('type') == 'duplicate':
+            show_error(d.get('text') or "这个视频已经有一个任务在运行。")
+            return
         if uuid and uuid not in [it['uuid'] for it in self.obj_list]:
             return
 
@@ -736,6 +743,7 @@ class WinAction(WinActionBase):
             cache_folder, language = parts[0], parts[1]
             video_path = parts[2] if len(parts) > 2 and parts[2] else None
             source_wav = parts[3] if len(parts) > 3 and parts[3] else None
+            source_language = parts[4] if len(parts) > 4 and parts[4] else None
             if video_path:
                 # Dubbing Studio：卡片+可编辑时间轴，等待用户确认后继续
                 from videotrans.component.timeline import DubbingStudioDialog
@@ -744,6 +752,7 @@ class WinAction(WinActionBase):
                     language=language,
                     video_path=video_path,
                     source_wav=source_wav,
+                    source_language=source_language,
                     parent=self.main
                 )
             else:

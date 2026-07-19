@@ -124,12 +124,14 @@ class WorkspacePage(QWidget):
             language = parts[1] if len(parts) > 1 else ''
             video_path = parts[2] if len(parts) > 2 and parts[2] else None
             source_wav = parts[3] if len(parts) > 3 and parts[3] else None
+            source_language = parts[4] if len(parts) > 4 and parts[4] else None
             self.preview.stop()
             self._destroy_editor()
             from videotrans.component.timeline.studio import DubbingStudioDialog
             self._editor = DubbingStudioDialog(
                 cache_folder=cache_folder, language=language, video_path=video_path,
-                source_wav=source_wav, embedded=True, parent=self)
+                source_wav=source_wav, source_language=source_language,
+                embedded=True, parent=self)
             # 内嵌配音校对：主按钮"下一步"继续流水线（保存 queue_tts.json 已在 studio 内）
             self._editor.proof_done.connect(self._resume_pipeline)
             self._editor.back_requested.connect(self._terminate_pipeline)

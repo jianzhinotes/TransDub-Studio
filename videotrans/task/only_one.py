@@ -29,12 +29,23 @@ class Worker(QThread):
         self.uuid = None
 
     def run(self) -> None:
+        self.uuid = self.file['uuid']
+        if not app_cfg.acquire_project_task(self.uuid):
+            logger.warning("阻止同一项目重复启动: %s", self.uuid)
+            self.uito.emit(self.uuid, SignMsg(**{
+                "text": "这个视频已经有一个任务在运行，请等待当前任务结束或先停止它。",
+                "type": "duplicate",
+                "uuid": self.uuid,
+            }))
+            return
         # 从停止队列中移出，以便重新开始
-        app_cfg.rm_uuid(self.file['uuid'])
+        app_cfg.rm_uuid(self.uuid)
         trk=None
         try:
-            self.uuid = self.file['uuid']
             trk = TransCreate(cfg=TaskCfgVTT(**self.cfg | self.file))
+            manual_proof = (
+                not trk.cfg.smart_orchestration
+                and float(settings.get('countdown_sec', 0)) > 0)
             # 原始语言字幕文件
             app_cfg.onlyone_source_sub = trk.cfg.source_sub
             # 目标语言字幕文件
@@ -49,7 +60,7 @@ class Worker(QThread):
             if self._exit(): return
             self._post(text=Path(trk.cfg.source_sub).read_text(encoding='utf-8'), type='replace_subtitle')
 
-            if float(settings.get('countdown_sec', 0)) > 0:
+            if manual_proof:
                 app_cfg.set_countdown(86400)
                 # 等待修改识别出的字幕
                 self._post(text=trk.cfg.source_sub, type='edit_subtitle_source')
@@ -72,7 +83,7 @@ class Worker(QThread):
             if trk.should_dubbing:
 
                 self._post(text=Path(trk.cfg.target_sub).read_text(encoding='utf-8'), type='replace_subtitle')
-                if float(settings.get('countdown_sec', 0)) > 0:
+                if manual_proof:
                     app_cfg.set_countdown(86400)
                     # 传递过去临时目录，用于获取 speaker.json，等待修改待配音的字幕
                     self._post(text=f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}<|>{trk.cfg.tts_type}', type="edit_subtitle_target")
@@ -85,7 +96,7 @@ class Worker(QThread):
                 if self._exit(): return
                 trk.dubbing()
 
-                if not trk.ignore_align and float(settings.get('countdown_sec', 0)) > 0:
+                if not trk.ignore_align and manual_proof:
                     for it in trk.queue_tts:
                         if self._exit(): return
                         # 当前配音时长,0=不存在配音文件
@@ -100,7 +111,9 @@ class Worker(QThread):
                     # 等待修改配音结果或重新配音
                     # 追加视频路径与原声 wav，供时间轴预览使用（旧字段顺序保持兼容）
                     self._post(
-                        text=f"{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}<|>{trk.cfg.name}<|>{trk.cfg.source_wav}",
+                        text=(f"{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}"
+                              f"<|>{trk.cfg.name}<|>{trk.cfg.source_wav}"
+                              f"<|>{trk.cfg.source_language_code}"),
                         type='edit_dubbing')
                     self._post(text=tr('The subtitle editing interface is rendering'))
                     while app_cfg.task_countdown > 0:
@@ -133,7 +146,7 @@ class Worker(QThread):
 
             if self._exit(): return
             trk.recogn2pass()
-            if trk.should_recogn2:
+            if trk.should_recogn2 and manual_proof:
                 app_cfg.set_countdown(86400)
                 # 等待修改二次识别出的字幕
                 self._post(text=f'{trk.cfg.target_sub}', type="edit_recogn2_subtitle")
@@ -157,6 +170,8 @@ class Worker(QThread):
             if trk:
                 msg+=f'cfg={trk.cfg}'
             self._post(text=msg, type='error')
+        finally:
+            app_cfg.release_project_task(self.uuid)
 
     def _post(self, text='', type='logs'):
         try:

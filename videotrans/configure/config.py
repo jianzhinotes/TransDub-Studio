@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import time
 import random
 from functools import lru_cache
@@ -194,6 +195,10 @@ class AppCfg:
     queue_novice: Dict = field(default_factory=dict)
     current_status: str = "stop"
     task_countdown: int = 0
+    # 同一输入视频只允许一个完整流水线。锁仅存在于当前 App 进程，避免快速
+    # 重试/重复点击产生两套 F5 请求交错执行。
+    active_project_tasks: set = field(default_factory=set, repr=False)
+    _active_project_lock: Any = field(default_factory=threading.RLock, repr=False)
 
     # 线程队列
     prepare_queue: Queue = field(default_factory=lambda: Queue(maxsize=0))
@@ -233,6 +238,21 @@ class AppCfg:
             self.stoped_uuid_set.remove(uuid)
         except KeyError:
             pass
+
+    def acquire_project_task(self, project_id: str) -> bool:
+        if not project_id:
+            return True
+        with self._active_project_lock:
+            if project_id in self.active_project_tasks:
+                return False
+            self.active_project_tasks.add(project_id)
+            return True
+
+    def release_project_task(self, project_id: str) -> None:
+        if not project_id:
+            return
+        with self._active_project_lock:
+            self.active_project_tasks.discard(project_id)
 
 
 @dataclass
@@ -363,8 +383,22 @@ class AppSettings:
             "f5tts_nfe": 32,
             # F5-TTS 随机种子：固定值保证全片音色一致；负数=逐句随机（旧行为）
             "f5tts_seed": 42,
+            # 克隆参考的字幕/音频回读相似度下限；过低会把错位参考带进整部视频
+            "f5tts_ref_similarity": 0.75,
+            # 首轮失败后优先使用同说话人、已验收的中文成品作为重试参考
+            "f5tts_chinese_anchor": True,
+            # 最终仍检出额外英文时停止合成，避免有缺陷的成品被误发布
+            "f5tts_strict_language_gate": True,
+            # tiny 无法胜任最终门禁；仅供资源不足时由用户显式应急开启
+            "f5tts_allow_weak_validator": False,
             # 多说话人自动分音色（声纹逐句归属，各簇独立参考）；false=全片单一主讲人音色
             "f5tts_multi_speaker": True,
+            # 16/18GB Apple Silicon 自动让 F5 与 Whisper 错峰驻留，避免系统换页卡顿
+            "f5tts_low_memory_mode": True,
+            # 长视频先对少量高风险片段进行合成+ASR 预飞验收。
+            "f5tts_preflight_samples": 5,
+            # F5 本地推理已经串行，无需沿用云接口每句 1 秒的节流等待
+            "f5tts_dubbing_wait": 0.15,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,
@@ -547,6 +581,7 @@ class AppSettings:
                 "backaudio_volume",
                 "repetition_penalty",
                 "compression_ratio_threshold",
+                "f5tts_dubbing_wait",
             ]
         # 对数字类型进行处理
         int_type=[
@@ -577,6 +612,7 @@ class AppSettings:
                 "process_max",
                 "process_max_gpu",
                 "retry_nums",
+                "f5tts_preflight_samples",
             ]
         try:
             if key in int_type:
