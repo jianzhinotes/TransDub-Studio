@@ -21,7 +21,7 @@ from .schema import TextCandidate
 from .translation import ChineseCandidateGenerator
 
 
-PROMPT_VERSION = "deepseek-turn-candidates-v4-spoken-zh"
+PROMPT_VERSION = "deepseek-turn-candidates-v5-source-authority"
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?%?")
 _SOURCE_NAME_RE = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9'’.-]+(?:\s+[A-Z][A-Za-z0-9'’.-]+)+|[A-Z]{2,})\b"
@@ -185,20 +185,29 @@ def _sanitize_obvious_english(text):
 
 
 def _protected_terms(group):
-    terms = set(_NUMBER_RE.findall(f"{group.source_text} {group.baseline_text}"))
+    source = str(group.source_text or "")
+    baseline = str(group.baseline_text or "")
+    # Source is the factual authority.  A stale/shifted baseline must never
+    # inject a number such as 1400 into a source sentence that has no number.
+    terms = set(_NUMBER_RE.findall(source if source.strip() else baseline))
     # 只锁定明确的专名、缩写和型号；普通英文不锁定，避免把旧译文里的英文
-    # 泄漏延续到新候选。
-    terms.update(match.group(0).strip() for match in _MODEL_TOKEN_RE.finditer(group.baseline_text))
-    terms.update(match.group(0).strip() for match in _CAMEL_NAME_RE.finditer(group.baseline_text))
-    terms.update(match.group(0).strip() for match in _MIXED_CASE_BRAND_RE.finditer(group.baseline_text))
-    terms.update(match.group(0).strip() for match in _ACRONYM_RE.finditer(group.baseline_text))
+    # 泄漏延续到新候选。旧译文里的拉丁专名也必须能在原文找到证据。
+    source_key = re.sub(r"[^a-z0-9]", "", source.lower())
+    for pattern in (
+            _MODEL_TOKEN_RE, _CAMEL_NAME_RE,
+            _MIXED_CASE_BRAND_RE, _ACRONYM_RE):
+        for match in pattern.finditer(baseline):
+            term = match.group(0).strip()
+            term_key = re.sub(r"[^a-z0-9]", "", term.lower())
+            if not source.strip() or (term_key and term_key in source_key):
+                terms.add(term)
     # 原文只锁定多词专名和全大写缩写，允许 Tesla -> 特斯拉这类合理本地化。
     # ASR 句首常形成伪专名，如 "Yeah The"、"What's Starship's"、
     # "An AI"。含普通英文词的 Title Case 片段绝不能锁定，否则模型会被
     # 要求逐字保留污染文本。真正的 Elon Musk 等多词专名仍会保留。
     terms.update(
         match.group(0).strip()
-        for match in _SOURCE_NAME_RE.finditer(group.source_text)
+        for match in _SOURCE_NAME_RE.finditer(source)
         if not has_obvious_english_leak(match.group(0))
     )
     return sorted((term for term in terms if term), key=lambda value: (-len(value), value))
@@ -263,6 +272,7 @@ class DeepSeekCandidateGenerator:
                             "segment_id": group.id,
                             "source_text": group.source_text,
                             "baseline_text": group.baseline_text,
+                            "source_authoritative": True,
                             "target_duration_ms": max(group.end_ms - group.start_ms, 1),
                             "protected_terms": protected[group.id],
                         }
@@ -274,7 +284,7 @@ class DeepSeekCandidateGenerator:
         }
         system = """你是中文长视频智能配音编排器中的候选改写模块。请在完整说话轮次语境下，为每个分段方案的每个 segment 生成两个中文口语候选：natural（语义完整、自然）和 compact（仅在不丢失事实与逻辑的前提下更短）。
 严格要求：
-1. 不增删事实、数字、否定、条件、因果关系或说话人态度；protected_terms 必须逐字保留。
+1. source_text 是事实唯一依据；baseline_text 可能错位，只能作为措辞参考。若两者冲突，必须丢弃 baseline_text 的事实、数字和专名。不得增删 source_text 的事实、数字、否定、条件、因果关系或说话人态度；protected_terms 必须逐字保留。
 2. 不按英文逐词翻译；结合整轮上下文处理指代、承接和断句。
 3. 文本用于口播，不写注释、括号说明或舞台提示，不夹杂非 protected_terms 的英文。
 4. target_duration_ms 是软约束；不能为了时长牺牲语义。
@@ -423,11 +433,15 @@ class DeepSeekCandidateGenerator:
         text = _clean(text)
         if not text:
             return None
-        # 原文和旧译文通常重复出现同一数字，只要求候选保留较高的一侧计数，
-        # 而不是把原文+译文的重复计数相加。
+        # Source is authoritative.  Taking a union with baseline numbers made
+        # shifted translation caches force unrelated numbers into valid output.
         source_numbers = Counter(_NUMBER_RE.findall(group.source_text))
         baseline_numbers = Counter(_NUMBER_RE.findall(group.baseline_text))
-        required_numbers = source_numbers | baseline_numbers
+        required_numbers = (
+            source_numbers
+            if str(group.source_text or "").strip()
+            else baseline_numbers
+        )
         if Counter(_NUMBER_RE.findall(text)) != required_numbers:
             return None
         if any(term not in text for term in protected_terms):
@@ -443,10 +457,19 @@ class DeepSeekCandidateGenerator:
             # threshold admitted short leaks such as "Yes The".
             if cjk == 0 or latin:
                 return None
-        baseline_units = spoken_units(group.baseline_text)
-        ratio = spoken_units(text) / max(baseline_units, 1.0)
-        minimum_ratio = 0.70 if kind == "natural" else 0.55
-        if ratio < minimum_ratio or ratio > 1.65:
+        if str(group.source_text or "").strip():
+            # Cross-language unit counts need a broad guard.  Duration scoring
+            # later makes the precise choice; this check only rejects truncation
+            # and runaway output without trusting a potentially shifted baseline.
+            reference_units = spoken_units(group.source_text)
+            minimum_ratio = 0.45 if kind == "natural" else 0.30
+            maximum_ratio = 3.4
+        else:
+            reference_units = spoken_units(group.baseline_text)
+            minimum_ratio = 0.70 if kind == "natural" else 0.55
+            maximum_ratio = 1.65
+        ratio = spoken_units(text) / max(reference_units, 1.0)
+        if ratio < minimum_ratio or ratio > maximum_ratio:
             return None
         return text
 

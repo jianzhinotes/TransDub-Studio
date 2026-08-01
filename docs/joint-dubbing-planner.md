@@ -40,9 +40,14 @@ complete queue:
 3. Generate baseline, spoken-Chinese, and compact candidates without removing names or numbers.
    When DeepSeek is configured, send the complete source turn and all segmentation options in one
    structured request, then validate every returned ID, number, protected name, language, and
-   compression ratio locally.
+   compression ratio locally. Source text is the factual authority: numbers or Latin terms found
+   only in a stale baseline are not protected, and cache keys use the source-authority prompt
+   version. This prevents a shifted baseline such as “1400 watts” from contaminating an unrelated
+   “massed orbit” source sentence.
 4. Predict duration using a model calibrated from existing speaker audio when available.
 5. Synthesize the selected candidates in a batch through the existing TTS registry.
+   The registry adapter preserves the planner's reference mode, target duration, fit-to-slot flag,
+   and source performance profile so A/B preview and production use the same synthesis policy.
 6. Validate language leakage and stretch ratio, then retry only the affected segment with a shorter
    semantically acceptable candidate.
 7. Persist every decision and candidate in `dub_project.json`.

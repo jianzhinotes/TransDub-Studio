@@ -85,6 +85,10 @@ class LegacyTTSBackend(DubbingBackend):
         queue = []
         for index, request in enumerate(requests):
             item = copy.deepcopy(request.legacy_payload)
+            # The joint planner owns timing, reference mode and performance.
+            # Dropping request.settings here made Studio A/B previews silently
+            # use the legacy per-line clone behavior instead of the planned one.
+            item.update(copy.deepcopy(request.settings or {}))
             item["text"] = request.text
             item["filename"] = request.output_path
             item["line"] = item.get("line", index + 1)
@@ -92,6 +96,10 @@ class LegacyTTSBackend(DubbingBackend):
             Path(request.output_path).parent.mkdir(parents=True, exist_ok=True)
             self._repair_clone_reference(item, index)
             queue.append(item)
+
+        if any((item.get("prosody_plan") or {}) for item in queue):
+            from videotrans.dub.prosody import attach_source_performance
+            attach_source_performance(queue)
 
         sidecar = Path(requests[0].output_path).parent / "lang_leak.json"
         sidecar.unlink(missing_ok=True)

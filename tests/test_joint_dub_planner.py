@@ -234,6 +234,60 @@ def test_deepseek_does_not_protect_ordinary_english_from_bad_baseline(tmp_path):
     assert not has_obvious_english_leak('xAI 使用 V3 卫星。')
 
 
+def test_deepseek_source_authority_rejects_number_from_shifted_baseline(tmp_path):
+    project = _project([
+        _row(
+            1,
+            '以及每平方米1400瓦以上',
+            0,
+            3000,
+            ref='Do people even really understand what massed orbit becomes?',
+        ),
+    ])
+    turn, options = _deepseek_context(project)
+    seen = []
+
+    def request(payload):
+        data = json.loads(payload['messages'][1]['content'])
+        segments = data['segmentation_options'][0]['segments']
+        seen.extend(segments)
+        return _deepseek_response(payload, lambda _segment: [
+            {
+                'kind': 'natural',
+                'text': '人们真的理解大规模物资进入轨道后会是什么量级吗？',
+            },
+            {
+                'kind': 'compact',
+                'text': '人们理解1400瓦的轨道规模吗？',
+            },
+        ])
+
+    generator = DeepSeekCandidateGenerator(
+        api_key='test', model='deepseek-test', cache_dir=tmp_path,
+        request_fn=request)
+    generated = generator.generate_turn(
+        turn=turn, options=options, target_language='zh-cn',
+        duration_model=DurationModel())
+    candidates = [
+        candidate
+        for groups in generated.values()
+        for values in groups.values()
+        for candidate in values
+    ]
+
+    assert seen and seen[0]['source_authoritative'] is True
+    assert '1400' not in seen[0]['protected_terms']
+    assert any(
+        candidate.kind == 'deepseek_natural'
+        and '大规模物资进入轨道' in candidate.text
+        for candidate in candidates
+    )
+    assert not any(
+        candidate.kind == 'deepseek_compact' and '1400' in candidate.text
+        for candidate in candidates
+    )
+
+
 def test_deepseek_targeted_second_pass_repairs_contaminated_fallback(tmp_path):
     project = _project([
         _row(1, 'Yeah The 照射到地球横截面的太阳能。', 0, 2400,
@@ -697,6 +751,56 @@ def test_legacy_tts_backend_wraps_existing_batch_api(tmp_path, monkeypatch):
     assert artifacts[0].metadata['language_leak'] is None
     assert artifacts[1].metadata['language_leak'] == 'leaked'
     assert backend.capabilities().supports_voice_clone is True
+
+
+def test_legacy_tts_backend_preserves_joint_prosody_contract(tmp_path, monkeypatch):
+    reference = tmp_path / 'reference.wav'
+    with wave.open(str(reference), 'wb') as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(b'\0\0' * 16000)
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        for item in kwargs['queue_tts']:
+            path = Path(item['filename'])
+            with wave.open(str(path), 'wb') as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(16000)
+                output.writeframes(b'\0\0' * 1600)
+
+    import videotrans.tts
+    monkeypatch.setattr(videotrans.tts, 'run', fake_run)
+    backend = LegacyTTSBackend(tts_type=8, language='zh-cn', uuid='prosody-test')
+    request = SynthesisRequest(
+        id='r-prosody', segment_id='s-prosody', text_candidate_id='t-prosody',
+        text='这是统一韵律预览。', output_path=str(tmp_path / 'candidate.wav'),
+        language='zh-cn', speaker_id='spk0',
+        legacy_payload={
+            'role': 'clone', 'ref_text': 'This is a prosody preview.',
+            'ref_wav': str(reference),
+        },
+        settings={
+            'reference_mode': 'youtube_hybrid',
+            'target_duration_ms': 2200,
+            'fit_to_slot': True,
+            'prosody_plan': {
+                'speech_act': 'statement',
+                'target_duration_ms': 2200,
+            },
+        },
+    )
+
+    backend.synthesize_batch([request])
+    queued = captured['queue_tts'][0]
+    assert queued['reference_mode'] == 'youtube_hybrid'
+    assert queued['target_duration_ms'] == 2200
+    assert queued['fit_to_slot'] is True
+    assert queued['prosody_plan']['target_duration_ms'] == 2200
+    assert 'performance' in queued['prosody_plan']
 
 
 def test_legacy_tts_backend_repairs_expired_clone_reference(tmp_path, monkeypatch):

@@ -203,7 +203,14 @@ class JointDubPlanner:
             language=project.target_language,
             speaker_id=segment.speaker_id,
             legacy_payload=payload,
-            settings={"attempt": attempt, "prosody_plan": copy.deepcopy(segment.prosody)},
+            settings={
+                "attempt": attempt,
+                "prosody_plan": copy.deepcopy(segment.prosody),
+                "reference_mode": segment.prosody.get(
+                    "reference_mode", REFERENCE_MODE_HYBRID),
+                "target_duration_ms": max(segment.end_ms - segment.start_ms, 1),
+                "fit_to_slot": True,
+            },
         )
 
     @staticmethod
