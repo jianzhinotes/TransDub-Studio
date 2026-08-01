@@ -711,6 +711,7 @@ def test_safe_entry_does_not_mutate_queue_and_can_persist(tmp_path):
     persisted = DubProjectStore(state_dir).load()
     assert len(persisted.plans) == 2
     assert persisted.selected_plan_id == second.id
+    assert persisted.metadata['source_audio'] == '/video/demo.mp4'
 
 
 def test_legacy_tts_backend_wraps_existing_batch_api(tmp_path, monkeypatch):

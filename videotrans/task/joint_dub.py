@@ -4,6 +4,8 @@
 ``synthesize=True`` 时才生成候选音频，适合先做局部预览和质量对照。
 """
 
+from pathlib import Path
+
 from videotrans.dub.backends import LegacyTTSBackend
 from videotrans.dub.legacy_adapter import make_project_id, project_from_queue
 from videotrans.dub.llm_candidates import build_candidate_generator
@@ -39,6 +41,10 @@ def run_joint_preview(
         target_language=target_language,
         existing=existing,
     )
+    # A saved plan can be synthesized in a later process.  Persist the actual
+    # source reference instead of assuming every preview directory contains a
+    # copied source.wav.
+    project.metadata["source_audio"] = str(Path(source_video).expanduser())
     backend = None
     if synthesize:
         if tts_type is None:
@@ -77,12 +83,16 @@ def synthesize_joint_plan(
     plan = next((item for item in project.plans if item.id == plan_id), None)
     if plan is None:
         raise ValueError(f"Unknown planning revision: {plan_id}")
+    source_audio = str(
+        project.metadata.get("source_audio")
+        or (f"{project_dir}/source.wav" if project_dir else "")
+    )
     backend = LegacyTTSBackend(
         tts_type=tts_type,
         language=language,
         uuid=uuid,
         is_cuda=is_cuda,
-        source_audio=f"{project_dir}/source.wav" if project_dir else None,
+        source_audio=source_audio,
         reference_dir=f"{candidate_dir}/_references",
     )
     JointDubPlanner().synthesize_existing_plan(
