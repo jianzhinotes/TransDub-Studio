@@ -16,15 +16,11 @@
 
 <br>
 
-<!-- ============================================================
-     👇 演示放这里 —— 全项目最高杠杆的一块。录一段 30–60 秒的
-     原片→配音成品对比(英文视频 → 中文配音 + 音色克隆),导出成
-     GIF,存到 docs/assets/demo.gif,再把下面那行斜体替换成:
-         ![TransDub Studio 演示](assets/demo.gif)
-     (录一段时间轴配音工作台的操作也很好。)
-     ============================================================ -->
+[![点击观看 TransDub Studio 50 秒有声演示](assets/transdub-studio-demo-poster.jpg)](assets/transdub-studio-demo.mp4)
 
-🎬 *60 秒演示视频即将放这里——先[下载安装包](https://github.com/jianzhinotes/TransDub-Studio/releases/latest),两分钟就能上手试。*
+**[▶ 点击观看 50 秒有声演示](assets/transdub-studio-demo.mp4)** —— 本地生成的中文配音，固定说话人音色、中文优先韵律与烧录双语字幕。
+
+<sub>演示中的中文声音由 AI 合成，并非说话人本人原声或背书。</sub>
 
 <br>
 

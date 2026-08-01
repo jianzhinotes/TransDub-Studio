@@ -9,6 +9,7 @@
 *.aac
 *.pyi
 *.mp4
+!docs/assets/transdub-studio-demo.mp4
 *副本.py
 *.app.noindex/Contents/_CodeSignature/
 .agree.txt

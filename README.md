@@ -16,16 +16,11 @@ A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Du
 
 <br>
 
-<!-- ============================================================
-     👇 DEMO GOES HERE — this is the single highest-leverage asset.
-     Record a 30–60s before/after clip (English video → Chinese dub
-     with a cloned voice), export as a GIF, save it to
-     docs/assets/demo.gif, then REPLACE the italic line below with:
-         ![TransDub Studio demo](docs/assets/demo.gif)
-     (A screen recording of the timeline dubbing studio works great too.)
-     ============================================================ -->
+[![Watch the 50-second TransDub Studio demo with sound](docs/assets/transdub-studio-demo-poster.jpg)](docs/assets/transdub-studio-demo.mp4)
 
-🎬 *A 60-second demo lands here soon — meanwhile, [download it](https://github.com/jianzhinotes/TransDub-Studio/releases/latest) and try a clip in ~2 minutes.*
+**[▶ Watch the 50-second demo with sound](docs/assets/transdub-studio-demo.mp4)** — locally generated Chinese dubbing, stable per-speaker voice identity, Chinese-first prosody and burned bilingual subtitles.
+
+<sub>The Chinese voice in this demo is AI-generated. It is not the speaker's original speech or an endorsement.</sub>
 
 <br>
 
