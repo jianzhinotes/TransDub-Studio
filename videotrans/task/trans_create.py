@@ -820,7 +820,16 @@ class TransCreate(BaseTask):
             if not Path(_output_file).exists():
                 shutil.copy2(self.cfg.target_sub, _output_file)
 
-        self.signal(text=tr('endtrans'))
+        # This is an informational milestone, not an instruction for the user
+        # to hunt for a hidden “Next” button.  The queue routes automatically
+        # to dubbing, assembly, or final save based on the selected output.
+        if self.should_dubbing:
+            progress_text = tr('flow_translation_to_dubbing')
+        elif self.should_hebing:
+            progress_text = tr('flow_translation_to_render')
+        else:
+            progress_text = tr('flow_subtitle_saved')
+        self.signal(text=progress_text)
         logger.debug(f'[字幕翻译阶段结束耗时]:{time.time()-_st}s')
 
     # 对字幕进行配音
