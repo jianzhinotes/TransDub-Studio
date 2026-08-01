@@ -1145,6 +1145,7 @@ class TransCreate(BaseTask):
             "language": self.cfg.target_language_code,
             "tts_type": self.cfg.tts_type,
             "text": item.get("text", ""),
+            "spoken_text": item.get("spoken_text", ""),
             "role": item.get("role", ""),
             "rate": item.get("rate", ""),
             "volume": item.get("volume", ""),
@@ -1164,6 +1165,33 @@ class TransCreate(BaseTask):
             ),
         }
         return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+    def _prepare_chinese_spoken_payloads(self) -> None:
+        """Attach a deterministic TTS-only rendering without changing subtitles."""
+        if not str(self.cfg.target_language_code or "").lower().startswith("zh"):
+            return
+        from videotrans.dub.chinese_spoken import (
+            SPOKEN_TEXT_VERSION, prepare_chinese_spoken_text,
+        )
+        for index, item in enumerate(self.queue_tts):
+            subtitle_text = str(item.get("text") or "")
+            spoken_text = prepare_chinese_spoken_text(subtitle_text)
+            if not spoken_text:
+                continue
+            old_spoken = str(item.get("spoken_text") or "")
+            item["spoken_text"] = spoken_text
+            item["spoken_text_version"] = SPOKEN_TEXT_VERSION
+            if spoken_text == subtitle_text and old_spoken == spoken_text:
+                continue
+            # Do not reuse a filename that may contain audio made before the
+            # speech layer existed.  The visible subtitle remains unchanged.
+            digest = hashlib.sha1(
+                f"{item.get('dub_unit_id') or index}|{spoken_text}|"
+                f"{item.get('role')}|{item.get('tts_type')}|{SPOKEN_TEXT_VERSION}"
+                .encode("utf-8")).hexdigest()[:16]
+            item["filename"] = str(
+                Path(self.cfg.cache_folder)
+                / f"spoken-{item.get('line', index + 1)}-{digest}.wav")
 
     @staticmethod
     def _speaker_reference_signature(filename) -> str:
@@ -1224,7 +1252,8 @@ class TransCreate(BaseTask):
                 entries[str(item.get("dub_unit_id") or index)] = {
                     "key": key,
                     "audio": f"audio/{key}.wav",
-                    "text_hash": get_md5(str(item.get("text") or "")),
+                    "text_hash": get_md5(str(
+                        item.get("spoken_text") or item.get("text") or "")),
                 }
                 saved += 1
                 diagnostics_source = diagnostics_source or source
@@ -1288,7 +1317,8 @@ class TransCreate(BaseTask):
             entries[str(item.get("dub_unit_id") or index)] = {
                 "key": key,
                 "audio": f"audio/{key}.wav",
-                "text_hash": get_md5(str(item.get("text") or "")),
+                "text_hash": get_md5(str(
+                    item.get("spoken_text") or item.get("text") or "")),
             }
             manifest["updated_at"] = int(time.time())
             atomic_write_json(manifest_path, manifest)
@@ -1454,6 +1484,9 @@ class TransCreate(BaseTask):
                         "f5tts_reference_mode", "youtube_hybrid"),
                 )
 
+        # Must run after every smart-prosody filename refresh and before any
+        # checkpoint/cache restore, otherwise old decimal audio can be reused.
+        self._prepare_chinese_spoken_payloads()
         self._restore_dubbing_checkpoint()
 
         # 调用配音渠道；"重新处理"(clear_cache)时不从跨运行配音缓存恢复

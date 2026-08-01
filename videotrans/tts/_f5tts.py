@@ -40,7 +40,7 @@ class F5TTS(GradioBase):
     MAX_LANGUAGE_RETRIES=2
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
-    PIPELINE_VERSION="quality-v9-speaker-identity-contract"
+    PIPELINE_VERSION="quality-v10-chinese-spoken-text"
     QUALITY_RULES_VERSION="zh-content-v5-mixed-number-equivalence"
     VALIDATOR_BACKEND="faster-whisper-cpu"
     VALIDATOR_MODEL="large-v3-turbo"
@@ -54,6 +54,14 @@ class F5TTS(GradioBase):
     def __post_init__(self):
         self.ainame = "f5tts"
         super().__post_init__()
+        if str(self.language or "").lower().startswith("zh"):
+            from videotrans.dub.chinese_spoken import (
+                SPOKEN_TEXT_VERSION, prepare_chinese_spoken_text,
+            )
+            for item in self.queue_tts:
+                item["spoken_text"] = prepare_chinese_spoken_text(
+                    str(item.get("text") or ""))
+                item["spoken_text_version"] = SPOKEN_TEXT_VERSION
         self._low_memory_profile = (
             str(settings.get("f5tts_low_memory_mode", True)).lower() != "false"
             and self._is_managed_local_service()
@@ -891,6 +899,10 @@ class F5TTS(GradioBase):
         )
 
     @staticmethod
+    def _spoken_text(item: dict) -> str:
+        return str(item.get("spoken_text") or item.get("text") or "")
+
+    @staticmethod
     def _chinese_similarity(expected: str, transcript: str) -> float:
         from videotrans.dub.chinese_quality import chinese_similarity
         return chinese_similarity(expected, transcript)
@@ -1210,10 +1222,10 @@ class F5TTS(GradioBase):
                         transcript=transcript,
                         hard_failures=(
                             [] if passed else
-                            self._hard_quality_failures(original["text"], transcript)
+                            self._hard_quality_failures(self._spoken_text(original), transcript)
                         ),
                         disposition="passed" if passed else "retryable",
-                        metrics=self._quality_metrics(original["text"], transcript),
+                        metrics=self._quality_metrics(self._spoken_text(original), transcript),
                         save=False,
                     )
                 manifest.save()
@@ -1261,7 +1273,7 @@ class F5TTS(GradioBase):
             if idx in failed_indices or not vail_file(original.get("filename")):
                 continue
             transcript = str(transcripts.get(idx) or "")
-            if self._hard_quality_failures(original.get("text", ""), transcript):
+            if self._hard_quality_failures(self._spoken_text(original), transcript):
                 continue
             try:
                 duration_ms = len(AudioSegment.from_file(original["filename"]))
@@ -1330,7 +1342,7 @@ class F5TTS(GradioBase):
                 confirmed.append((idx, item, transcript))
             else:
                 transcripts[idx] = transcript
-                if self._hard_quality_failures(item["text"], transcript):
+                if self._hard_quality_failures(self._spoken_text(item), transcript):
                     confirmed.append((idx, item, transcript))
             if pos == 1 or pos == len(failed) or pos % 5 == 0:
                 self.signal(text=self._eta_text(
@@ -1812,14 +1824,14 @@ class F5TTS(GradioBase):
         def record(idx, item, transcript, passed, *, save=False):
             if manifest is None:
                 return
-            failures = [] if passed else self._hard_quality_failures(item["text"], transcript)
+            failures = [] if passed else self._hard_quality_failures(self._spoken_text(item), transcript)
             manifest.record(
                 item,
                 index=idx,
                 passed=passed,
                 transcript=transcript,
                 hard_failures=failures,
-                metrics=self._quality_metrics(item["text"], transcript),
+                metrics=self._quality_metrics(self._spoken_text(item), transcript),
                 save=save,
                 **validator_args,
             )
@@ -1913,7 +1925,7 @@ class F5TTS(GradioBase):
                     for idx in indices:
                         item = self.queue_tts[idx]
                         transcript = transcripts.get(idx, "")
-                        if self._hard_quality_failures(item["text"], transcript):
+                        if self._hard_quality_failures(self._spoken_text(item), transcript):
                             suspicious.append((idx, item, transcript))
 
                     # Micro-batches are only a high-recall screen. Standalone
@@ -2075,7 +2087,7 @@ class F5TTS(GradioBase):
                         isolated_transcripts.get(idx, "") if isolated_validation else
                         self._transcribe_one_for_validation(model, str(candidate_path))
                     )
-                    failures = self._hard_quality_failures(item["text"], transcript)
+                    failures = self._hard_quality_failures(self._spoken_text(item), transcript)
                     if failures:
                         candidate_path.unlink(missing_ok=True)
                         retry_failed.append((idx, item, old_transcript))
@@ -2193,7 +2205,7 @@ class F5TTS(GradioBase):
                 and data_item.get("role") == "clone"
                 and getattr(self, 'ref_backups', None)):
             ref_wav, ref_text = self.ref_backups[(retry_no - 2) % len(self.ref_backups)]
-        gen_text = data_item['text'].strip()
+        gen_text = self._spoken_text(data_item).strip()
         prosody_plan = data_item.get("prosody_plan") or {}
         speech_act = str(prosody_plan.get("speech_act") or "")
         desired_mark = {

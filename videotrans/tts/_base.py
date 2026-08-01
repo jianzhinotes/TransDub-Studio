@@ -97,7 +97,7 @@ class BaseTTS(BaseCon):
         try:
             payload = '|'.join(str(x) for x in [
                 self.tts_type, self.language, getattr(self, 'model_name', ''), self.api_url,
-                item.get('text', ''), item.get('role', ''),
+                item.get('text', ''), item.get('spoken_text', ''), item.get('role', ''),
                 item.get('rate', self.rate), item.get('volume', self.volume),
                 item.get('pitch', self.pitch), item.get('ref_text', ''),
                 self._file_sig(item.get('ref_wav', '')),

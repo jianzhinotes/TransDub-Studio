@@ -39,6 +39,16 @@ def text_hash(text: str) -> str:
     return _sha256_bytes(normalized.encode("utf-8"))
 
 
+def expected_spoken_text(item: dict) -> str:
+    """Return the exact text that was supplied to the speech model.
+
+    Viewer subtitles may preserve compact Arabic notation while the TTS input
+    spells it out in Chinese.  A quality pass is only reusable when it was
+    checked against that actual spoken payload.
+    """
+    return str(item.get("spoken_text") or item.get("text") or "")
+
+
 def file_hash(path) -> str:
     """Return a full content hash; dubbing clips are small enough for this.
 
@@ -91,7 +101,7 @@ def queue_quality_coverage(
     matched = {}
     for index, item in enumerate(queue):
         filename = str(item.get("filename") or "")
-        if not str(item.get("text") or "").strip() or not Path(filename).is_file():
+        if not expected_spoken_text(item).strip() or not Path(filename).is_file():
             continue
         total += 1
         entry = entries.get(unit_key(item, index))
@@ -101,7 +111,7 @@ def queue_quality_coverage(
                 entry.get("rules_version") != rules_version
                 or entry.get("validator_model") != validator_model
                 or (verify_audio_hashes and entry.get("audio_hash") != file_hash(filename))
-                or entry.get("expected_text_hash") != text_hash(item.get("text") or "")
+                or entry.get("expected_text_hash") != text_hash(expected_spoken_text(item))
         ):
             continue
         matched[index] = entry
@@ -122,7 +132,7 @@ def validation_signature(
     rules_version: str = DEFAULT_RULES_VERSION,
 ) -> Dict[str, str]:
     audio_digest = file_hash(item.get("filename"))
-    expected_digest = text_hash(item.get("text") or "")
+    expected_digest = text_hash(expected_spoken_text(item))
     payload = {
         "audio_hash": audio_digest,
         "expected_text_hash": expected_digest,
