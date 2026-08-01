@@ -9,6 +9,7 @@ from .backends.base import SynthesisRequest
 from .constraints import QualityProfile, candidate_loss, stretch_ratio
 from .duration import DurationModel
 from .quality import evaluate_audio
+from .prosody import build_prosody_plan, REFERENCE_MODE_HYBRID
 from .schema import (
     AudioCandidate,
     PlannedSegment,
@@ -141,6 +142,15 @@ class JointDubPlanner:
                 for candidate in candidates
             }
             selected = min(candidates, key=lambda candidate: losses[candidate.id])
+            prosody = build_prosody_plan(
+                source_text=group.source_text,
+                target_text=selected.text,
+                source_start_ms=group.start_ms,
+                source_end_ms=group.end_ms,
+                target_start_ms=group.start_ms,
+                target_end_ms=group.end_ms,
+                reference_mode=REFERENCE_MODE_HYBRID,
+            )
             total += losses[selected.id]
             segments.append(PlannedSegment(
                 id=group.id,
@@ -157,6 +167,7 @@ class JointDubPlanner:
                     "predicted_stretch_ratio": round(
                         stretch_ratio(selected.estimated_duration_ms or window_ms, window_ms), 4),
                 },
+                prosody=prosody,
             ))
         return segments, total
 
@@ -192,7 +203,7 @@ class JointDubPlanner:
             language=project.target_language,
             speaker_id=segment.speaker_id,
             legacy_payload=payload,
-            settings={"attempt": attempt},
+            settings={"attempt": attempt, "prosody_plan": copy.deepcopy(segment.prosody)},
         )
 
     @staticmethod

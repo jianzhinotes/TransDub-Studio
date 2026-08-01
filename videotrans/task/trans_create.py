@@ -1091,6 +1091,9 @@ class TransCreate(BaseTask):
             "source_end": item.get("end_time_source", ""),
             "nfe": settings.get("f5tts_nfe", 32),
             "seed": settings.get("f5tts_seed", 42),
+            "reference_mode": item.get(
+                "reference_mode", settings.get("f5tts_reference_mode", "youtube_hybrid")),
+            "prosody_plan": item.get("prosody_plan") or {},
         }
         return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
@@ -1282,7 +1285,7 @@ class TransCreate(BaseTask):
             queue_tts.append(tmp_dict)
 
         self.queue_tts = copy.deepcopy(queue_tts)
-        # v3 工程使用稳定单元 ID；旧流水线会忽略这些附加字段，生成行为不变。
+        # 智能工程使用稳定单元 ID；旧流水线会忽略这些附加字段，生成行为不变。
         from videotrans.dub.legacy_adapter import ensure_queue_unit_ids, make_project_id
         ensure_queue_unit_ids(
             self.queue_tts,
@@ -1301,6 +1304,17 @@ class TransCreate(BaseTask):
             item["target_duration_ms"] = max(
                 int(item.get("end_time") or 0) - int(item.get("start_time") or 0),
                 0,
+            )
+
+        # One persisted contract now owns target duration, pauses, speech act
+        # and reference policy.  Backends may consume only the fields they
+        # support, but no later phase is allowed to invent a separate plan.
+        if self.cfg.smart_orchestration:
+            from videotrans.dub.prosody import apply_smart_synthesis_policy
+            apply_smart_synthesis_policy(
+                self.queue_tts,
+                reference_mode=settings.get(
+                    "f5tts_reference_mode", "youtube_hybrid"),
             )
 
         if not self.queue_tts or len(self.queue_tts) < 1:

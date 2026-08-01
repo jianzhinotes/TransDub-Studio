@@ -61,6 +61,8 @@ class Worker(QThread):
                 'recogn_model': getattr(trk.cfg, 'model_name', ''),
                 'smart_orchestration': bool(
                     getattr(trk.cfg, 'smart_orchestration', False)),
+                'reference_mode': settings.get(
+                    'f5tts_reference_mode', 'youtube_hybrid'),
             })
 
             def run_stage(name, callback):
@@ -79,6 +81,8 @@ class Worker(QThread):
                     metadata = {}
                     if name == 'dubbing':
                         metadata['segments_total'] = len(trk.queue_tts)
+                        metadata['reference_mode'] = settings.get(
+                            'f5tts_reference_mode', 'youtube_hybrid')
                         try:
                             import soundfile as sf
                             metadata['audio_duration_s'] = round(sum(

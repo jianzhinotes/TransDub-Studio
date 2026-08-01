@@ -387,6 +387,9 @@ class AppSettings:
             "f5tts_ref_similarity": 0.75,
             # 首轮失败后优先使用同说话人、已验收的中文成品作为重试参考
             "f5tts_chinese_anchor": True,
+            # 类 YouTube 默认：英文仅用于首次建立说话人中文锚点和提取结构韵律；
+            # source_clone 保留旧的逐句英文参考，供高级用户显式选择。
+            "f5tts_reference_mode": "youtube_hybrid",
             # 最终仍检出额外英文时停止合成，避免有缺陷的成品被误发布
             "f5tts_strict_language_gate": True,
             # 普通坏段进入工作台局部返工；只让服务/模型等全局错误终止长任务

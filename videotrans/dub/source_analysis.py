@@ -3,6 +3,7 @@
 import re
 import uuid
 
+from .prosody import speaking_style
 from .schema import DubProject, SourceTurn, WordTiming
 
 
@@ -66,13 +67,18 @@ def build_source_turns(
         groups.append(current)
 
     turns = []
-    for group in groups:
+    for group_index, group in enumerate(groups):
         words = [word for unit in group for word in _word_timings(unit)]
         gaps = [max(0, group[i].source_start_ms - group[i - 1].source_end_ms)
                 for i in range(1, len(group))]
         source_text = " ".join(unit.source_text.strip() for unit in group if unit.source_text.strip())
         duration_ms = max(group[-1].source_end_ms - group[0].source_start_ms, 1)
         token_count = len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?|[\u4e00-\u9fff]", source_text))
+        previous_end = groups[group_index - 1][-1].source_end_ms if group_index else group[0].source_start_ms
+        next_start = (
+            groups[group_index + 1][0].source_start_ms
+            if group_index + 1 < len(groups) else group[-1].source_end_ms
+        )
         turns.append(SourceTurn(
             id=_turn_id(project.project_id, group),
             speaker_id=group[0].speaker_id,
@@ -84,6 +90,9 @@ def build_source_turns(
             prosody={
                 "inter_unit_gaps_ms": gaps,
                 "source_units_per_second": round(token_count * 1000 / duration_ms, 3),
+                "pause_before_ms": max(group[0].source_start_ms - previous_end, 0),
+                "pause_after_ms": max(next_start - group[-1].source_end_ms, 0),
+                "speech_act": speaking_style(source_text),
             },
         ))
     return turns

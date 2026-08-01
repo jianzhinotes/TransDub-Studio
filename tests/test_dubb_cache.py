@@ -196,3 +196,15 @@ class TestDubbCache:
         key_a = t._dubb_cache_key(item)
         item['chinese_anchor_ref'] = str(ref_b)
         assert t._dubb_cache_key(item) != key_a
+
+    def test_reference_mode_and_prosody_change_cache_key(self, tmp_path, cache_dir):
+        t = FakeTTS(queue_tts=_queue(tmp_path, 1, ['统一韵律']), language='zh-cn', tts_type=0)
+        item = t.queue_tts[0]
+        item['reference_mode'] = 'youtube_hybrid'
+        item['prosody_plan'] = {'speech_act': 'statement', 'target_duration_ms': 2000}
+        hybrid = t._dubb_cache_key(item)
+        item['reference_mode'] = 'source_clone'
+        assert t._dubb_cache_key(item) != hybrid
+        item['reference_mode'] = 'youtube_hybrid'
+        item['prosody_plan']['speech_act'] = 'question'
+        assert t._dubb_cache_key(item) != hybrid

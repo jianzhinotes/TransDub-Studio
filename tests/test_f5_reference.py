@@ -1,4 +1,5 @@
 """F5-TTS 自动参考质检/中文门禁/多说话人归属 的单测（不触网、不加载大模型）。"""
+import json
 import sys
 import types
 from pathlib import Path
@@ -339,6 +340,14 @@ class TestLongVideoPreflight:
             "/refs/speaker-0.wav", "/refs/speaker-1.wav"
         }
 
+    def test_preflight_budget_expands_to_cover_speakers(self, tmp_path):
+        t = self._task(tmp_path, count=10)
+        for idx, item in enumerate(t.queue_tts):
+            item["cluster_ref"] = f"/refs/speaker-{idx % 5}.wav"
+        assert t._preflight_sample_limit() == 7
+        indices = t._preflight_indices(t._preflight_sample_limit())
+        assert len({t.queue_tts[idx]["cluster_ref"] for idx in indices}) == 5
+
     def test_preflight_always_includes_highest_compute_risk(self, tmp_path):
         t = self._task(tmp_path, count=12)
         danger = t.queue_tts[6]
@@ -426,6 +435,9 @@ class TestLongVideoPreflight:
         t._run_preflight()
 
         assert all(Path(item["filename"]).is_file() for item in t.queue_tts)
+        report = json.loads((tmp_path / "preflight_report.json").read_text())
+        assert report["status"] == "ready"
+        assert report["sample_count"] == 2
 
     def test_failed_preflight_is_preserved_for_local_repair(self, tmp_path, monkeypatch):
         t = self._task(tmp_path, count=2)
@@ -442,6 +454,9 @@ class TestLongVideoPreflight:
         t._run_preflight()
 
         assert all(Path(item["filename"]).exists() for item in t.queue_tts)
+        report = json.loads((tmp_path / "preflight_report.json").read_text())
+        assert report["status"] == "needs_review"
+        assert report["failed"] == 2
 
     def test_hidden_gradio_oom_restarts_and_retries_only_one_item(self, tmp_path, monkeypatch):
         import videotrans.tts._gradio as gradiomod
@@ -811,12 +826,30 @@ class TestRunUsesClusterRef:
             }
             t._run({"role": "clone", "text": "你好",
                     "cluster_ref": "/refs/spk1.wav", "cluster_ref_text": "Speaker one text."}, 3)
+            t._run({"role": "clone", "text": "你好",
+                    "reference_mode": "source_clone",
+                    "cluster_ref": "/refs/spk1.wav", "cluster_ref_text": "Speaker one text.",
+                    "chinese_anchor_ref": "/refs/zh.wav", "chinese_anchor_text": "中文参考。"}, 4)
+            t._run({"role": "clone", "text": "这是问题。",
+                    "reference_mode": "source_clone",
+                    "cluster_ref": "/refs/spk1.wav", "cluster_ref_text": "Speaker one text.",
+                    "prosody_plan": {"speech_act": "question"}}, 5)
             assert runs[0]["ref_audio_input"] == "/refs/spk1.wav"
             assert runs[1]["ref_audio_input"] == "/refs/global.wav"
             assert runs[2]["ref_audio_input"] == "/refs/zh.wav"
             assert runs[2]["ref_text_input"] == "中文参考。"
             assert runs[3]["ref_audio_input"] == "/refs/resume-zh.wav"
             assert runs[3]["ref_text_input"] == "恢复用中文参考。"
+            assert runs[4]["ref_audio_input"] == "/refs/spk1.wav"
+            assert runs[5]["gen_text_input"].endswith("？")
+            t.resume_chinese_anchors = {}
+            t.resume_chinese_anchor_ref = None
+            t.resume_chinese_anchor_text = None
+            with pytest.raises(DubbingSrtError, match="纯中文锚点模式缺少"):
+                t._run({"role": "clone", "text": "没有锚点",
+                        "reference_mode": "chinese_anchor_only",
+                        "cluster_ref": "/refs/spk1.wav",
+                        "cluster_ref_text": "Speaker one text."}, 6)
         finally:
             f5mod.AudioSegment = orig_seg
 

@@ -18,6 +18,11 @@ from .schema import (
     StaleReason,
     TextCandidate,
 )
+from .prosody import (
+    REFERENCE_MODE_HYBRID,
+    normalize_reference_mode,
+    synthesis_policy_signature,
+)
 
 
 _ID_NAMESPACE = uuid.UUID("c3831034-790c-4cf4-a859-53e447a433ea")
@@ -162,7 +167,9 @@ def project_from_queue(
         units=merged,
         plans=existing.plans if existing else [],
         selected_plan_id=existing.selected_plan_id if existing else None,
-        settings=existing.settings if existing else {},
+        settings=(existing.settings if existing else {
+            "reference_mode": REFERENCE_MODE_HYBRID,
+        }),
         metadata=existing.metadata if existing else {},
     )
     return project
@@ -270,11 +277,12 @@ def plan_to_queue(project: DubProject, plan) -> list:
             "dub_unit_id": segment.id,
             "planned_segment_id": segment.id,
             "source_unit_ids": list(segment.unit_ids),
+            "reference_mode": normalize_reference_mode(
+                project.settings.get("reference_mode", REFERENCE_MODE_HYBRID)),
+            "prosody_plan": copy.deepcopy(segment.prosody),
         })
         old_output = Path(str(item.get("filename") or "candidate.wav"))
-        digest = hashlib.sha1(
-            f"{segment.id}|{selected.text}|{item.get('role')}|{item.get('tts_type')}".encode("utf-8")
-        ).hexdigest()[:16]
+        digest = synthesis_policy_signature(item)
         item["filename"] = str(old_output.parent / f"smart-{index}-{digest}.wav")
         if item.get("role") == "clone" or item.get("ref_wav"):
             item["ref_wav"] = str(

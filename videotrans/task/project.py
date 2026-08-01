@@ -2,7 +2,7 @@
 输出目录旁，之后可反复打开工作台编辑、仅重跑 align+assembling 出新成品。
 
 无 Qt 依赖，可单测。工程内容：
-  project.json   v3 工程清单 + 任务 cfg 关键字段 + 成品/原视频路径
+  project.json   v4 工程清单 + 任务 cfg 关键字段 + 成品/原视频路径
   dub_project.json 联合规划数据（单元、候选、质量报告；第一阶段与 queue 同步）
   run_state.json  各阶段开始/完成/失败/中断状态（任务开始即创建）
   quality_manifest.json 逐段内容寻址质量检查点
@@ -39,7 +39,7 @@ def _project_id(manifest: dict, *, source_video: str, target_language: str) -> s
 
 
 def _sync_dub_project(proj: Path, manifest: dict, queue: list) -> None:
-    """把兼容 queue 同步到 v3 状态文件，同时保留已有候选历史。"""
+    """把兼容 queue 同步到当前状态文件，同时保留已有候选历史。"""
     from videotrans.dub.legacy_adapter import merge_quality_manifest, project_from_queue
     from videotrans.dub.quality_manifest import MANIFEST_FILE
     from videotrans.dub.store import DubProjectStore
@@ -66,7 +66,7 @@ def _sync_dub_project(proj: Path, manifest: dict, queue: list) -> None:
 
 
 def _upgrade_manifest(proj: Path, manifest: dict, queue: list) -> dict:
-    """把旧版/无版本工程原地升级到 v3；旧字段和 queue 文件全部保留。"""
+    """把旧版/无版本工程原地升级；旧字段和 queue 文件全部保留。"""
     from videotrans.dub.legacy_adapter import ensure_queue_unit_ids
     from videotrans.dub.schema import PROJECT_SCHEMA_VERSION
     from videotrans.dub.store import STATE_FILE, atomic_write_json
@@ -161,6 +161,15 @@ def save_project(cfg, queue_tts, cache_folder: str) -> str:
     if quality_source.is_file() and quality_source.resolve() != (proj / MANIFEST_FILE).resolve():
         quality_payload = _read_json(quality_source, {}) or {}
         atomic_write_json(proj / MANIFEST_FILE, quality_payload)
+
+    # Keep the small preflight decision beside the editable project so the UI
+    # can explain whether synthesis started with clean per-speaker anchors.
+    from videotrans.dub.prosody import PREFLIGHT_REPORT_FILE
+    preflight_source = Path(cache_folder) / PREFLIGHT_REPORT_FILE
+    if preflight_source.is_file():
+        preflight_target = proj / PREFLIGHT_REPORT_FILE
+        if preflight_source.resolve() != preflight_target.resolve():
+            _copy_if_diff(preflight_source, preflight_target)
 
     source_video = getattr(cfg, 'name', None) or ''
     target_language = getattr(cfg, 'target_language_code', None) or ''

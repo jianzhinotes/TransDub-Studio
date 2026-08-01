@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
-PROJECT_SCHEMA_VERSION = 3
+PROJECT_SCHEMA_VERSION = 4
 
 
 class StaleReason(str, Enum):
@@ -177,6 +177,7 @@ class PlannedSegment(JsonModel):
     selected_audio_candidate_id: Optional[str] = None
     quality_reports: List[QualityReport] = field(default_factory=list)
     metrics: Dict[str, Any] = field(default_factory=dict)
+    prosody: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data):

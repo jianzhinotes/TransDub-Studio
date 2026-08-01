@@ -18,6 +18,12 @@ from videotrans.configure.config import ROOT_DIR, logger, settings
 from videotrans.configure.excepts import DubbingSrtError
 from videotrans.tts._gradio import GradioBase
 from videotrans.util.help_misc import vail_file
+from videotrans.dub.prosody import (
+    PREFLIGHT_REPORT_FILE,
+    REFERENCE_MODE_CHINESE_ONLY,
+    REFERENCE_MODE_HYBRID,
+    normalize_reference_mode,
+)
 from pydub import AudioSegment
 
 
@@ -33,7 +39,7 @@ class F5TTS(GradioBase):
     MAX_LANGUAGE_RETRIES=2
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
-    PIPELINE_VERSION="quality-v6-chinese-anchor-bank"
+    PIPELINE_VERSION="quality-v7-youtube-hybrid-prosody"
     QUALITY_RULES_VERSION="zh-content-v3-coverage"
     VALIDATOR_BACKEND="faster-whisper-cpu"
     VALIDATOR_MODEL="large-v3-turbo"
@@ -884,6 +890,37 @@ class F5TTS(GradioBase):
     def _format_tts_progress(self, completed: int, total: int, elapsed: float) -> str:
         return self._eta_text("F5-TTS 配音", completed, total, elapsed)
 
+    def _write_preflight_report(
+            self, *, status: str, samples, failures=None, anchor_count=0, error="") -> None:
+        first = next(
+            (item for item in self.queue_tts if item.get("filename")), None)
+        if not first:
+            return
+        try:
+            from videotrans.dub.store import atomic_write_json
+
+            failed = list(failures or [])
+            atomic_write_json(Path(first["filename"]).parent / PREFLIGHT_REPORT_FILE, {
+                "schema_version": 1,
+                "status": str(status),
+                "reference_mode": normalize_reference_mode(
+                    first.get("reference_mode")
+                    or settings.get("f5tts_reference_mode", REFERENCE_MODE_HYBRID)),
+                "sample_count": len(samples),
+                "sample_lines": [int(idx) + 1 for idx, *_rest in samples],
+                "passed": max(len(samples) - len(failed), 0),
+                "failed": len(failed),
+                "failures": [
+                    {"line": int(idx) + 1, "transcript": str(transcript or "")[:160]}
+                    for idx, transcript in failed
+                ],
+                "speaker_anchor_count": int(anchor_count or 0),
+                "error": str(error or "")[:500],
+                "updated_at": int(time.time()),
+            })
+        except Exception as report_error:
+            logger.debug("保存 F5-TTS 预飞报告失败，忽略: %s", report_error)
+
     def _should_run_preflight(self) -> bool:
         if self.is_test or not self.language or self.language[:2].lower() != "zh":
             return False
@@ -892,6 +929,18 @@ class F5TTS(GradioBase):
             item.get("text", "").strip() and not vail_file(item.get("filename"))
             for item in self.queue_tts
         )
+
+    def _preflight_sample_limit(self) -> int:
+        configured = max(
+            1, min(int(settings.get("f5tts_preflight_samples", 5) or 5), 8))
+        speakers = {
+            self._speaker_key(item)
+            for item in self.queue_tts
+            if item.get("text", "").strip()
+        }
+        # Reserve two samples for the shortest/most expensive edge cases while
+        # still giving every speaker a chance to establish a Chinese anchor.
+        return min(max(configured, len(speakers) + 2), 8)
 
     @staticmethod
     def _preflight_risk(item) -> tuple:
@@ -985,7 +1034,7 @@ class F5TTS(GradioBase):
         return has_pathological_repetition(transcript)
 
     def _run_preflight(self) -> None:
-        limit = max(1, min(int(settings.get("f5tts_preflight_samples", 5) or 5), 8))
+        limit = self._preflight_sample_limit()
         indices = self._preflight_indices(limit)
         if not indices:
             return
@@ -993,6 +1042,8 @@ class F5TTS(GradioBase):
         shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
         samples = []
+        failures = []
+        anchor_count = 0
         self.signal(text=f"F5-TTS 长视频预飞：先验证 {len(indices)} 段，通过后才跑全片")
         started = time.monotonic()
         try:
@@ -1000,6 +1051,10 @@ class F5TTS(GradioBase):
                 original = self.queue_tts[idx]
                 sample = copy.deepcopy(original)
                 sample["filename"] = str(temp_dir / f"sample-{idx}.wav")
+                # chinese_anchor_only still needs one bounded, validated source
+                # bootstrap pass on a fresh project.  No normal full-run item is
+                # allowed to fall back to English in that mode.
+                sample["allow_source_bootstrap"] = True
                 error = self._item_task(sample, idx)
                 if error or not vail_file(sample["filename"]):
                     raise DubbingSrtError(
@@ -1015,7 +1070,6 @@ class F5TTS(GradioBase):
                 self._stop_local_service()
             self.signal(text="F5-TTS 预飞合成完成，正在回读内容与重复度")
             model = self._new_validator()
-            failures = []
             sample_transcripts = {}
             try:
                 for idx, original, sample in samples:
@@ -1079,6 +1133,21 @@ class F5TTS(GradioBase):
                     f"F5-TTS 已建立 {anchor_count} 个中文音色锚点；"
                     "后续片段不再持续使用英文参考条件"
                 ))
+            self._write_preflight_report(
+                status="ready" if not failures else "needs_review",
+                samples=samples,
+                failures=failures,
+                anchor_count=anchor_count,
+            )
+        except BaseException as error:
+            self._write_preflight_report(
+                status="blocked",
+                samples=samples,
+                failures=failures,
+                anchor_count=anchor_count,
+                error=error,
+            )
+            raise
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -1946,6 +2015,10 @@ class F5TTS(GradioBase):
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:
         ref_wav,ref_text=self.get_ref_wav(data_item)
         used_chinese_anchor = False
+        reference_mode = normalize_reference_mode(
+            data_item.get("reference_mode")
+            or settings.get("f5tts_reference_mode", REFERENCE_MODE_HYBRID)
+        )
         if data_item.get("role") == "clone":
             retry_no = int(data_item.get('lang_leak_retry') or 0)
             resume_anchor = getattr(self, "resume_chinese_anchors", {}).get(
@@ -1954,32 +2027,43 @@ class F5TTS(GradioBase):
             item_bank = data_item.get("chinese_anchor_bank") or []
             resume_bank = getattr(self, "resume_chinese_anchor_banks", {}).get(
                 self._speaker_key(data_item), [])
-            selected_bank_anchor = self._choose_chinese_anchor(
-                item_bank or resume_bank, data_item, retry_no=retry_no)
-            if selected_bank_anchor:
-                ref_wav = selected_bank_anchor["wav"]
-                ref_text = selected_bank_anchor["text"]
-                used_chinese_anchor = True
-            elif data_item.get("chinese_anchor_ref"):
-                # 泄漏重试专用：用已验收的同说话人中文成品约束生成语言。
-                ref_wav = data_item["chinese_anchor_ref"]
-                ref_text = data_item.get("chinese_anchor_text") or ref_text
-                used_chinese_anchor = True
-            elif resume_anchor:
-                # 中断恢复时，对尚未生成的片段优先使用已验收中文
-                # 成品；按说话人簇匹配，避免主持人与嘉宾互换音色。
-                ref_wav, ref_text = resume_anchor
-                used_chinese_anchor = True
-            elif (not data_item.get("cluster_ref")
-                  and getattr(self, "resume_chinese_anchor_ref", None)):
-                # 兼容没有可靠声纹分簇的单说话人项目。
-                ref_wav = self.resume_chinese_anchor_ref
-                ref_text = self.resume_chinese_anchor_text or ref_text
-                used_chinese_anchor = True
-            elif data_item.get('cluster_ref'):
+            selected_bank_anchor = None
+            if reference_mode in (REFERENCE_MODE_HYBRID, REFERENCE_MODE_CHINESE_ONLY):
+                selected_bank_anchor = self._choose_chinese_anchor(
+                    item_bank or resume_bank, data_item, retry_no=retry_no)
+                if selected_bank_anchor:
+                    ref_wav = selected_bank_anchor["wav"]
+                    ref_text = selected_bank_anchor["text"]
+                    used_chinese_anchor = True
+                elif data_item.get("chinese_anchor_ref"):
+                    # 用已验收的同说话人中文成品约束生成语言。
+                    ref_wav = data_item["chinese_anchor_ref"]
+                    ref_text = data_item.get("chinese_anchor_text") or ref_text
+                    used_chinese_anchor = True
+                elif resume_anchor:
+                    # 中断恢复时，对尚未生成的片段优先使用已验收中文
+                    # 成品；按说话人簇匹配，避免主持人与嘉宾互换音色。
+                    ref_wav, ref_text = resume_anchor
+                    used_chinese_anchor = True
+                elif (not data_item.get("cluster_ref")
+                      and getattr(self, "resume_chinese_anchor_ref", None)):
+                    # 兼容没有可靠声纹分簇的单说话人项目。
+                    ref_wav = self.resume_chinese_anchor_ref
+                    ref_text = self.resume_chinese_anchor_text or ref_text
+                    used_chinese_anchor = True
+            if (
+                reference_mode == REFERENCE_MODE_CHINESE_ONLY
+                and not used_chinese_anchor
+                and not data_item.get("allow_source_bootstrap")
+            ):
+                raise DubbingSrtError(
+                    "F5-TTS 纯中文锚点模式缺少该说话人的已验收中文参考；"
+                    "请先完成预飞或改用智能混合模式。"
+                )
+            if not used_chinese_anchor and data_item.get('cluster_ref'):
                 # 多说话人：该行所属说话人簇的参考（各说各的音色）
                 ref_wav, ref_text = data_item['cluster_ref'], data_item.get('cluster_ref_text') or ref_text
-            elif self.safe_ref_wav:
+            elif not used_chinese_anchor and self.safe_ref_wav:
                 ref_wav, ref_text = self.safe_ref_wav, self.safe_ref_text
         # 泄漏重试：第 2 轮起换备选参考——主参考自身导致大面积串音时，换参考才有救
         retry_no = int(data_item.get('lang_leak_retry') or 0)
@@ -1988,12 +2072,21 @@ class F5TTS(GradioBase):
                 and getattr(self, 'ref_backups', None)):
             ref_wav, ref_text = self.ref_backups[(retry_no - 2) % len(self.ref_backups)]
         gen_text = data_item['text'].strip()
-        if gen_text[-1:] not in ".!?。！？":
-            gen_text += "。"
+        prosody_plan = data_item.get("prosody_plan") or {}
+        speech_act = str(prosody_plan.get("speech_act") or "")
+        desired_mark = {
+            "question": "？",
+            "exclamation": "！",
+        }.get(speech_act)
+        if desired_mark and gen_text.endswith((".", "。")):
+            gen_text = gen_text[:-1].rstrip() + desired_mark
+        elif gen_text[-1:] not in ".!?。！？":
+            gen_text += desired_mark or "。"
         ref_wav_audio = AudioSegment.from_file(ref_wav)
         requested_speed = 0.5 if ref_text and len(ref_text) < 10 else self.get_speed()
         target_duration_ms = max(
-            int(data_item.get("target_duration_ms") or 0)
+            int(prosody_plan.get("target_duration_ms") or 0)
+            or int(data_item.get("target_duration_ms") or 0)
             or (
                 int(data_item.get("end_time") or 0)
                 - int(data_item.get("start_time") or 0)

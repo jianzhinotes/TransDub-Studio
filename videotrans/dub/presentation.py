@@ -79,6 +79,10 @@ def build_plan_view(plan, project=None):
             "current_audio_paths": current_audio_paths,
             "planned_audio_path": selected_audio.path if selected_audio else "",
             "audio_validated": bool(selected_audio),
+            "prosody": dict(segment.prosody or {}),
+            "speech_act": str((segment.prosody or {}).get("speech_act") or "statement"),
+            "pause_before_ms": int((segment.prosody or {}).get("pause_before_ms") or 0),
+            "pause_after_ms": int((segment.prosody or {}).get("pause_after_ms") or 0),
         })
 
     return {

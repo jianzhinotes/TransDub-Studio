@@ -45,6 +45,8 @@ class TestSaveLoadProject:
         _touch(cache / 'source.wav')
         _touch(cache / 'dubb-0.wav')
         _touch(cache / 'dubb-1.wav')
+        (cache / 'preflight_report.json').write_text(
+            json.dumps({'schema_version': 1, 'status': 'ready'}), encoding='utf-8')
         queue = [
             {'line': 1, 'start_time': 0, 'end_time': 1000, 'text': 'hi',
              'filename': str(cache / 'dubb-0.wav')},
@@ -58,6 +60,7 @@ class TestSaveLoadProject:
         assert Path(proj, 'project.json').exists()
         assert Path(proj, 'novoice.mp4').exists()
         assert Path(proj, 'source.wav').exists()
+        assert json.loads(Path(proj, 'preflight_report.json').read_text())['status'] == 'ready'
         assert Path(proj, 'dubb', 'dubb-0.wav').exists()
 
         # queue_tts.json 里 filename 已相对化

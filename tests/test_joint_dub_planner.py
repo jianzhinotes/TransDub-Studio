@@ -485,6 +485,8 @@ def test_plan_view_exposes_candidates_timing_risk_and_fallbacks():
     assert row['candidate_count'] >= 2
     assert 'loss=' in row['candidate_details']
     assert row['risk'] == 'overflow'
+    assert row['speech_act'] == 'statement'
+    assert row['prosody']['target_duration_ms'] == 1000
     assert view['risk_counts']['overflow'] == 1
     assert view['diagnostic_counts'] == {'ok': 1, 'partial': 0, 'fallback': 1}
     assert view['cache_hits'] == 1

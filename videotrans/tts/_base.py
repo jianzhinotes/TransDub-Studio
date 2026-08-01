@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import inspect
+import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -105,6 +106,8 @@ class BaseTTS(BaseCon):
                 self._file_sig(item.get('cluster_ref', '')),
                 # F5 泄漏重试可能改用同说话人的中文成品作为参考。
                 self._file_sig(item.get('chinese_anchor_ref', '')),
+                item.get('reference_mode', ''),
+                json.dumps(item.get('prosody_plan') or {}, ensure_ascii=False, sort_keys=True),
                 # 渠道可通过该属性把额外的推理参数纳入键（如 F5 的 nfe/seed），
                 # 避免参数调整后仍命中旧质量的缓存
                 getattr(self, 'dubb_cache_extra', ''),

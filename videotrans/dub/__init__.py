@@ -19,6 +19,14 @@ from .schema import (
     PROJECT_SCHEMA_VERSION,
 )
 from .llm_candidates import DeepSeekCandidateGenerator, build_candidate_generator
+from .prosody import (
+    REFERENCE_MODE_CHINESE_ONLY,
+    REFERENCE_MODE_HYBRID,
+    REFERENCE_MODE_SOURCE_CLONE,
+    apply_smart_synthesis_policy,
+    attach_queue_prosody,
+    build_prosody_plan,
+)
 
 __all__ = [
     "AudioCandidate",
@@ -35,4 +43,10 @@ __all__ = [
     "PROJECT_SCHEMA_VERSION",
     "DeepSeekCandidateGenerator",
     "build_candidate_generator",
+    "REFERENCE_MODE_CHINESE_ONLY",
+    "REFERENCE_MODE_HYBRID",
+    "REFERENCE_MODE_SOURCE_CLONE",
+    "apply_smart_synthesis_policy",
+    "attach_queue_prosody",
+    "build_prosody_plan",
 ]

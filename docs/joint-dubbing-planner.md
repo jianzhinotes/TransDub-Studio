@@ -1,5 +1,18 @@
 # Joint dubbing planner
 
+## Unified prosody and reference policy
+
+Every materialized smart-dubbing segment carries one `prosody_plan`. It owns the
+target duration, neighboring pauses, speech act, timing pressure, and reference
+mode used by synthesis. Downstream TTS and alignment stages consume this contract
+instead of independently inventing rate or punctuation decisions.
+
+The default `youtube_hybrid` policy bootstraps a small, ASR-verified Chinese anchor
+bank per speaker and then conditions Chinese synthesis on those anchors. Source
+speech remains available for identity and structural performance analysis. The
+legacy `source_clone` policy is opt-in, while `chinese_anchor_only` refuses to
+silently fall back to English after preflight.
+
 TransDub's joint planner treats translation, semantic grouping, target duration, speech synthesis,
 and quality validation as one decision loop. The one-click production workflow now uses it before
 TTS for the complete Chinese target queue and stores a resumable `.smart-plan` checkpoint. The

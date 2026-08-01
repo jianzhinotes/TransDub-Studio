@@ -130,7 +130,8 @@ def test_planning_revision_roundtrip():
         id='seg1', unit_ids=[project.units[0].id], speaker_id='spk1',
         start_ms=100, end_ms=1600, source_text='Hello, world.',
         text_candidates=[TextCandidate(id='tc1', text='你好，世界')],
-        selected_text_candidate_id='tc1')
+        selected_text_candidate_id='tc1',
+        prosody={'speech_act': 'statement', 'target_duration_ms': 1500})
     project.plans.append(PlanningRevision(
         id='plan1', scope_unit_ids=[project.units[0].id],
         segmentation_kind='baseline', segments=[segment], score=0.1))
@@ -139,3 +140,4 @@ def test_planning_revision_roundtrip():
     loaded = DubProject.from_dict(project.to_dict())
     assert loaded.selected_plan_id == 'plan1'
     assert loaded.plans[0].segments[0].text_candidates[0].text == '你好，世界'
+    assert loaded.plans[0].segments[0].prosody['target_duration_ms'] == 1500
