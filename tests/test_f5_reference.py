@@ -792,6 +792,24 @@ class TestClusterRefs:
 
 
 class TestRunUsesClusterRef:
+    def test_identity_contract_rejects_cross_speaker_reference(self, tmp_path):
+        line_ref = _voice(tmp_path / "line.wav", 6.0, 110, 0.7, seed=201)
+        identity_ref = _voice(
+            tmp_path / "identity.wav", 6.0, 160, 0.7, seed=202
+        )
+        t = F5TTS.__new__(F5TTS)
+        t.get_ref_wav = lambda item: (line_ref, "Line reference text.")
+
+        with pytest.raises(DubbingSrtError, match="音色绑定冲突"):
+            t._run({
+                "role": "clone",
+                "text": "这是中文配音。",
+                "speaker_id": "musk",
+                "speaker_identity_required": True,
+                "cluster_ref": identity_ref,
+                "cluster_ref_speaker_id": "host",
+            }, 0)
+
     def test_cluster_ref_priority(self, tmp_path):
         import videotrans.tts._f5tts as f5mod
         runs = []

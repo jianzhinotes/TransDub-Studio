@@ -4,6 +4,7 @@
 ``synthesize=True`` 时才生成候选音频，适合先做局部预览和质量对照。
 """
 
+import copy
 from pathlib import Path
 
 from videotrans.dub.backends import LegacyTTSBackend
@@ -29,12 +30,32 @@ def run_joint_preview(
         project_dir: str = None,
         candidate_backend: str = "auto",
         candidate_cache_dir: str = None,
+        source_audio: str = None,
 ):
+    queue = copy.deepcopy(list(queue_tts))
+    from videotrans.dub.speaker_identity import prepare_speaker_contract
+    speaker_contract = prepare_speaker_contract(
+        queue,
+        source_audio=str(source_audio or source_video),
+        work_dir=f"{candidate_dir}/speaker_identity",
+    )
+    speakers = speaker_contract.get("speakers") or {}
+    if len(speakers) > 1 and speaker_contract.get("status") != "ready":
+        from videotrans.configure.excepts import DubbingSrtError
+        missing = [
+            speaker_id for speaker_id, item in speakers.items()
+            if not item.get("identity_ready")
+        ]
+        raise DubbingSrtError(
+            "说话人音色预检未通过：检测到多位说话人，但 "
+            f"{', '.join(missing) or '部分说话人'} 缺少干净的固定音色锚点。"
+            "已在配音前停止，避免人物声音互换。"
+        )
     project_id = make_project_id(source_video, target_language)
     store = DubProjectStore(project_dir) if project_dir else None
     existing = store.load() if store and store.exists() else None
     project = project_from_queue(
-        queue_tts,
+        queue,
         project_id=project_id,
         name=name,
         source_language=source_language,
@@ -44,7 +65,9 @@ def run_joint_preview(
     # A saved plan can be synthesized in a later process.  Persist the actual
     # source reference instead of assuming every preview directory contains a
     # copied source.wav.
-    project.metadata["source_audio"] = str(Path(source_video).expanduser())
+    project.metadata["source_audio"] = str(
+        Path(source_audio or source_video).expanduser())
+    project.metadata["speaker_identity_contract"] = speaker_contract
     backend = None
     if synthesize:
         if tts_type is None:

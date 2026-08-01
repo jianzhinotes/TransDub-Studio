@@ -507,10 +507,18 @@ class TransCreate(BaseTask):
 
     def diariz(self):
         _st=time.time()
+        auto_identity = bool(
+            self.cfg.smart_orchestration
+            and self.should_dubbing
+            and self.cfg.tts_type in SUPPORT_CLONE
+            and str(self.cfg.voice_role or "").strip().lower() == "clone"
+        )
         # 说话人设为1，不进行分离
-        if self._exit() or not self.cfg.enable_diariz or self.max_speakers == 1 or Path(
+        if self._exit() or (not self.cfg.enable_diariz and not auto_identity) or self.max_speakers == 1 or Path(
                 self.cfg.cache_folder + "/speaker.json").exists():
             return
+        if auto_identity and not self.cfg.enable_diariz:
+            self.signal(text="智能配音正在自动区分说话人，防止音色串人")
         # built pyannote reverb ali_CAM
         speaker_type = settings.get('speaker_type', 'built')
         hf_token = settings.get('hf_token')
@@ -551,7 +559,19 @@ class TransCreate(BaseTask):
                 ], callback=self._process_callback)
                 from videotrans.process.prepare_audio import built_speakers as _run_speakers
                 del kw['is_cuda']
-                kw['num_speakers'] = -1 if self.max_speakers < 1 else self.max_speakers
+                if auto_identity and not self.cfg.enable_diariz:
+                    # Unlimited clustering badly over-splits long interviews
+                    # when the same person changes pace or emotion.  Three is
+                    # a practical default for host/guest/co-host; users who
+                    # enable diarization explicitly still control the limit.
+                    kw['num_speakers'] = max(
+                        2,
+                        int(settings.get("smart_dubbing_max_speakers", 3) or 3),
+                    )
+                else:
+                    kw['num_speakers'] = (
+                        -1 if self.max_speakers < 1 else self.max_speakers
+                    )
                 kw['language'] = self.cfg.detect_language
             elif speaker_type == 'ali_CAM':
                 check_and_down_ms(model_id='iic/speech_campplus_speaker-diarization_common',
@@ -1094,8 +1114,24 @@ class TransCreate(BaseTask):
             "reference_mode": item.get(
                 "reference_mode", settings.get("f5tts_reference_mode", "youtube_hybrid")),
             "prosody_plan": item.get("prosody_plan") or {},
+            "speaker_id": item.get("speaker_id", ""),
+            "cluster_ref_speaker_id": item.get("cluster_ref_speaker_id", ""),
+            "speaker_identity_ref": self._speaker_reference_signature(
+                item.get("cluster_ref", "")
+            ),
         }
         return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+    @staticmethod
+    def _speaker_reference_signature(filename) -> str:
+        try:
+            path = Path(str(filename or ""))
+            stat = path.stat()
+            with path.open("rb") as stream:
+                head = stream.read(1 << 20)
+            return f"{hashlib.md5(head).hexdigest()}-{stat.st_size}"
+        except OSError:
+            return ""
 
     def _dubbing_checkpoint_dir(self) -> Path:
         from videotrans.task.project import checkpoint_dir_for
@@ -1240,6 +1276,22 @@ class TransCreate(BaseTask):
         voice_role = self.cfg.voice_role
         force_clone = str(voice_role).strip().lower() == 'clone' and self.cfg.tts_type in SUPPORT_CLONE
 
+        # Diarization is aligned to the source subtitle rows.  Persist it on
+        # queue items before smart planning so segmentation and voice cloning
+        # share the same speaker boundary contract.
+        speaker_by_line = {}
+        speaker_file = Path(self.cfg.cache_folder) / "speaker.json"
+        if speaker_file.is_file():
+            try:
+                speaker_labels = json.loads(speaker_file.read_text(encoding="utf-8"))
+                for index, source_row in enumerate(source_subs):
+                    if index < len(speaker_labels) and speaker_labels[index]:
+                        speaker_by_line[int(source_row.get("line") or index + 1)] = str(
+                            speaker_labels[index]
+                        )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                logger.warning(f"读取说话人分离结果失败，将使用本地声纹回退: {error}")
+
         grouped_subs = TransCreate._group_source_aligned_subtitles(subs, source_subs)
         # 取出每一条可发声字幕；翻译器合并进去的空白尾行已纳入 refs。
         for i, (it, refs) in enumerate(grouped_subs):
@@ -1275,6 +1327,24 @@ class TransCreate(BaseTask):
                 "tts_type": self.cfg.tts_type,
                 "filename": f"{self.cfg.cache_folder}/dubb-{i}-{_key}.wav"
             }
+            speaker_durations = {}
+            for ref in refs:
+                speaker_id = speaker_by_line.get(int(ref.get("line") or 0))
+                if not speaker_id:
+                    continue
+                duration = max(
+                    int(ref.get("end_time") or 0)
+                    - int(ref.get("start_time") or 0),
+                    0,
+                )
+                speaker_durations[speaker_id] = (
+                    speaker_durations.get(speaker_id, 0) + duration
+                )
+            if speaker_durations:
+                tmp_dict["speaker_id"] = max(
+                    speaker_durations, key=speaker_durations.get
+                )
+                tmp_dict["speaker_identity_source"] = "diarization"
             # 如果是 clone 角色， 需要截取对应片段
             if str(voice).strip().lower() == 'clone' and self.cfg.tts_type in SUPPORT_CLONE:
                 tmp_dict['ref_wav'] = (
@@ -1520,7 +1590,14 @@ class TransCreate(BaseTask):
                 project_dir=str(checkpoint_dir),
                 candidate_backend='auto',
                 candidate_cache_dir=str(checkpoint_dir / 'llm_cache'),
+                source_audio=str(self.clone_ref or self.cfg.source_wav),
             )
+            speaker_contract = project.metadata.get("speaker_identity_contract") or {}
+            speaker_count = len(speaker_contract.get("speakers") or {})
+            if speaker_count > 1:
+                self.signal(text=f"已自动区分 {speaker_count} 位说话人并分别锁定音色")
+            elif speaker_contract.get("status") == "ready":
+                self.signal(text="已锁定当前说话人的固定音色，逐句原声仅用于韵律参考")
             planned = plan_to_queue(project, plan)
             if not planned:
                 raise RuntimeError('smart orchestration returned an empty queue')
@@ -1570,13 +1647,18 @@ class TransCreate(BaseTask):
             self.signal(text=tr('Smart orchestration used the local fallback'))
 
     def _smart_input_fingerprint(self, queue: list) -> str:
-        payload = [{
-            "id": str(item.get("dub_unit_id") or ""),
-            "source_start": int(item.get("start_time_source", 0) or 0),
-            "source_end": int(item.get("end_time_source", 0) or 0),
-            "source": str(item.get("ref_text") or ""),
-            "target": str(item.get("text") or ""),
-        } for item in queue]
+        from videotrans.dub.speaker_identity import CONTRACT_VERSION
+        payload = {
+            "speaker_contract": CONTRACT_VERSION,
+            "rows": [{
+                "id": str(item.get("dub_unit_id") or ""),
+                "source_start": int(item.get("start_time_source", 0) or 0),
+                "source_end": int(item.get("end_time_source", 0) or 0),
+                "source": str(item.get("ref_text") or ""),
+                "target": str(item.get("text") or ""),
+                "speaker_id": str(item.get("speaker_id") or item.get("spk") or ""),
+            } for item in queue],
+        }
         return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
     def _assert_smart_mapping(self, queue: list) -> None:
@@ -1614,7 +1696,7 @@ class TransCreate(BaseTask):
         except (OSError, json.JSONDecodeError, TypeError):
             manifest = {}
         if manifest and (
-            manifest.get("schema_version") != 2
+            manifest.get("schema_version") != 3
             or manifest.get("input_fingerprint") != input_fingerprint
         ):
             return False
@@ -1628,7 +1710,7 @@ class TransCreate(BaseTask):
     def _write_smart_manifest(self, path: Path, input_fingerprint: str, queue: list) -> None:
         from videotrans.dub.store import atomic_write_json
         atomic_write_json(path, {
-            "schema_version": 2,
+            "schema_version": 3,
             "input_fingerprint": input_fingerprint,
             "output_fingerprint": TransCreate._smart_input_fingerprint(self, queue),
             "source_unit_count": sum(len(item.get("source_unit_ids") or []) for item in queue),

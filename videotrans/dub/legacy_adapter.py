@@ -151,10 +151,45 @@ def project_from_queue(
 
     speakers = {}
     for unit in merged:
-        speakers.setdefault(unit.speaker_id, SpeakerTrack(id=unit.speaker_id, name=unit.speaker_id))
+        payload = unit.legacy_payload
+        identity_reference = str(
+            payload.get("speaker_identity_ref")
+            or payload.get("cluster_ref")
+            or ""
+        ).strip() or None
+        incoming = SpeakerTrack(
+            id=unit.speaker_id,
+            name=str(payload.get("speaker_name") or unit.speaker_id),
+            identity_reference=identity_reference,
+            settings={
+                "identity_text": str(
+                    payload.get("speaker_identity_text")
+                    or payload.get("cluster_ref_text")
+                    or ""
+                ),
+                "identity_source": str(
+                    payload.get("speaker_identity_source") or ""
+                ),
+                "identity_required": bool(
+                    payload.get("speaker_identity_required")
+                ),
+            },
+        )
+        current = speakers.get(unit.speaker_id)
+        if current is None or (
+                incoming.identity_reference and not current.identity_reference):
+            speakers[unit.speaker_id] = incoming
     if existing:
         for speaker in existing.speakers:
-            speakers[speaker.id] = speaker
+            incoming = speakers.get(speaker.id)
+            if incoming is None:
+                speakers[speaker.id] = speaker
+                continue
+            incoming.settings = {**speaker.settings, **incoming.settings}
+            if not incoming.identity_reference:
+                incoming.identity_reference = speaker.identity_reference
+            if not incoming.name:
+                incoming.name = speaker.name
 
     project = DubProject(
         project_id=project_id,

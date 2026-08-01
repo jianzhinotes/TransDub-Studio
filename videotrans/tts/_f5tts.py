@@ -40,7 +40,7 @@ class F5TTS(GradioBase):
     MAX_LANGUAGE_RETRIES=2
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
-    PIPELINE_VERSION="quality-v8-performance-resume"
+    PIPELINE_VERSION="quality-v9-speaker-identity-contract"
     QUALITY_RULES_VERSION="zh-content-v4-number-equivalence"
     VALIDATOR_BACKEND="faster-whisper-cpu"
     VALIDATOR_MODEL="large-v3-turbo"
@@ -395,6 +395,23 @@ class F5TTS(GradioBase):
         单一主讲人参考（旧行为）。可用 settings['f5tts_multi_speaker']=false 关闭。
         """
         if str(settings.get('f5tts_multi_speaker', True)).lower() == 'false':
+            return
+        contracted = [
+            item for item in self.queue_tts
+            if item.get("speaker_identity_required")
+        ]
+        if contracted:
+            missing = [
+                item for item in contracted
+                if not item.get("cluster_ref")
+                or not Path(str(item.get("cluster_ref"))).is_file()
+            ]
+            if missing:
+                raise DubbingSrtError(
+                    f"说话人音色预检失败：{len(missing)} 段缺少所属说话人的固定音色锚点。"
+                )
+            # Planning-time contracts are persistent and source-authoritative;
+            # never replace them with a batch-local acoustic re-clustering.
             return
         lines = [(i, it) for i, it in enumerate(self.queue_tts)
                  if it.get('role') == 'clone' and it.get('ref_wav')
@@ -2058,6 +2075,25 @@ class F5TTS(GradioBase):
             or settings.get("f5tts_reference_mode", REFERENCE_MODE_HYBRID)
         )
         if data_item.get("role") == "clone":
+            if data_item.get("speaker_identity_required"):
+                expected_speaker = str(data_item.get("speaker_id") or "").strip()
+                reference_speaker = str(
+                    data_item.get("cluster_ref_speaker_id") or ""
+                ).strip()
+                identity_ref = str(data_item.get("cluster_ref") or "")
+                if not identity_ref or not Path(identity_ref).is_file():
+                    raise DubbingSrtError(
+                        f"说话人 {expected_speaker or '未知'} 缺少固定音色锚点，"
+                        "已在合成前停止，避免串用其他人的声音。"
+                    )
+                if (
+                    reference_speaker and expected_speaker
+                    and reference_speaker != expected_speaker
+                ):
+                    raise DubbingSrtError(
+                        f"说话人音色绑定冲突：{expected_speaker} 不能使用 "
+                        f"{reference_speaker} 的参考音频。"
+                    )
             retry_no = int(data_item.get('lang_leak_retry') or 0)
             resume_anchor = getattr(self, "resume_chinese_anchors", {}).get(
                 self._speaker_key(data_item)

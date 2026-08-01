@@ -192,6 +192,10 @@ class JointDubPlanner:
 
     def _request(self, project, segment, candidate, attempt, candidate_dir, unit_map):
         payload = copy.deepcopy(unit_map[segment.unit_ids[0]].legacy_payload)
+        speaker = next(
+            (item for item in project.speakers if item.id == segment.speaker_id),
+            None,
+        )
         # A planned segment may merge several legacy subtitle rows.  Reusing the
         # first row's reference text/range pairs a long Chinese candidate with a
         # short, mismatched English clip and can copy its tail.  Bind cloning to
@@ -203,6 +207,22 @@ class JointDubPlanner:
             "end_time_source": segment.end_ms,
             "speaker_id": segment.speaker_id,
         })
+        if speaker is not None:
+            identity_reference = str(speaker.identity_reference or "")
+            identity_text = str(speaker.settings.get("identity_text") or "")
+            identity_required = bool(
+                speaker.settings.get("identity_required")
+            )
+            payload.update({
+                "speaker_cluster_id": f"contract:{segment.speaker_id}",
+                "cluster_ref": identity_reference,
+                "cluster_ref_text": identity_text,
+                "cluster_ref_speaker_id": segment.speaker_id,
+                "speaker_identity_required": identity_required,
+                "speaker_identity_source": str(
+                    speaker.settings.get("identity_source") or ""
+                ),
+            })
         output = self._output_path(candidate_dir, segment, candidate, attempt)
         request_id = f"{segment.id}|{candidate.id}|{attempt}"
         spoken_text = candidate.text
@@ -227,6 +247,10 @@ class JointDubPlanner:
                 "target_duration_ms": max(segment.end_ms - segment.start_ms, 1),
                 "fit_to_slot": True,
                 "display_text": candidate.text,
+                "speaker_id": segment.speaker_id,
+                "speaker_identity_required": bool(
+                    speaker and speaker.settings.get("identity_required")
+                ),
             },
         )
 
