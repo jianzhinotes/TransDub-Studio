@@ -21,7 +21,7 @@ from .schema import TextCandidate
 from .translation import ChineseCandidateGenerator
 
 
-PROMPT_VERSION = "deepseek-turn-candidates-v3"
+PROMPT_VERSION = "deepseek-turn-candidates-v4-spoken-zh"
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?%?")
 _SOURCE_NAME_RE = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9'’.-]+(?:\s+[A-Z][A-Za-z0-9'’.-]+)+|[A-Z]{2,})\b"
@@ -40,6 +40,90 @@ _OBVIOUS_ENGLISH_WORDS = {
     "that", "the", "this", "to", "was", "we", "we're", "what", "what's",
     "with", "yeah", "yes", "you", "your",
 }
+
+# 中文字幕可以保留国际产品名；中文配音却不能把这些拉丁字母直接交给
+# F5-TTS。英语参考音色会把它们读成英文，从而使整条中文配音听起来像
+# 中英夹杂。这里是高频科技访谈术语的“口播层”本地化表。
+_SPOKEN_ZH_TERM_RULES = (
+    # ``\b`` 把中文也算作 word character，AI卫星 / 星舰V3 不会命中；
+    # 这里只把 ASCII 字母数字视为单词边界。
+    (re.compile(r"(?<![A-Za-z0-9])Master\s+Orbit(?![A-Za-z0-9])", re.I), "主轨道"),
+    (re.compile(r"(?<![A-Za-z0-9])Putting\s+Solar(?![A-Za-z0-9])", re.I), "部署太阳能"),
+    (re.compile(r"(?<![A-Za-z0-9])So\s+I'?m(?![A-Za-z0-9])", re.I), "所以我"),
+    (re.compile(r"(?<![A-Za-z0-9])Sure\s+People(?![A-Za-z0-9])", re.I), "当然，人们"),
+    (re.compile(r"(?<![A-Za-z0-9])As(?![A-Za-z0-9])", re.I), "正如"),
+    (re.compile(r"(?<![A-Za-z0-9])T(?:erra|era)Fab(?![A-Za-z0-9])", re.I), "泰拉工厂"),
+    (re.compile(r"(?<![A-Za-z0-9])SpaceX(?![A-Za-z0-9])", re.I), "太空探索公司"),
+    (re.compile(r"(?<![A-Za-z0-9])Starlink(?![A-Za-z0-9])", re.I), "星链"),
+    (re.compile(r"(?<![A-Za-z0-9])xAI(?![A-Za-z0-9])", re.I), "艾克斯人工智能"),
+    (re.compile(r"(?<![A-Za-z0-9])AI\s*-?\s*1(?![A-Za-z0-9])", re.I), "人工智能一号"),
+    (re.compile(r"(?<![A-Za-z0-9])AI(?![A-Za-z0-9])", re.I), "人工智能"),
+    (re.compile(r"(?<![A-Za-z0-9])GPU(?![A-Za-z0-9])", re.I), "图形处理器"),
+    (re.compile(r"(?<![A-Za-z0-9])TPU(?![A-Za-z0-9])", re.I), "张量处理器"),
+    (re.compile(r"(?<![A-Za-z0-9])Ian(?![A-Za-z0-9])", re.I), "伊恩"),
+    (re.compile(r"(?<![A-Za-z0-9])Rubin(?![A-Za-z0-9])", re.I), "鲁宾"),
+    (re.compile(r"(?<![A-Za-z0-9])Master(?![A-Za-z0-9])", re.I), "主"),
+    (re.compile(r"(?<![A-Za-z0-9])KA(?![A-Za-z0-9])", re.I), "凯艾"),
+    (re.compile(r"(?<![A-Za-z0-9])KU(?![A-Za-z0-9])", re.I), "凯优"),
+    (re.compile(r"(?<![A-Za-z0-9])F\s*5(?![A-Za-z0-9])", re.I), "艾弗五"),
+)
+_MODEL_TOKEN_RE_SPOKEN = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{1,3})\s*-?\s*(\d+)(?![A-Za-z0-9])")
+_LETTER_NAMES_ZH = {
+    "A": "诶", "B": "比", "C": "西", "D": "迪", "E": "伊", "F": "艾弗",
+    "G": "吉", "H": "艾尺", "I": "艾", "J": "杰", "K": "开", "L": "艾勒",
+    "M": "艾姆", "N": "恩", "O": "欧", "P": "皮", "Q": "丘", "R": "阿尔",
+    "S": "艾斯", "T": "提", "U": "优", "V": "维", "W": "达布留", "X": "艾克斯",
+    "Y": "外", "Z": "贼德",
+}
+_ZH_DIGITS = "零一二三四五六七八九"
+
+
+def _zh_number(value: str) -> str:
+    """Render short model-number suffixes in Chinese, e.g. ``300 -> 三百``."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return "".join(_ZH_DIGITS[int(char)] for char in str(value) if char.isdigit())
+    if number < 10:
+        return _ZH_DIGITS[number]
+    if number < 20:
+        return "十" if number == 10 else "十" + _ZH_DIGITS[number % 10]
+    if number < 100:
+        return _ZH_DIGITS[number // 10] + "十" + (_ZH_DIGITS[number % 10] if number % 10 else "")
+    if number < 1000:
+        tail = number % 100
+        prefix = _ZH_DIGITS[number // 100] + "百"
+        if not tail:
+            return prefix
+        if tail < 10:
+            return prefix + "零" + _ZH_DIGITS[tail]
+        return prefix + _zh_number(str(tail))
+    return "".join(_ZH_DIGITS[int(char)] for char in str(number))
+
+
+def localize_chinese_spoken_terms(text: str) -> str:
+    """Convert common Latin tech terms into natural Chinese TTS forms."""
+    value = str(text or "")
+    for pattern, replacement in _SPOKEN_ZH_TERM_RULES:
+        value = pattern.sub(replacement, value)
+
+    def model_replacement(match):
+        letters, digits = match.group(1).upper(), match.group(2)
+        if letters == "V":
+            return "第" + _zh_number(digits) + "代"
+        if letters == "B":
+            return "第" + _zh_number(digits) + "版"
+        spoken_letters = "".join(_LETTER_NAMES_ZH.get(letter, letter) for letter in letters)
+        return spoken_letters + _zh_number(digits)
+
+    value = _MODEL_TOKEN_RE_SPOKEN.sub(model_replacement, value)
+    value = re.sub(r"\s+", "", value)
+    return _clean(value)
+
+
+def has_latin_speech_token(text: str) -> bool:
+    """Whether a Chinese TTS payload still contains a speakable Latin token."""
+    return bool(re.search(r"[A-Za-z]", str(text or "")))
 
 
 def _candidate_id(segment_id, kind, text):

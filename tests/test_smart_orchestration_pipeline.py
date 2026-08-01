@@ -113,6 +113,37 @@ def test_clone_reference_is_cut_from_source_timeline(tmp_path, monkeypatch):
     assert calls[0]['to'] == '00:10:20,800'
 
 
+def test_smart_clone_reference_is_rebuilt_from_output_timeline(tmp_path, monkeypatch):
+    import videotrans.task.trans_create as transmod
+
+    source_sub = tmp_path / 'en.srt'
+    source_sub.write_text('placeholder', encoding='utf-8')
+    source_rows = [
+        {'start_time': 0, 'end_time': 4_000, 'text': 'Early source.'},
+        {'start_time': 20_000, 'end_time': 25_000, 'text': 'Correct source.'},
+    ]
+    monkeypatch.setattr(transmod, 'get_subtitle_from_srt', lambda _path: source_rows)
+    item = {
+        'role': 'clone', 'start_time': 20_200, 'end_time': 24_800,
+        'start_time_source': 0, 'end_time_source': 4_000,
+        'ref_text': 'Wrong source.', 'ref_wav': str(tmp_path / 'old-ref.wav'),
+    }
+    signals = []
+    fake = SimpleNamespace(
+        cfg=SimpleNamespace(smart_orchestration=True, source_sub=str(source_sub),
+                            cache_folder=str(tmp_path)),
+        queue_tts=[item], signal=lambda **kwargs: signals.append(kwargs),
+    )
+
+    repaired = TransCreate._canonicalize_clone_references(fake)
+
+    assert repaired == 1
+    assert (item['start_time_source'], item['end_time_source']) == (20_000, 25_000)
+    assert item['ref_text'] == 'Correct source.'
+    assert '20000-25000.wav' in item['ref_wav']
+    assert signals
+
+
 @pytest.fixture(scope='module')
 def qapp():
     import os

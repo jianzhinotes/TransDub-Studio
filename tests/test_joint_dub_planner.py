@@ -11,6 +11,8 @@ from videotrans.dub.legacy_adapter import make_project_id, plan_to_queue, projec
 from videotrans.dub.llm_candidates import (
     DeepSeekCandidateGenerator,
     has_obvious_english_leak,
+    has_latin_speech_token,
+    localize_chinese_spoken_terms,
     _sanitize_obvious_english,
 )
 from videotrans.dub.planner import JointDubPlanner
@@ -335,6 +337,14 @@ def test_local_english_repair_covers_observed_boundary_fragments():
     )
     assert all(not has_obvious_english_leak(_sanitize_obvious_english(text))
                for text in examples)
+
+
+def test_chinese_spoken_term_localizer_removes_common_tech_english():
+    text = 'SpaceX AI-1 使用 V3 Starlink、GV300 GPU 和 TPU，xAI 的 KA 天线。'
+    spoken = localize_chinese_spoken_terms(text)
+
+    assert spoken == '太空探索公司人工智能一号使用第三代星链、吉维三百图形处理器和张量处理器，艾克斯人工智能的凯艾天线。'
+    assert not has_latin_speech_token(spoken)
 
 
 def test_contaminated_short_candidate_cannot_beat_longer_clean_candidate():

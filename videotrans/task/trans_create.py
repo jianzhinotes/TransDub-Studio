@@ -1,4 +1,4 @@
-import copy, json, threading
+import copy, hashlib, json, threading
 import subprocess
 import platform, glob, sys
 import math
@@ -1306,6 +1306,8 @@ class TransCreate(BaseTask):
         if not self.queue_tts or len(self.queue_tts) < 1:
             raise RuntimeError(f'字幕长度为0，无法继续配音')
 
+        self._canonicalize_clone_references()
+
         # 如果存在有 ref_wav 即需要clone，存在参考音频的
         if len([it.get("ref_wav") for it in self.queue_tts if it.get("ref_wav")]) > 0:
             self._create_ref_from_vocal()
@@ -1340,6 +1342,58 @@ class TransCreate(BaseTask):
                 if Path(it['filename']).exists():
                     shutil.copy2(it['filename'], name)
 
+    def _canonicalize_clone_references(self) -> int:
+        """Bind smart-plan clone references to the immutable source timeline.
+
+        Joint planning may merge subtitle units, but it must never let an
+        output row borrow an English reference from another time in the video.
+        Historical checkpoints can retain stale source-unit links after
+        re-segmentation; the original source SRT and the pre-TTS time window
+        are the deterministic ground truth for reference audio and text.
+        """
+        if not self.cfg.smart_orchestration or not vail_file(self.cfg.source_sub):
+            return 0
+        source_rows = get_subtitle_from_srt(self.cfg.source_sub)
+        if not source_rows:
+            return 0
+        repaired = 0
+        for index, item in enumerate(self.queue_tts):
+            if str(item.get('role') or '').strip().lower() != 'clone':
+                continue
+            start = int(item.get('start_time') or 0)
+            end = int(item.get('end_time') or 0)
+            if end <= start:
+                continue
+            refs = [row for row in source_rows
+                    if int(row.get('end_time') or 0) > start
+                    and int(row.get('start_time') or 0) < end]
+            if not refs:
+                # A very short planned window can land in an ASR gap.  Use
+                # the nearest source row rather than preserving stale data.
+                refs = [min(source_rows, key=lambda row: min(
+                    abs(int(row.get('start_time') or 0) - start),
+                    abs(int(row.get('end_time') or 0) - end)))]
+            source_start = min(int(row.get('start_time') or 0) for row in refs)
+            source_end = max(int(row.get('end_time') or 0) for row in refs)
+            source_text = ' '.join(str(row.get('text') or '').strip() for row in refs).strip()
+            if (
+                int(item.get('start_time_source') or -1) != source_start
+                or int(item.get('end_time_source') or -1) != source_end
+                or str(item.get('ref_text') or '').strip() != source_text
+            ):
+                repaired += 1
+                item['start_time_source'] = source_start
+                item['end_time_source'] = source_end
+                item['ref_text'] = source_text
+                # Do not reuse a reference wav named for the old time span.
+                item['ref_wav'] = str(
+                    Path(self.cfg.cache_folder)
+                    / f"clone-smart-{index}-{source_start}-{source_end}.wav")
+        if repaired:
+            logger.warning('已按原始字幕时间轴校正 %s 个克隆参考片段', repaired)
+            self.signal(text=f'已校正 {repaired} 段英文克隆参考，避免跨段串音')
+        return repaired
+
     def _smart_orchestrate_queue(self):
         """Run joint translation/segmentation/timing planning before TTS.
 
@@ -1368,7 +1422,10 @@ class TransCreate(BaseTask):
                     if not TransCreate._smart_checkpoint_matches(
                             self, cached, input_fingerprint, checkpoint_manifest):
                         raise ValueError('saved smart queue does not match source-aligned translation')
-                    from videotrans.dub.llm_candidates import has_obvious_english_leak
+                    from videotrans.dub.llm_candidates import (
+                        has_latin_speech_token, has_obvious_english_leak,
+                        localize_chinese_spoken_terms,
+                    )
                     leaked = [item for item in cached
                               if has_obvious_english_leak(item.get('text'))]
                     if leaked:
@@ -1377,11 +1434,32 @@ class TransCreate(BaseTask):
                             len(leaked))
                         raise ValueError('saved smart queue contains untranslated English')
                     for item in cached:
-                        item['filename'] = str(
-                            Path(self.cfg.cache_folder) / Path(item['filename']).name)
+                        # v4 以前的断点可能把 AI / SpaceX 等直接送入英文参考
+                        # 的克隆 TTS。恢复旧工程时也要本地化，并改写文件名以
+                        # 防止复用旧的中英夹杂音频缓存。
+                        original_text = str(item.get('text') or '')
+                        spoken_text = localize_chinese_spoken_terms(original_text)
+                        if spoken_text != original_text:
+                            item['text'] = spoken_text
+                            digest = hashlib.sha1(
+                                f"{item.get('dub_unit_id')}|{spoken_text}|{item.get('role')}|{item.get('tts_type')}"
+                                .encode('utf-8')).hexdigest()[:16]
+                            item['filename'] = str(
+                                Path(self.cfg.cache_folder) / f"smart-{item.get('line', 0)}-{digest}.wav")
+                        else:
+                            item['filename'] = str(
+                                Path(self.cfg.cache_folder) / Path(item['filename']).name)
                         if item.get('ref_wav'):
                             item['ref_wav'] = str(
                                 Path(self.cfg.cache_folder) / Path(item['ref_wav']).name)
+                    latin = [item for item in cached
+                             if has_latin_speech_token(item.get('text'))]
+                    if latin:
+                        examples = '；'.join(
+                            f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
+                            for item in latin[:5])
+                        raise DubbingSrtError(
+                            f'中文口播门禁未通过：恢复断点仍有 {len(latin)} 段未本地化拉丁术语。{examples}')
                     self.queue_tts = cached
                     if resume_queue != checkpoint_queue:
                         from videotrans.dub.store import atomic_write_json
@@ -1391,6 +1469,9 @@ class TransCreate(BaseTask):
                     self._save_srt_target(self.queue_tts, self.cfg.target_sub)
                     self.signal(text=tr('Resuming from saved smart orchestration'))
                     return
+            except DubbingSrtError:
+                # 断点本身的中文口播门禁失败，不能悄悄重分段后绕过它。
+                raise
             except Exception as error:
                 logger.warning(f'智能编排断点读取失败，将重新编排: {error}')
 
@@ -1414,7 +1495,20 @@ class TransCreate(BaseTask):
             planned = plan_to_queue(project, plan)
             if not planned:
                 raise RuntimeError('smart orchestration returned an empty queue')
-            from videotrans.dub.llm_candidates import has_obvious_english_leak
+            from videotrans.dub.llm_candidates import (
+                has_latin_speech_token, has_obvious_english_leak,
+                localize_chinese_spoken_terms,
+            )
+            for index, item in enumerate(planned):
+                original_text = str(item.get('text') or '')
+                spoken_text = localize_chinese_spoken_terms(original_text)
+                if spoken_text == original_text:
+                    continue
+                item['text'] = spoken_text
+                digest = hashlib.sha1(
+                    f"{item.get('dub_unit_id')}|{spoken_text}|{item.get('role')}|{item.get('tts_type')}"
+                    .encode('utf-8')).hexdigest()[:16]
+                item['filename'] = str(Path(self.cfg.cache_folder) / f"smart-{index}-{digest}.wav")
             leaked = [item for item in planned
                       if has_obvious_english_leak(item.get('text'))]
             if leaked:
@@ -1423,6 +1517,13 @@ class TransCreate(BaseTask):
                     for item in leaked[:5])
                 raise DubbingSrtError(
                     f'智能编排译文门禁未通过：仍有 {len(leaked)} 段普通英文未翻译。{examples}')
+            latin = [item for item in planned if has_latin_speech_token(item.get('text'))]
+            if latin:
+                examples = '；'.join(
+                    f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
+                    for item in latin[:5])
+                raise DubbingSrtError(
+                    f'中文口播门禁未通过：仍有 {len(latin)} 段未本地化拉丁术语。{examples}')
             TransCreate._assert_smart_mapping(self, planned)
             TransCreate._assert_translation_semantics(self, planned)
             self.queue_tts = planned
