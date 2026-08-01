@@ -90,6 +90,25 @@ def test_short_fragment_merge_does_not_break_chinese_continuation():
     assert merged.groups[0].baseline_text == '几乎占全球总量的百分之九十。'
 
 
+def test_long_incomplete_clause_merges_with_its_completion():
+    project = _project([
+        _row(1, '我们的目标是从目前每年大约', 0, 4800,
+             ref='We aim to go from somewhere'),
+        _row(2, '两千五百吨提升到每年数百万吨。', 4800, 9560,
+             ref='2500 tons to millions of tons.'),
+    ])
+    turn = build_source_turns(project)[0]
+    options = build_segmentation_options(
+        turn, {unit.id: unit for unit in project.units}
+    )
+    merged = next(option for option in options if option.kind == 'merge_short')
+
+    assert len(merged.groups) == 1
+    assert merged.groups[0].baseline_text == (
+        '我们的目标是从目前每年大约两千五百吨提升到每年数百万吨。'
+    )
+
+
 def test_chinese_candidates_are_conservative_and_keep_entities():
     generator = ChineseCandidateGenerator()
     model = DurationModel()

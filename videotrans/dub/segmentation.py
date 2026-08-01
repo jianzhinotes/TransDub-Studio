@@ -70,6 +70,16 @@ def _short(unit):
     return duration < 1500 or len(text.strip("，。！？,.!? ")) <= 6
 
 
+def _continues(unit):
+    """Whether a translated row is grammatically unfinished."""
+    text = selected_text(unit).rstrip()
+    return text.endswith((
+        "，", ",", "：", ":", "的", "地", "得", "将", "把", "被",
+        "与", "和", "及", "或", "到", "从", "为", "比", "向", "在",
+        "于", "共", "约",
+    ))
+
+
 def build_segmentation_options(
         turn: SourceTurn,
         unit_map,
@@ -94,17 +104,24 @@ def build_segmentation_options(
     i = 0
     while i < len(units):
         current = [units[i]]
-        if i + 1 < len(units):
+        while i + 1 < len(units):
             nxt = units[i + 1]
-            gap = nxt.planned_start_ms - units[i].planned_end_ms
-            combined_ms = nxt.planned_end_ms - units[i].planned_start_ms
-            if ((_short(units[i]) or _short(nxt))
+            gap = nxt.planned_start_ms - current[-1].planned_end_ms
+            combined_ms = nxt.planned_end_ms - current[0].planned_start_ms
+            continuation = _continues(current[-1])
+            duration_limit = max(max_group_ms, 11_000) if continuation else max_group_ms
+            should_merge = continuation or (
+                len(current) == 1 and (_short(current[-1]) or _short(nxt))
+            )
+            if (should_merge
                     and gap <= merge_gap_ms
-                    and combined_ms <= max_group_ms
-                    and nxt.speaker_id == units[i].speaker_id):
+                    and combined_ms <= duration_limit
+                    and nxt.speaker_id == current[-1].speaker_id):
                 current.append(nxt)
                 merge_count += 1
                 i += 1
+                continue
+            break
         merged_groups.append(_group(current))
         i += 1
 
