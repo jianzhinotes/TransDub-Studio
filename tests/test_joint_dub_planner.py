@@ -76,6 +76,20 @@ def test_segmentation_offers_short_fragment_merge():
     assert '所以我们继续' in merged.groups[0].baseline_text
 
 
+def test_short_fragment_merge_does_not_break_chinese_continuation():
+    project = _project([
+        _row(1, '几乎占全球总量的', 0, 2400, ref='almost all of the total'),
+        _row(2, '百分之九十。', 2400, 2800, ref='ninety percent.'),
+    ])
+    turn = build_source_turns(project)[0]
+    options = build_segmentation_options(
+        turn, {unit.id: unit for unit in project.units}
+    )
+    merged = next(option for option in options if option.kind == 'merge_short')
+
+    assert merged.groups[0].baseline_text == '几乎占全球总量的百分之九十。'
+
+
 def test_chinese_candidates_are_conservative_and_keep_entities():
     generator = ChineseCandidateGenerator()
     model = DurationModel()

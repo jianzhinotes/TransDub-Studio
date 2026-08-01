@@ -40,7 +40,11 @@ def _join_text(parts, separator="，"):
     for part in (str(value or "").strip() for value in parts):
         if not part:
             continue
-        if output and output[-1:] not in "，。！？；：,.!?;:" and part[:1] not in "，。！？；：,.!?;:":
+        continuation_tail = "的地得了着将把被与和及或到从为比向在于共约"
+        if (output
+                and output[-1:] not in "，。！？；：,.!?;:"
+                and part[:1] not in "，。！？；：,.!?;:"
+                and not (separator == "，" and output[-1:] in continuation_tail)):
             output += separator
         output += part
     return output
