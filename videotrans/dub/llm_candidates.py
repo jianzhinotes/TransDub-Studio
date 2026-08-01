@@ -66,8 +66,18 @@ _SPOKEN_ZH_TERM_RULES = (
     (re.compile(r"(?<![A-Za-z0-9])KA(?![A-Za-z0-9])", re.I), "凯艾"),
     (re.compile(r"(?<![A-Za-z0-9])KU(?![A-Za-z0-9])", re.I), "凯优"),
     (re.compile(r"(?<![A-Za-z0-9])F\s*5(?![A-Za-z0-9])", re.I), "艾弗五"),
+    # Media, agencies and place names frequently occur in interviews.  They
+    # are factual proper nouns, not English leakage, but F5 should receive a
+    # Chinese-speaking form instead of copying the Latin reference aloud.
+    (re.compile(r"(?<![A-Za-z0-9])Shark\s*Tank(?![A-Za-z0-9])", re.I), "创智赢家"),
+    (re.compile(r"(?<![A-Za-z0-9])Fox\s*News(?![A-Za-z0-9])", re.I), "福克斯新闻"),
+    (re.compile(r"(?<![A-Za-z0-9])NBC(?![A-Za-z0-9])", re.I), "美国全国广播公司"),
+    (re.compile(r"(?<![A-Za-z0-9])CIA(?![A-Za-z0-9])", re.I), "美国中央情报局"),
+    (re.compile(r"(?<![A-Za-z0-9])Spy\s*Ranch(?![A-Za-z0-9])", re.I), "斯派牧场"),
 )
 _MODEL_TOKEN_RE_SPOKEN = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{1,3})\s*-?\s*(\d+)(?![A-Za-z0-9])")
+_ACRONYM_SPOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2,})(?![A-Za-z0-9])")
+_SINGLE_LETTER_SPOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z])(?![A-Za-z0-9])")
 _LETTER_NAMES_ZH = {
     "A": "诶", "B": "比", "C": "西", "D": "迪", "E": "伊", "F": "艾弗",
     "G": "吉", "H": "艾尺", "I": "艾", "J": "杰", "K": "开", "L": "艾勒",
@@ -117,6 +127,16 @@ def localize_chinese_spoken_terms(text: str) -> str:
         return spoken_letters + _zh_number(digits)
 
     value = _MODEL_TOKEN_RE_SPOKEN.sub(model_replacement, value)
+
+    def acronym_replacement(match):
+        # Unknown acronyms are still pronounceable in Chinese letter names.
+        # This is safer than handing the English token to a cloned English
+        # voice; specific institutions above keep their natural full names.
+        return "".join(_LETTER_NAMES_ZH.get(letter, letter) for letter in match.group(1))
+
+    value = _ACRONYM_SPOKEN_RE.sub(acronym_replacement, value)
+    value = _SINGLE_LETTER_SPOKEN_RE.sub(
+        lambda match: _LETTER_NAMES_ZH.get(match.group(1), match.group(1)), value)
     value = re.sub(r"\s+", "", value)
     return _clean(value)
 
