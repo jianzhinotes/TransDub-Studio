@@ -13,6 +13,7 @@ from videotrans.configure.config import tr, settings, app_cfg, logger
 from videotrans.task.taskcfg import TaskCfgVTT, SignMsg, InputFile
 from videotrans.task.trans_create import TransCreate
 from videotrans.util.tools import vail_file
+from videotrans.configure.excepts import DubbingTextReviewRequired
 
 
 class Worker(QThread):
@@ -117,6 +118,61 @@ class Worker(QThread):
                     performance.finish_stage(name, metadata=metadata)
                 return result
 
+            def run_dubbing_with_text_review():
+                """Pause at a recoverable wording gate instead of failing.
+
+                Smart planning has already persisted its queue before raising
+                ``DubbingTextReviewRequired``.  The embedded editor changes
+                that queue in place; after the user continues we replace only
+                the smart-plan checkpoint and retry the dubbing stage.
+                """
+                review = None
+                while True:
+                    if review is None:
+                        try:
+                            return run_stage('dubbing', trk.dubbing)
+                        except DubbingTextReviewRequired as pending:
+                            review = pending
+                    if review is not None:
+                        issue_count = len(review.issues)
+                        run_state.finish_stage(
+                            'dubbing', status='waiting_review',
+                            metadata={'text_review_segments': issue_count},
+                            error=str(review))
+                        performance.finish_stage(
+                            'dubbing', status='waiting_review',
+                            metadata={'text_review_segments': issue_count},
+                            error=str(review))
+                        self._post(
+                            text=(str(review) + '\n已保存智能编排断点：请编辑红色“中文口播待处理”'
+                                  '的句子，然后点击“继续合成”。无需重新识别或翻译。'))
+                        app_cfg.set_countdown(86400)
+                        self._post(
+                            text=(f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}'
+                                  f'<|>{trk.cfg.name}<|>{trk.cfg.source_wav}'
+                                  f'<|>{trk.cfg.source_language_code}'),
+                            type='edit_dubbing')
+                        self._post(tr('The subtitle editing interface is rendering'))
+                        while app_cfg.task_countdown > 0:
+                            if self._exit():
+                                return None
+                            time.sleep(1)
+                            app_cfg.set_countdown(app_cfg.task_countdown - 1)
+                        qfile = Path(f'{trk.cfg.cache_folder}/queue_tts.json')
+                        try:
+                            reviewed_queue = json.loads(qfile.read_text(encoding='utf-8'))
+                            trk.accept_smart_text_review(reviewed_queue)
+                        except DubbingTextReviewRequired as unresolved:
+                            # The editor remains the recovery path even when a
+                            # user clicked continue without changing all flags.
+                            # No terminal error or expensive rerun is emitted.
+                            review = unresolved
+                            continue
+                        except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                            raise DubbingTextReviewRequired(
+                                f'无法读取中文口播编辑结果：{error}。请在工作台保存后继续。')
+                        review = None
+
             manual_proof = (
                 not trk.cfg.smart_orchestration
                 and float(settings.get('countdown_sec', 0)) > 0)
@@ -169,7 +225,7 @@ class Worker(QThread):
                         app_cfg.set_countdown(app_cfg.task_countdown - 1)
 
                 if self._exit(): return
-                run_stage('dubbing', trk.dubbing)
+                run_dubbing_with_text_review()
 
                 from videotrans.dub.quality_manifest import unresolved_queue_indices
                 quality_failed = unresolved_queue_indices(trk.queue_tts)

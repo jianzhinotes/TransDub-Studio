@@ -27,6 +27,19 @@ class DubbingSrtError(VideoTransError):
     pass
 
 
+class DubbingTextReviewRequired(DubbingSrtError):
+    """A recoverable Chinese-TTS text gate.
+
+    Unlike a synthesis failure, this means the planned queue is safely saved
+    and needs a human wording decision.  The one-video worker catches it and
+    opens the inline dubbing editor instead of ending the whole task.
+    """
+
+    def __init__(self, message='', issues=None):
+        super().__init__(message)
+        self.issues = list(issues or [])
+
+
 class SpeechToTextError(VideoTransError):
     pass
 

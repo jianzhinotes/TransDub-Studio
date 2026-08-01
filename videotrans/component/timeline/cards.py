@@ -176,8 +176,15 @@ class SpeakerCard(QFrame):
         self.status_label.setStyleSheet(f'color:{_STATUS_COLOR[kind]};')
         leak = str(item.get('lang_leak') or '')
         quality_status = str(item.get('quality_status') or '')
-        self.leak_badge.setVisible(bool(leak or quality_status.startswith('needs_')))
-        if leak or quality_status:
+        spoken_review = str(item.get('spoken_review_issue') or '')
+        self.leak_badge.setVisible(bool(
+            leak or quality_status.startswith('needs_') or spoken_review))
+        if spoken_review:
+            self.leak_badge.setText('⚠ 中文口播待处理')
+            self.leak_badge.setToolTip(
+                spoken_review + '\n请把该句改为中文口播形式；保存后点击“继续合成”。')
+        elif leak or quality_status:
+            self.leak_badge.setText('⚠ ' + tr('Quality check failed'))
             failures = '；'.join(
                 tr(_QUALITY_FAILURE_TEXT.get(code, code))
                 for code in (item.get('quality_failures') or []))

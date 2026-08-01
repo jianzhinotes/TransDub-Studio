@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from videotrans.task.trans_create import TransCreate
+from videotrans.configure.excepts import DubbingTextReviewRequired
 
 
 def test_smart_orchestration_resumes_materialized_queue(tmp_path):
@@ -75,6 +76,36 @@ def test_non_chinese_target_keeps_existing_queue(tmp_path):
     TransCreate._smart_orchestrate_queue(fake)
 
     assert fake.queue_tts == original
+
+
+def test_smart_text_gate_persists_an_editable_recovery_checkpoint(tmp_path):
+    checkpoint = tmp_path / 'project' / 'smart_queue.json'
+    manifest = checkpoint.parent / 'manifest.json'
+    cache = tmp_path / 'cache'
+    written = []
+    queue = [{
+        'line': 7, 'text': 'UnknownBrand', 'ref_text': 'UnknownBrand',
+        'start_time': 0, 'end_time': 1200, 'source_unit_ids': ['source:7'],
+    }]
+    fake = SimpleNamespace(
+        cfg=SimpleNamespace(
+            cache_folder=str(cache), target_sub=str(tmp_path / 'zh.srt'),
+            target_language_code='zh-cn', noextname='demo'),
+        queue_tts=[],
+        _save_srt_target=lambda rows, path: written.append((rows, path)),
+    )
+
+    with pytest.raises(DubbingTextReviewRequired) as raised:
+        TransCreate._request_smart_text_review(
+            fake, queue, checkpoint, manifest, 'source-fingerprint', [{
+                'item': queue[0], 'reason': '仍含拉丁术语，请改成适合中文口播的名称后继续。',
+            }])
+
+    assert '第7段' in str(raised.value)
+    assert queue[0]['spoken_review_issue']
+    assert checkpoint.is_file()
+    assert (cache / 'queue_tts.json').is_file()
+    assert written and written[0][1] == str(tmp_path / 'zh.srt')
 
 
 def test_clone_reference_is_cut_from_source_timeline(tmp_path, monkeypatch):

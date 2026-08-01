@@ -23,7 +23,10 @@ from ._base import BaseTask
 from videotrans.util.help_ffmpeg import get_video_codec, get_audio_time, runffmpeg, get_video_info, conver_to_16k, \
     get_video_duration, cut_from_audio, create_concat_txt, concat_multi_audio, change_speed_rubberband
 from videotrans.task.taskcfg import TaskCfgVTT
-from videotrans.configure.excepts import VideoTransError, FFmpegError, SpeechToTextError, DubbingSrtError
+from videotrans.configure.excepts import (
+    VideoTransError, FFmpegError, SpeechToTextError, DubbingSrtError,
+    DubbingTextReviewRequired,
+)
 
 from videotrans.util.help_misc import vail_file, read_last_n_lines, is_novoice_mp4, get_md5
 from videotrans.util.help_srt import get_subtitle_from_srt, delete_punc, ms_to_time_string, simple_wrap, set_ass_font
@@ -1565,13 +1568,6 @@ class TransCreate(BaseTask):
                         has_latin_speech_token, has_obvious_english_leak,
                         localize_chinese_spoken_terms,
                     )
-                    leaked = [item for item in cached
-                              if has_obvious_english_leak(item.get('text'))]
-                    if leaked:
-                        logger.warning(
-                            '旧智能编排断点含 %s 段普通英文残留，废弃并重新编排',
-                            len(leaked))
-                        raise ValueError('saved smart queue contains untranslated English')
                     for item in cached:
                         # v4 以前的断点可能把 AI / SpaceX 等直接送入英文参考
                         # 的克隆 TTS。恢复旧工程时也要本地化，并改写文件名以
@@ -1591,14 +1587,13 @@ class TransCreate(BaseTask):
                         if item.get('ref_wav'):
                             item['ref_wav'] = str(
                                 Path(self.cfg.cache_folder) / Path(item['ref_wav']).name)
-                    latin = [item for item in cached
-                             if has_latin_speech_token(item.get('text'))]
-                    if latin:
-                        examples = '；'.join(
-                            f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
-                            for item in latin[:5])
-                        raise DubbingSrtError(
-                            f'中文口播门禁未通过：恢复断点仍有 {len(latin)} 段未本地化拉丁术语。{examples}')
+                    issues = TransCreate._smart_text_review_issues(
+                        cached, has_obvious_english_leak, has_latin_speech_token)
+                    if issues:
+                        TransCreate._request_smart_text_review(
+                            self,
+                            cached, checkpoint_queue, checkpoint_manifest,
+                            input_fingerprint, issues)
                     self.queue_tts = cached
                     if resume_queue != checkpoint_queue:
                         from videotrans.dub.store import atomic_write_json
@@ -1655,21 +1650,13 @@ class TransCreate(BaseTask):
                     f"{item.get('dub_unit_id')}|{spoken_text}|{item.get('role')}|{item.get('tts_type')}"
                     .encode('utf-8')).hexdigest()[:16]
                 item['filename'] = str(Path(self.cfg.cache_folder) / f"smart-{index}-{digest}.wav")
-            leaked = [item for item in planned
-                      if has_obvious_english_leak(item.get('text'))]
-            if leaked:
-                examples = '；'.join(
-                    f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
-                    for item in leaked[:5])
-                raise DubbingSrtError(
-                    f'智能编排译文门禁未通过：仍有 {len(leaked)} 段普通英文未翻译。{examples}')
-            latin = [item for item in planned if has_latin_speech_token(item.get('text'))]
-            if latin:
-                examples = '；'.join(
-                    f"第{item.get('line', '?')}段：{item.get('text', '')[:60]}"
-                    for item in latin[:5])
-                raise DubbingSrtError(
-                    f'中文口播门禁未通过：仍有 {len(latin)} 段未本地化拉丁术语。{examples}')
+            issues = TransCreate._smart_text_review_issues(
+                planned, has_obvious_english_leak, has_latin_speech_token)
+            if issues:
+                TransCreate._request_smart_text_review(
+                    self,
+                    planned, checkpoint_queue, checkpoint_manifest,
+                    input_fingerprint, issues)
             TransCreate._assert_smart_mapping(self, planned)
             TransCreate._assert_translation_semantics(self, planned)
             self.queue_tts = planned
@@ -1685,6 +1672,90 @@ class TransCreate(BaseTask):
             # One-click mode must remain usable offline or when an LLM is unavailable.
             logger.exception(f'智能编排失败，保留现有译文继续配音: {error}', exc_info=True)
             self.signal(text=tr('Smart orchestration used the local fallback'))
+
+    @staticmethod
+    def _smart_text_review_issues(queue, has_english, has_latin):
+        """Return human-actionable text issues without discarding a plan."""
+        issues = []
+        for item in queue:
+            text = str(item.get('text') or '')
+            reason = ''
+            if has_english(text):
+                reason = '仍含未翻译的英文，请改成中文表达后继续。'
+            elif has_latin(text):
+                reason = '仍含拉丁术语，请改成适合中文口播的名称后继续。'
+            if reason:
+                issues.append({'item': item, 'reason': reason})
+        return issues
+
+    def _request_smart_text_review(
+            self, queue, checkpoint_queue, checkpoint_manifest,
+            input_fingerprint, issues):
+        """Persist a planned queue, then ask the UI for wording review.
+
+        This deliberately does not turn a wording uncertainty into a terminal
+        task error.  The editor writes the same materialized queue back; the
+        next attempt resumes from it and only starts TTS after all issues are
+        resolved.
+        """
+        from videotrans.dub.store import atomic_write_json
+
+        for issue in issues:
+            item = issue['item']
+            item['spoken_review_issue'] = issue['reason']
+        self.queue_tts = queue
+        atomic_write_json(checkpoint_queue, queue)
+        # The embedded Dubbing Studio reads this working copy.  Keep it in
+        # sync with the durable checkpoint so the red review markers are
+        # visible immediately rather than leaving the user at a dead end.
+        atomic_write_json(Path(self.cfg.cache_folder) / 'queue_tts.json', queue)
+        TransCreate._write_smart_manifest(
+            self, checkpoint_manifest, input_fingerprint, queue)
+        self._save_srt_target(queue, self.cfg.target_sub)
+        examples = '；'.join(
+            f"第{issue['item'].get('line', '?')}段："
+            f"{issue['item'].get('text', '')[:50]}"
+            for issue in issues[:5])
+        raise DubbingTextReviewRequired(
+            f'中文口播需要人工确认：发现 {len(issues)} 段专名或英文残留。{examples}',
+            issues=issues)
+
+    def accept_smart_text_review(self, queue: list) -> None:
+        """Promote editor changes to the smart-plan checkpoint for resume."""
+        from videotrans.task.project import checkpoint_dir_for
+        from videotrans.dub.store import atomic_write_json
+
+        if not isinstance(queue, list) or not queue:
+            raise DubbingSrtError('中文口播编辑结果为空，无法继续配音。')
+        from videotrans.dub.llm_candidates import (
+            has_latin_speech_token, has_obvious_english_leak,
+        )
+        issues = TransCreate._smart_text_review_issues(
+            queue, has_obvious_english_leak, has_latin_speech_token)
+        if issues:
+            for issue in issues:
+                issue['item']['spoken_review_issue'] = issue['reason']
+            Path(f'{self.cfg.cache_folder}/queue_tts.json').write_text(
+                json.dumps(queue, ensure_ascii=False), encoding='utf-8')
+            examples = '；'.join(
+                f"第{issue['item'].get('line', '?')}段"
+                for issue in issues[:5])
+            raise DubbingTextReviewRequired(
+                f'仍有 {len(issues)} 段中文口播待修改（{examples}）。'
+                '请编辑带红色“中文口播待处理”标记的句子后再继续。',
+                issues=issues)
+        for item in queue:
+            item.pop('spoken_review_issue', None)
+        checkpoint_dir = Path(checkpoint_dir_for(
+            self.cfg.target_dir, self.cfg.noextname, 'smart-plan'))
+        checkpoint_queue = checkpoint_dir / 'smart_queue.json'
+        checkpoint_manifest = checkpoint_dir / 'manifest.json'
+        # The input fingerprint is the source-aligned queue reconstructed on
+        # the retry; it must remain stable while the reviewed plan is updated.
+        input_fingerprint = TransCreate._smart_input_fingerprint(self, self.queue_tts)
+        atomic_write_json(checkpoint_queue, queue)
+        TransCreate._write_smart_manifest(
+            self, checkpoint_manifest, input_fingerprint, queue)
 
     def _smart_input_fingerprint(self, queue: list) -> str:
         from videotrans.dub.speaker_identity import CONTRACT_VERSION
