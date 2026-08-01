@@ -1,3 +1,8 @@
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
 from videotrans.dub.legacy_adapter import (
     make_project_id,
     plan_to_queue,
@@ -9,6 +14,8 @@ from videotrans.dub.prosody import (
     REFERENCE_MODE_HYBRID,
     REFERENCE_MODE_SOURCE_CLONE,
     apply_smart_synthesis_policy,
+    apply_output_performance,
+    attach_source_performance,
     attach_queue_prosody,
     build_prosody_plan,
     normalize_reference_mode,
@@ -108,3 +115,59 @@ def test_joint_plan_materializes_same_prosody_contract():
     materialized = plan_to_queue(project, plan)
     assert materialized[0]["prosody_plan"] == plan.segments[0].prosody
     assert materialized[0]["reference_mode"] == REFERENCE_MODE_HYBRID
+
+
+def _tone(path, amplitude):
+    sample_rate = 16000
+    timeline = np.arange(sample_rate, dtype=np.float32) / sample_rate
+    audio = amplitude * np.sin(2 * np.pi * 180 * timeline)
+    sf.write(path, audio, sample_rate)
+    return str(path)
+
+
+def test_source_performance_is_speaker_relative_and_bounded(tmp_path):
+    queue = [
+        _row(1, "轻声说明。", 0, 1000, "Quiet statement."),
+        _row(2, "重点说明！", 1000, 2000, "Important statement!"),
+    ]
+    queue[0]["ref_wav"] = _tone(tmp_path / "quiet.wav", 0.08)
+    queue[1]["ref_wav"] = _tone(tmp_path / "loud.wav", 0.45)
+    attach_queue_prosody(queue)
+    before = synthesis_policy_signature(queue[0])
+    attach_source_performance(queue)
+
+    quiet = queue[0]["prosody_plan"]["performance"]
+    loud = queue[1]["prosody_plan"]["performance"]
+    assert quiet["relative_energy_db"] < 0
+    assert loud["relative_energy_db"] > 0
+    assert -2 <= quiet["output_gain_db"] <= 2
+    assert -2 <= loud["output_gain_db"] <= 2
+    assert synthesis_policy_signature(queue[0]) != before
+
+
+def test_source_performance_normalizes_explicit_speakers_independently(tmp_path):
+    queue = [
+        _row(1, "甲说话。", 0, 1000, "Speaker A."),
+        _row(2, "乙说话。", 1000, 2000, "Speaker B."),
+    ]
+    queue[0].update(
+        speaker_id="speaker-a", ref_wav=_tone(tmp_path / "a.wav", 0.05))
+    queue[1].update(
+        speaker_id="speaker-b", ref_wav=_tone(tmp_path / "b.wav", 0.5))
+    attach_queue_prosody(queue)
+    attach_source_performance(queue)
+
+    assert queue[0]["prosody_plan"]["performance"]["relative_energy_db"] == 0
+    assert queue[1]["prosody_plan"]["performance"]["relative_energy_db"] == 0
+
+
+def test_output_performance_gain_is_applied_atomically(tmp_path):
+    target = Path(_tone(tmp_path / "target.wav", 0.1))
+    before, _ = sf.read(target)
+    applied = apply_output_performance(
+        target, {"performance": {"output_gain_db": 2.0}})
+    after, _ = sf.read(target)
+
+    assert applied == 2.0
+    assert np.sqrt(np.mean(after ** 2)) > np.sqrt(np.mean(before ** 2))
+    assert not list(tmp_path.glob(".*.performance.wav"))

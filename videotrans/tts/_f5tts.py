@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import copy
 import gc
+import hashlib
 import os
 import platform
 import re
@@ -39,7 +40,7 @@ class F5TTS(GradioBase):
     MAX_LANGUAGE_RETRIES=2
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
-    PIPELINE_VERSION="quality-v7-youtube-hybrid-prosody"
+    PIPELINE_VERSION="quality-v8-performance-resume"
     QUALITY_RULES_VERSION="zh-content-v3-coverage"
     VALIDATOR_BACKEND="faster-whisper-cpu"
     VALIDATOR_MODEL="large-v3-turbo"
@@ -436,7 +437,11 @@ class F5TTS(GradioBase):
                 logger.warning("F5-TTS 声纹簇 %s 无安全参考，跳过该簇", label)
                 continue
             bank = [
-                self._anchor_entry(wav, text, duration_ms)
+                self._anchor_entry(
+                    wav, text, duration_ms,
+                    (self.queue_tts[_index].get("prosody_plan") or {}).get(
+                        "performance"),
+                )
                 for _score, wav, text, _index, duration_ms in pool[:3]
             ]
             if bank:
@@ -646,6 +651,8 @@ class F5TTS(GradioBase):
         return str(
             item.get("speaker_cluster_id")
             or item.get("cluster_ref")
+            or item.get("speaker_id")
+            or item.get("spk")
             or "__main_speaker__"
         )
 
@@ -658,7 +665,7 @@ class F5TTS(GradioBase):
             return "exclamation"
         return "statement"
 
-    def _anchor_entry(self, filename, text, duration_ms) -> dict:
+    def _anchor_entry(self, filename, text, duration_ms, performance=None) -> dict:
         text = self._ensure_punct(text)
         return {
             "wav": str(filename),
@@ -666,6 +673,7 @@ class F5TTS(GradioBase):
             "duration_ms": int(duration_ms),
             "style": self._anchor_style(text),
             "cjk_chars": len(re.findall(r"[\u4e00-\u9fff]", text)),
+            "performance": dict(performance or {}),
         }
 
     def _choose_chinese_anchor(self, bank, item, retry_no=0):
@@ -674,8 +682,16 @@ class F5TTS(GradioBase):
         target_text = str(item.get("text") or "")
         target_style = self._anchor_style(target_text)
         target_chars = len(re.findall(r"[\u4e00-\u9fff]", target_text))
+        target_performance = (
+            (item.get("prosody_plan") or {}).get("performance") or {})
+        target_dynamic = float(target_performance.get("dynamic_range_db") or 0)
+        target_activity = float(target_performance.get("activity_ratio") or 0)
         ranked = sorted(bank, key=lambda anchor: (
             0 if anchor.get("style") == target_style else 1,
+            abs(float((anchor.get("performance") or {}).get(
+                "dynamic_range_db") or target_dynamic) - target_dynamic),
+            abs(float((anchor.get("performance") or {}).get(
+                "activity_ratio") or target_activity) - target_activity),
             abs(int(anchor.get("cjk_chars") or 0) - target_chars),
             abs(int(anchor.get("duration_ms") or 0) - 6500),
         ))
@@ -701,7 +717,9 @@ class F5TTS(GradioBase):
                 continue
             score = abs(duration_ms - 6500)
             candidates.setdefault(self._speaker_key(item), []).append(
-                (score, self._anchor_entry(item["filename"], text, duration_ms))
+                (score, self._anchor_entry(
+                    item["filename"], text, duration_ms,
+                    (item.get("prosody_plan") or {}).get("performance")))
             )
 
         assigned = 0
@@ -765,7 +783,8 @@ class F5TTS(GradioBase):
                     text = self._ensure_punct(item["text"])
                     bank.append(self._anchor_entry(
                         item["filename"], text,
-                        len(AudioSegment.from_file(item["filename"]))))
+                        len(AudioSegment.from_file(item["filename"])),
+                        (item.get("prosody_plan") or {}).get("performance")))
                     logger.info(
                         "F5-TTS 恢复任务已选定同说话人中文锚点: 第 %s 段 %s",
                         idx + 1, item["filename"],
@@ -827,22 +846,38 @@ class F5TTS(GradioBase):
         )
         from videotrans.util.resource_governor import runtime_limits
 
-        files = [
-            (idx, self.queue_tts[idx]["filename"])
-            for idx in indices
-            if vail_file(self.queue_tts[idx].get("filename"))
-        ]
+        backend = backend or self._validator_identity()[0]
+        validator_model = self.VALIDATOR_MODEL
+        from videotrans.dub.quality_manifest import validation_signature
+        signature_args = {
+            "validator_backend": backend,
+            "validator_model": validator_model,
+            "rules_version": self.QUALITY_RULES_VERSION,
+        }
+        files = []
+        for idx in indices:
+            item = self.queue_tts[idx]
+            if not vail_file(item.get("filename")):
+                continue
+            signature = validation_signature(item, **signature_args)["signature"]
+            files.append((idx, item["filename"], signature))
         if not files:
             return {}
         logs_file = str(
             Path(ROOT_DIR) / "tmp"
             / f"f5-validator-{self.uuid}-{indices[0]}-{indices[-1]}.log"
         )
-        backend = backend or self._validator_identity()[0]
         use_mlx = backend == "mlx-whisper-mps"
         callback = validate_mlx_whisper_files if use_mlx else validate_faster_whisper_files
         model_path = self._mlx_validator_model_path() if use_mlx else self._get_validator_model_path()
         limits = runtime_limits(mode=settings.get("resource_mode", "auto"))
+        checkpoint_key = hashlib.sha1(
+            f"{backend}|{validator_model}|{self.QUALITY_RULES_VERSION}".encode("utf-8")
+        ).hexdigest()[:12]
+        checkpoint_file = str(
+            Path(files[0][1]).parent
+            / f"f5-validation-checkpoint-{checkpoint_key}.json"
+        )
         return self._new_process(
             callback=callback,
             title=f"F5-TTS quality {indices[0] + 1}-{indices[-1] + 1}",
@@ -852,6 +887,8 @@ class F5TTS(GradioBase):
                 "model_path": str(model_path),
                 "cpu_threads": limits.validator_cpu_threads,
                 "logs_file": logs_file,
+                "checkpoint_file": checkpoint_file,
+                "checkpoint_identity": signature_args,
             },
         )
 
@@ -1172,7 +1209,8 @@ class F5TTS(GradioBase):
             candidates.setdefault(key, []).append((
                 score,
                 self._anchor_entry(
-                    original["filename"], original.get("text", ""), duration_ms),
+                    original["filename"], original.get("text", ""), duration_ms,
+                    (original.get("prosody_plan") or {}).get("performance")),
             ))
         if not candidates:
             return 0
@@ -2193,4 +2231,13 @@ class F5TTS(GradioBase):
             return "F5-TTS watchdog timeout: connection refused after service recycle"
         if send_error is not None:
             raise send_error
+        if vail_file(data_item.get("filename")):
+            from videotrans.dub.prosody import apply_output_performance
+            applied_gain = apply_output_performance(
+                data_item["filename"], prosody_plan)
+            if applied_gain:
+                logger.debug(
+                    "F5-TTS 第 %s 段应用说话人相对表现增益: %+.2fdB",
+                    idx + 1, applied_gain,
+                )
         return result

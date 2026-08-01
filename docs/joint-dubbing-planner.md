@@ -13,6 +13,19 @@ speech remains available for identity and structural performance analysis. The
 legacy `source_clone` policy is opt-in, while `chinese_anchor_only` refuses to
 silently fall back to English after preflight.
 
+The performance layer is intentionally language-independent. It measures short
+frame energy, activity ratio, and dynamic range from immutable source-timeline
+clips, normalizes energy within each speaker, and stores the result inside the
+same `prosody_plan`. F5 uses those features to rank verified Chinese anchors and
+applies at most ±2 dB of clipping-protected output gain. It does not extract or
+transfer source phonemes, so this layer cannot reintroduce English articulation.
+
+Strong-ASR validation is resumable independently from TTS synthesis. Every
+completed transcript is atomically checkpointed using a signature over audio
+content, expected text, validator backend/model, and rules version. If the
+validator exits after line 185 of a long interview, the next run begins at the
+first missing signature instead of decoding the first 185 clips again.
+
 TransDub's joint planner treats translation, semantic grouping, target duration, speech synthesis,
 and quality validation as one decision loop. The one-click production workflow now uses it before
 TTS for the complete Chinese target queue and stores a resumable `.smart-plan` checkpoint. The

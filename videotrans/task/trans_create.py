@@ -1325,6 +1325,21 @@ class TransCreate(BaseTask):
         # 如果存在有 ref_wav 即需要clone，存在参考音频的
         if len([it.get("ref_wav") for it in self.queue_tts if it.get("ref_wav")]) > 0:
             self._create_ref_from_vocal()
+            if self.cfg.smart_orchestration:
+                # Source performance is extracted only after the immutable
+                # source-timeline reference clips exist.  Re-applying the smart
+                # policy refreshes the content-addressed TTS filename so older
+                # flat-prosody audio cannot be reused accidentally.
+                from videotrans.dub.prosody import (
+                    apply_smart_synthesis_policy,
+                    attach_source_performance,
+                )
+                attach_source_performance(self.queue_tts)
+                apply_smart_synthesis_policy(
+                    self.queue_tts,
+                    reference_mode=settings.get(
+                        "f5tts_reference_mode", "youtube_hybrid"),
+                )
 
         self._restore_dubbing_checkpoint()
 
