@@ -166,3 +166,24 @@ def test_default_config_page_hides_engine_settings(qapp):
     assert not page.advanced_scroll.isHidden()
     page.deleteLater()
     qapp.processEvents()
+
+
+def test_voice_reload_does_not_replace_recent_user_selection(qapp):
+    """A slow role lookup must not silently turn dubbed delivery into No-TTS."""
+    from videotrans.flowui.config_page import ConfigPage
+
+    page = ConfigPage(flow=SimpleNamespace())
+    tts_id = page.tts_card.current_channel_id()
+    page.tts_card.set_secondary_items(['No', 'zh-CN-test-voice'], 'No')
+    page.tts_card.secondary_box.setCurrentText('zh-CN-test-voice')
+    page._voice_request_serial = 5
+
+    # Old callbacks are ignored completely.
+    page._apply_voices(tts_id, 4, ['No'])
+    assert page.tts_card.current_secondary() == 'zh-CN-test-voice'
+
+    # The current callback refreshes options but keeps the visible choice.
+    page._apply_voices(tts_id, 5, ['No', 'zh-CN-test-voice'])
+    assert page.tts_card.current_secondary() == 'zh-CN-test-voice'
+    page.deleteLater()
+    qapp.processEvents()

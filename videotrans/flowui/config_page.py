@@ -38,13 +38,17 @@ class ConfigPage(QWidget):
     back_requested = Signal()
     started = Signal()
     start_failed = Signal()              # check_start 未进入运行态时发出，工作区据此切回配置
-    _voicesFetched = Signal(int, list)   # tts_id, roles（工作线程发出，槽在 GUI 线程执行）
+    # tts_id, request serial, roles（工作线程发出，槽在 GUI 线程执行）
+    # The serial prevents a slow, stale role request from replacing a voice
+    # the user selected after changing language/provider.
+    _voicesFetched = Signal(int, int, list)
 
     def __init__(self, *, flow, parent=None):
         super().__init__(parent)
         self.flow = flow
         self.files = []
         self._workers_ready = False
+        self._voice_request_serial = 0
         self.setObjectName('pageConfig')
         self.setStyleSheet(_QSS)
 
@@ -307,6 +311,8 @@ class ConfigPage(QWidget):
     def _reload_voices(self):
         # role_menu 可能联网（如 ElevenLabs），放线程池，结果回 GUI 线程
         from videotrans.translator import get_code
+        self._voice_request_serial += 1
+        request_serial = self._voice_request_serial
         tts_id = self.tts_card.current_channel_id()
         code = get_code(show_text=self.target_lang.currentText())
         lang = code if code and code != '-' else None
@@ -319,17 +325,21 @@ class ConfigPage(QWidget):
                 logger.warning(f'获取音色列表失败: {e}')
                 roles = [params.get('voice_role') or 'No']
             try:
-                self._voicesFetched.emit(tts_id, list(roles))
+                self._voicesFetched.emit(tts_id, request_serial, list(roles))
             except RuntimeError:
                 pass   # 页面已销毁（应用退出），丢弃结果
 
         run_in_threadpool(fetch)
 
-    def _apply_voices(self, tts_id: int, roles: list):
-        # 渠道在等待期间又变了则丢弃过期结果
-        if self.tts_card.current_channel_id() != tts_id:
+    def _apply_voices(self, tts_id: int, request_serial: int, roles: list):
+        # 渠道/语言在等待期间又变了则丢弃过期结果。此前只按渠道判断，
+        # 同一渠道的旧请求会把用户刚选择的中文音色重置成 params 里的 No。
+        if (self.tts_card.current_channel_id() != tts_id
+                or request_serial != self._voice_request_serial):
             return
-        self.tts_card.set_secondary_items(roles, params.get('voice_role'))
+        selected = self.tts_card.current_secondary()
+        preferred = selected if selected in roles else params.get('voice_role')
+        self.tts_card.set_secondary_items(roles, preferred)
         self._check_langs()
 
     def _check_langs(self):
@@ -413,6 +423,11 @@ class ConfigPage(QWidget):
             main.tts_type.setCurrentIndex(tts_id)
             wa.tts_type_change(tts_id)
             voice = self.tts_card.current_secondary() or 'No'
+            # “智能配音版”绝不能静默降级为字幕任务。音色列表还在加载、
+            # 或旧异步回调重置选择时，明确阻止开始并告诉用户该补什么。
+            if voice in ('No', '', ' '):
+                QMessageBox.warning(self, tr('flow_start'), tr('flow_voice_required'))
+                return False
             main.voice_role.setCurrentText(voice)
             # 最尖锐的坑：音色不在重建后的列表 → 静默停在 'No' → set_mode 会切成提取模式
             if voice != 'No' and main.voice_role.currentText() != voice:

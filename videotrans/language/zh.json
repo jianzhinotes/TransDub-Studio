@@ -927,6 +927,7 @@
     "flow_proof_next": "保存并继续",
     "flow_proof_next_source": "保存并继续翻译",
     "flow_proof_next_target": "保存并继续配音",
+    "flow_voice_required": "中文配音版需要选择一个中文音色。请稍候音色列表加载完成后再开始。",
     "flow_translation_to_dubbing": "翻译完成，正在准备中文配音…",
     "flow_translation_to_render": "翻译完成，正在合成带字幕视频…",
     "flow_subtitle_saved": "字幕已保存到输出文件夹，任务即将完成。",
