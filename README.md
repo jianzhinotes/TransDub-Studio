@@ -2,7 +2,7 @@
 
 # ✨ TransDub Studio
 
-### Open-source, local-first smart dubbing orchestration for Chinese long-form video — **models are replaceable backends.**
+### Open-source, local-first Chinese video dubbing & bilingual-subtitle studio — **models are replaceable backends.**
 
 A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Dubbing Studio.
 
@@ -35,9 +35,14 @@ A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Du
 
 ## What is TransDub Studio?
 
-**TransDub Studio** is an open-source, local-first intelligent dubbing orchestrator built on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) and optimized for Chinese long-form video. Instead of treating recognition, translation and TTS as disconnected model calls, it coordinates whole-context translation, semantic segmentation, target duration, synthesis, language checks and local repair as one resumable workflow. ASR, LLM and TTS models remain replaceable backends rather than defining the product.
+**TransDub Studio** is an open-source, local-first studio for Chinese long-form video, built on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans). It offers two clear deliverables: a Chinese-dubbed version, or an original-audio video with English-above-Chinese bilingual subtitles. Instead of treating recognition, translation and TTS as disconnected model calls, it coordinates whole-context translation, semantic segmentation, target duration, synthesis, language checks and local repair as one resumable workflow. ASR, LLM and TTS models remain replaceable backends rather than defining the product.
 
-`recognition → whole-context translation → semantic/timing orchestration → dubbing → quality gates and local repair → alignment/rendering`
+`recognition → whole-context translation → bilingual subtitles or semantic/timing orchestration → dubbing → quality gates and local repair → rendering`
+
+| Choose this output | What you get |
+|---|---|
+| **Chinese dubbing + Chinese subtitles** | A local Chinese-dubbed version with per-clip quality checks, repair and reopenable editing. |
+| **Original audio + bilingual subtitles** | Original audio stays intact; English appears above Chinese in a Bilibili-oriented hard-subtitle render. It skips TTS, dubbing quality gates and Dubbing Studio. |
 
 <a id="why"></a>
 
@@ -60,10 +65,10 @@ The polished editing experience of CapCut and ElevenLabs, but **local, private, 
 **Key advantages**
 
 - **🧠 One coordinated plan.** Translation, semantic boundaries, target duration, synthesis and quality feedback are optimized together. The default workflow is one click, while every decision remains inspectable in Dubbing Studio.
+- **🌐 Two clean delivery paths.** Need a localized video? Create Chinese dubbing. Need the original speaker? Create bilingual subtitles without starting any TTS model. The latter uses a readable English-above-Chinese hard-subtitle preset and keeps the original soundtrack.
 - **🎬 Built for long-form Chinese dubbing.** Persistent checkpoints, segment-level retries, preflight validation and cache-safe resume avoid throwing away hours of successful work when a few clips fail.
 - **🌡 Resource-aware by default.** Per-clip quality signatures avoid full-track rechecks; disposable MLX/CPU validators release model memory between stages, while Apple Silicon automatically limits quality-neutral FFmpeg, separation and speaker-analysis concurrency.
 - **🔒 Local & private.** Recognition (faster-whisper), translation (local LLM / offline models), and voice cloning (F5-TTS) can all run offline. Nothing is uploaded unless *you* pick a cloud API. CapCut and ElevenLabs always send your media to their servers.
-- **🌡 Resource-aware by default.** Long local runs monitor memory availability and normalized system load at low frequency. Reference cutting, source separation, and strong speech validation automatically reduce concurrency or batch size under pressure without changing models or relaxing quality gates.
 - **🧹 Incremental cleanup for legacy projects.** Dubbing Studio can audit every existing Chinese clip with the local strong speech model, keep passed audio untouched, and send only mixed-language, truncated, spilled, or repeated clips to focused repair. Export validates the current text/audio/rules signatures rather than trusting an old manifest file.
 - **🌡 Long-video resource control.** Clip-level quality checkpoints avoid rechecking completed work, reference clips are cut in-process instead of spawning FFmpeg hundreds of times, and `.tdproj` stage journals restore honest task status after interruption.
 - **🛟 Local failure recovery.** A few bad F5 clips no longer discard a long run: passed audio is preserved, failed clips open as a focused repair queue, and export resumes after only those clips pass strong-model verification. Project diagnostics expose stage time, peak memory, TTS RTF, cache hits, and quality totals.
@@ -80,7 +85,7 @@ The polished editing experience of CapCut and ElevenLabs, but **local, private, 
 Launch the app and you land in a streamlined one-click flow:
 
 1. **Home** — drag & drop a video (or click to browse), see recent tasks with status chips, one-click reopen of results.
-2. **Start smart dubbing** — choose the target language and click once. Recognition, translation, semantic re-segmentation, duration planning, dubbing, quality checks, alignment and rendering run in dependency order. Engine, subtitle and alignment controls are folded into **Advanced settings**.
+2. **Choose a deliverable** — select **Chinese dubbing + Chinese subtitles** or **original audio + bilingual subtitles**, then choose a target language. The dubbed route runs recognition, translation, semantic re-segmentation, duration planning, dubbing, quality checks, alignment and rendering; the bilingual route keeps original audio and skips TTS entirely. Engine, subtitle and alignment controls are folded into **Advanced settings**.
 3. **Progress** — a per-task six-stage stepper (prepare → recognize → translate → dub → align → merge). The default flow does not pause for routine proofreading; saved checkpoints resume recognition, translation and orchestration after interruption. Reopen the finished local project in **Dubbing Studio** only when you want detailed per-line editing and A/B review.
 
 The classic full-featured UI (batch processing, all 79 channels, advanced parameters) is still available via **Tools → Advanced Mode**.

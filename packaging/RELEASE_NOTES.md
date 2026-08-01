@@ -1,8 +1,8 @@
 ## TransDub Studio v1.1.0 — Smart long-video dubbing orchestration
 
-This release turns TransDub Studio into an open-source, local-first intelligent dubbing
-orchestrator for Chinese long-form video. ASR, translation/LLM and TTS models remain replaceable
-backends.
+This release turns TransDub Studio into an open-source, local-first Chinese video dubbing and
+bilingual-subtitle studio. Create either a Chinese-dubbed version or an original-audio video with
+English-above-Chinese bilingual subtitles. ASR, translation/LLM and TTS models remain replaceable backends.
 
 ### Highlights
 
@@ -16,12 +16,15 @@ backends.
 - Apple Silicon low-memory lifecycle management and automatic local F5 service recovery.
 - A responsive Dubbing Studio for long videos, with deferred waveform work, smart-plan inspection
   and explicit A/B candidate synthesis.
-- Versioned `.tdproj` v2 project state, candidate history and quality reports.
+- Versioned `.tdproj` v3 project state, candidate history and quality reports.
+- A first-class original-audio bilingual-subtitle route that skips TTS entirely, renders a readable
+  Bilibili-oriented hard-subtitle preset, and keeps the source soundtrack intact.
+- Output-folder and recent-task recovery now point directly to each finished video.
 
 ## TransDub Studio v1.1.0 — 中文长视频智能配音编排
 
-这一版将 TransDub Studio 明确升级为开源、本地优先、面向中文长视频的智能配音编排器；
-语音识别、翻译/LLM 和 TTS 模型都只是可替换后端。
+这一版将 TransDub Studio 明确升级为开源、本地优先的中文视频配音与双语字幕工作台：可生成中文配音版，
+也可保留原声、生成英文在上中文在下的双语字幕版；语音识别、翻译/LLM 和 TTS 模型都只是可替换后端。
 
 ### 主要更新
 
@@ -31,7 +34,9 @@ backends.
 - 生成前高风险预飞、批量加逐段语言门禁，只对问题片段进行局部返工。
 - Apple Silicon 低内存错峰加载与 F5 本地服务自动恢复。
 - 长视频配音工作台延迟加载重型波形，支持智能方案检查和显式 A/B 配音对比。
-- `.tdproj` v2 工程状态、候选历史和质量报告。
+- `.tdproj` v3 工程状态、候选历史和质量报告。
+- 新增一级成片类型「保留原声 + 中英文双语字幕」：完全跳过 TTS，使用适合 B 站长访谈的双语硬字幕样式。
+- 输出目录和最近任务恢复会直接定位每个视频的真实成品目录。
 
 ---
 
