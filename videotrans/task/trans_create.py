@@ -1573,7 +1573,8 @@ class TransCreate(BaseTask):
                         # 的克隆 TTS。恢复旧工程时也要本地化，并改写文件名以
                         # 防止复用旧的中英夹杂音频缓存。
                         original_text = str(item.get('text') or '')
-                        spoken_text = localize_chinese_spoken_terms(original_text)
+                        spoken_text = localize_chinese_spoken_terms(
+                            original_text, spell_unknown=True)
                         if spoken_text != original_text:
                             item['text'] = spoken_text
                             digest = hashlib.sha1(
@@ -1642,7 +1643,8 @@ class TransCreate(BaseTask):
             )
             for index, item in enumerate(planned):
                 original_text = str(item.get('text') or '')
-                spoken_text = localize_chinese_spoken_terms(original_text)
+                spoken_text = localize_chinese_spoken_terms(
+                    original_text, spell_unknown=True)
                 if spoken_text == original_text:
                     continue
                 item['text'] = spoken_text

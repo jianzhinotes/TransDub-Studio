@@ -27,3 +27,12 @@ def test_unknown_acronym_uses_chinese_letter_names_instead_of_failing():
     assert "艾斯迪阿尔" in localized
     assert "丘" in localized
     assert not has_latin_speech_token(localized)
+
+
+def test_one_click_mode_spells_only_residual_unknown_terms_to_avoid_a_pause():
+    localized = localize_chinese_spoken_terms(
+        "Yeah, UnknownBrand appeared on The Show.", spell_unknown=True)
+
+    assert not has_latin_speech_token(localized)
+    assert '对' in localized
+    assert '优恩' in localized  # UnknownBrand 的保守中文读法

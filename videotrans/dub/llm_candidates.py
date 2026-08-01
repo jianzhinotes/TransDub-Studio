@@ -78,6 +78,7 @@ _SPOKEN_ZH_TERM_RULES = (
 _MODEL_TOKEN_RE_SPOKEN = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{1,3})\s*-?\s*(\d+)(?![A-Za-z0-9])")
 _ACRONYM_SPOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2,})(?![A-Za-z0-9])")
 _SINGLE_LETTER_SPOKEN_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z])(?![A-Za-z0-9])")
+_LATIN_WORD_SPOKEN_RE = re.compile(r"[A-Za-z]+(?:['’.-][A-Za-z]+)*")
 _LETTER_NAMES_ZH = {
     "A": "诶", "B": "比", "C": "西", "D": "迪", "E": "伊", "F": "艾弗",
     "G": "吉", "H": "艾尺", "I": "艾", "J": "杰", "K": "开", "L": "艾勒",
@@ -111,8 +112,16 @@ def _zh_number(value: str) -> str:
     return "".join(_ZH_DIGITS[int(char)] for char in str(number))
 
 
-def localize_chinese_spoken_terms(text: str) -> str:
-    """Convert common Latin tech terms into natural Chinese TTS forms."""
+def localize_chinese_spoken_terms(text: str, *, spell_unknown: bool = False) -> str:
+    """Convert Latin terms into Chinese TTS forms.
+
+    ``spell_unknown`` is the one-click safety net: known names use natural
+    Chinese forms first, common leaked English is repaired, and only then are
+    genuinely unknown residual tokens pronounced as Chinese letter names.
+    This keeps an unattended long-video task moving without handing English to
+    a cloned Chinese voice.  Interactive review can still improve those rare
+    conservative spell-outs after the output is available.
+    """
     value = str(text or "")
     for pattern, replacement in _SPOKEN_ZH_TERM_RULES:
         value = pattern.sub(replacement, value)
@@ -137,6 +146,18 @@ def localize_chinese_spoken_terms(text: str) -> str:
     value = _ACRONYM_SPOKEN_RE.sub(acronym_replacement, value)
     value = _SINGLE_LETTER_SPOKEN_RE.sub(
         lambda match: _LETTER_NAMES_ZH.get(match.group(1), match.group(1)), value)
+    if spell_unknown:
+        # Repair ordinary boundary leakage ("yeah", "the", "we're") before
+        # spelling an unknown proper name.  The latter is intentionally a
+        # reversible, audible fallback rather than a task-stopping error.
+        value = _sanitize_obvious_english(value)
+
+        def spell_unknown_word(match):
+            return ''.join(
+                _LETTER_NAMES_ZH.get(letter.upper(), letter)
+                for letter in match.group(0) if letter.isalpha())
+
+        value = _LATIN_WORD_SPOKEN_RE.sub(spell_unknown_word, value)
     value = re.sub(r"\s+", "", value)
     return _clean(value)
 
