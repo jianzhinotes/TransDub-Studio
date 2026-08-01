@@ -16,9 +16,9 @@ A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Du
 
 <br>
 
-[![Watch the 50-second TransDub Studio demo with sound](docs/assets/transdub-studio-demo-poster.jpg)](docs/assets/transdub-studio-demo.mp4)
+[![Watch the 50-second TransDub Studio demo with sound](docs/assets/transdub-studio-demo-poster.jpg)](https://jianzhinotes.github.io/TransDub-Studio/demo/)
 
-**[▶ Watch the 50-second demo with sound](docs/assets/transdub-studio-demo.mp4)** — locally generated Chinese dubbing, stable per-speaker voice identity, Chinese-first prosody and burned bilingual subtitles.
+**[▶ Play the 50-second demo with sound](https://jianzhinotes.github.io/TransDub-Studio/demo/)** — locally generated Chinese dubbing, stable per-speaker voice identity, Chinese-first prosody and burned bilingual subtitles.
 
 <sub>The Chinese voice in this demo is AI-generated. It is not the speaker's original speech or an endorsement.</sub>
 

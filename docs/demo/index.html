@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>TransDub Studio · 中文智能配音演示</title>
+    <style>
+      :root { color: #f8fafc; background: #0b1220; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #17345b 0, #0b1220 48rem); }
+      main { width: min(100%, 1120px); padding: 48px 24px 56px; text-align: center; }
+      h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.04em; }
+      p { color: #cbd5e1; font-size: 1.05rem; line-height: 1.7; }
+      .tag { color: #7dd3fc; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      video { display: block; width: 100%; margin: 28px auto 20px; border: 1px solid #334155; border-radius: 16px; background: #000; box-shadow: 0 24px 65px rgb(0 0 0 / .4); }
+      .note { max-width: 760px; margin: 0 auto; font-size: .92rem; color: #94a3b8; }
+      a { color: #7dd3fc; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="tag">TransDub Studio</p>
+      <h1>中文智能配音 · 50 秒演示</h1>
+      <p>固定说话人音色、中文优先韵律、烧录双语字幕。</p>
+      <video controls playsinline preload="metadata" poster="../assets/transdub-studio-demo-poster.jpg">
+        <source src="../assets/transdub-studio-demo.mp4" type="video/mp4">
+        你的浏览器不支持 HTML5 视频播放。请下载视频后观看。
+      </video>
+      <p class="note">演示中的中文声音由 AI 合成，并非说话人本人原声或背书。<a href="https://github.com/jianzhinotes/TransDub-Studio">返回项目主页</a></p>
+    </main>
+  </body>
+</html>

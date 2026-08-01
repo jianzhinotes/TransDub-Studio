@@ -16,9 +16,9 @@
 
 <br>
 
-[![点击观看 TransDub Studio 50 秒有声演示](assets/transdub-studio-demo-poster.jpg)](assets/transdub-studio-demo.mp4)
+[![点击观看 TransDub Studio 50 秒有声演示](assets/transdub-studio-demo-poster.jpg)](https://jianzhinotes.github.io/TransDub-Studio/demo/)
 
-**[▶ 点击观看 50 秒有声演示](assets/transdub-studio-demo.mp4)** —— 本地生成的中文配音，固定说话人音色、中文优先韵律与烧录双语字幕。
+**[▶ 点击播放 50 秒有声演示](https://jianzhinotes.github.io/TransDub-Studio/demo/)** —— 本地生成的中文配音，固定说话人音色、中文优先韵律与烧录双语字幕。
 
 <sub>演示中的中文声音由 AI 合成，并非说话人本人原声或背书。</sub>
 
