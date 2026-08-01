@@ -138,7 +138,7 @@ class ConfigPage(QWidget):
         for c in (self.recogn_card, self.trans_card, self.tts_card):
             clay.addWidget(c)
 
-        # 选项面板：字幕 / 自动对齐 / 保留背景音
+        # 选项面板：字幕 / 自动对齐 / 可选背景音
         opt_panel = self._panel()
         op = QVBoxLayout(opt_panel)
         op.setContentsMargins(16, 14, 16, 14)
@@ -153,6 +153,9 @@ class ConfigPage(QWidget):
         self.auto_align = QCheckBox(tr('flow_auto_align'))
         op.addWidget(self.auto_align)
         self.keep_bgm = QCheckBox(tr('flow_keep_bgm'))
+        # 人声分离不能保证把说话声完全从背景轨剔除。把它标明为可选项，
+        # 并在默认关闭时优先保证中文配音的清晰度。
+        self.keep_bgm.setToolTip(tr('flow_keep_bgm_tip'))
         op.addWidget(self.keep_bgm)
         # 默认不勾选 = 复用输出目录里已有的识别/翻译字幕（增量重跑，只重做配音+合成）；
         # 勾选 = 清空该视频的输出目录和缓存，全部从头跑
@@ -259,7 +262,10 @@ class ConfigPage(QWidget):
         if isinstance(st, int) and 0 <= st <= 2:
             self.subtitle_box.setCurrentIndex(st)
         self.auto_align.setChecked(bool(params.get('voice_autorate', True)))
-        self.keep_bgm.setChecked(bool(params.get('is_separate', False)))
+        # 智能配音页不能继承经典页的旧勾选：旧项目若曾保留背景声，
+        # 会把人声分离残留无声地混进每一个新项目。需要背景音乐时由用户
+        # 在本次任务中显式开启。
+        self.keep_bgm.setChecked(False)
 
         self._reload_models()
         self._reload_voices()
@@ -420,6 +426,13 @@ class ConfigPage(QWidget):
             main.is_separate.setChecked(self.keep_bgm.isChecked())
             if self.keep_bgm.isChecked():
                 main.embed_bgm.setChecked(True)
+                # 分离轨常含轻微人声残留；智能流程使用保守混音比例，
+                # 让中文人声始终是前景。
+                main.bgmvolume.setText('0.25')
+            else:
+                # 必须同时关闭重混开关，不能让经典页残留的 embed_bgm
+                # 在缓存中存在 instrument 轨时意外参与最终混音。
+                main.embed_bgm.setChecked(False)
         main.clear_cache.setChecked(self.fresh_run.isChecked())
         main.app_mode = 'biaozhun'
         return True

@@ -126,6 +126,10 @@ def test_default_config_page_hides_engine_settings(qapp):
     page = ConfigPage(flow=SimpleNamespace())
 
     assert page.advanced_scroll.isHidden()
+    # 智能流程不能沿用经典页上一次“保留背景音”的状态；
+    # 分离残留会直接污染下一条视频的中文配音。
+    assert not page.keep_bgm.isChecked()
+    assert page.keep_bgm.toolTip()
     assert '智能配音' in page.start_btn.text() or 'smart dubbing' in page.start_btn.text()
     page._toggle_advanced()
     assert not page.advanced_scroll.isHidden()
