@@ -40,7 +40,7 @@ def _join_text(parts, separator="，"):
     for part in (str(value or "").strip() for value in parts):
         if not part:
             continue
-        continuation_tail = "的地得了着将把被与和及或到从为比向在于共约"
+        continuation_tail = "的地得了着将把被与和及或到从为比向在于共约需要"
         if (output
                 and output[-1:] not in "，。！？；：,.!?;:"
                 and part[:1] not in "，。！？；：,.!?;:"
@@ -76,7 +76,7 @@ def _continues(unit):
     return text.endswith((
         "，", ",", "：", ":", "的", "地", "得", "将", "把", "被",
         "与", "和", "及", "或", "到", "从", "为", "比", "向", "在",
-        "于", "共", "约",
+        "于", "共", "约", "需", "要",
     ))
 
 
@@ -112,7 +112,7 @@ def build_segmentation_options(
             duration_limit = max(max_group_ms, 11_000) if continuation else max_group_ms
             should_merge = continuation or (
                 len(current) == 1 and (_short(current[-1]) or _short(nxt))
-            )
+            ) or (len(current) > 1 and _short(nxt))
             if (should_merge
                     and gap <= merge_gap_ms
                     and combined_ms <= duration_limit

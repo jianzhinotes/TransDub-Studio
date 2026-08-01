@@ -109,6 +109,22 @@ def test_long_incomplete_clause_merges_with_its_completion():
     )
 
 
+def test_incomplete_clause_keeps_tiny_tail_in_same_group():
+    project = _project([
+        _row(1, '我们可以把年运力提高到', 0, 4500),
+        _row(2, '一百万吨，大约只需要', 4500, 9500),
+        _row(3, '三年左右。', 9500, 9900),
+    ])
+    turn = build_source_turns(project)[0]
+    options = build_segmentation_options(
+        turn, {unit.id: unit for unit in project.units}
+    )
+    merged = next(option for option in options if option.kind == 'merge_short')
+
+    assert len(merged.groups) == 1
+    assert merged.groups[0].baseline_text.endswith('需要三年左右。')
+
+
 def test_chinese_candidates_are_conservative_and_keep_entities():
     generator = ChineseCandidateGenerator()
     model = DurationModel()
