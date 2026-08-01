@@ -83,6 +83,19 @@ def test_finish_interrupted_closes_running_stage(tmp_path):
     assert store.data['stages']['quality_review']['status'] == 'interrupted'
 
 
+def test_finish_run_persists_expected_output_artifact(tmp_path):
+    store = RunStateStore(tmp_path / 'demo.tdproj')
+    store.begin_run('run-1')
+    store.finish_run('completed', artifacts={
+        'expect_video': True,
+        'output_video': '/tmp/demo.mp4',
+    })
+
+    payload = load_run_state(store.path)
+    assert payload['artifacts']['expect_video'] is True
+    assert payload['artifacts']['output_video'] == '/tmp/demo.mp4'
+
+
 def test_repair_stale_project_run_closes_both_journals(tmp_path):
     root = tmp_path / 'demo.tdproj'
     root.mkdir()

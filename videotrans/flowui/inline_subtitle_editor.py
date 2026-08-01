@@ -86,13 +86,14 @@ class InlineSubtitleEditor(QWidget):
         term.clicked.connect(self._on_terminate)
         bottom.addWidget(term)
         bottom.addStretch(1)
-        self.next_btn = QPushButton(tr('flow_proof_next'))
+        next_key = ('flow_proof_next_target' if mode == MODE_TARGET
+                    else 'flow_proof_next_source')
+        self.next_btn = QPushButton(tr(next_key))
         self.next_btn.setObjectName('proofNext')
         self.next_btn.setMinimumWidth(280)
         self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.next_btn.clicked.connect(self._on_next)
         bottom.addWidget(self.next_btn)
-        bottom.addStretch(1)
         layout.addLayout(bottom)
 
     # ---- 表格 ----

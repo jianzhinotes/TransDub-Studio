@@ -1,3 +1,17 @@
+## TransDub Studio v1.1.2 — Honest exports, clearer continuation
+
+- A task is now marked as video-complete only after its actual render is verified on disk.
+- Queue-end and 100% progress messages can no longer create a false “completed” video.
+- Subtitle-only jobs are explicitly labelled as such, rather than pretending a video was created.
+- Translation review now makes the right-bottom **Save & Continue Dubbing** action unambiguous.
+
+## TransDub Studio v1.1.2 — 成品可核验、下一步更清楚
+
+- 只有在实际成品视频落盘并通过核验后，任务才会显示视频完成。
+- 队列结束和 100% 进度不再会造成“假完成”。
+- 仅字幕任务会明确标识，不再误显示为视频成品。
+- 翻译校对页将右下角操作明确为“保存并继续配音”。
+
 ## TransDub Studio v1.1.1 — More natural, speaker-stable Chinese dubbing
 
 This maintenance release improves the full local Chinese-dubbing path for real long-form interviews.

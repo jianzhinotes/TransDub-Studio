@@ -138,7 +138,22 @@ class BaseTask(BaseCon):
             self.precent = 100
             if self.uuid in app_cfg.stoped_uuid_set:
                 return
-            self.signal(text=f"{self.cfg.name}", type='succeed')
+            expect_video = bool(
+                getattr(self, 'should_hebing', False)
+                and not getattr(self, 'is_audio_trans', False))
+            output_video = ''
+            if expect_video:
+                resolver = getattr(self, 'final_output_video', None)
+                if callable(resolver):
+                    output_video = resolver() or ''
+            self.signal(
+                text=f"{self.cfg.name}",
+                type='succeed',
+                # 提取字幕/翻译音频是合法的“无视频”成功；标准视频任务
+                # 则由 TransCreate.task_done 在此之前核验最终媒体文件。
+                expect_video=expect_video,
+                output_video=output_video,
+            )
             if app_cfg.exec_mode=="cli":
                 print(f'Save to:[ {self.cfg.target_dir} ]')
             else:

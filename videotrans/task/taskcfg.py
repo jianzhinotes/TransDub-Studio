@@ -40,6 +40,10 @@ class SignMsg:
     type:str="logs"
     uuid:str=""
     text:str=""
+    # ``succeed`` 不能只代表线程结束：Flow UI 需要知道本任务是否
+    # 应该产出视频，避免字幕任务和异常结束都被误显示为“成品视频完成”。
+    expect_video: Optional[bool] = None
+    output_video: str = ""
     def __getitem__(self, key):
         return getattr(self, key)
 

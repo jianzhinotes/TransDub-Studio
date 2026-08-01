@@ -205,7 +205,7 @@ class RunStateStore:
     def fail_stage(self, name: str, error):
         self.finish_stage(name, status="failed", error=error)
 
-    def finish_run(self, status: str, error=""):
+    def finish_run(self, status: str, error="", artifacts=None):
         with self._lock:
             now = int(time.time())
             if status != "completed":
@@ -221,4 +221,6 @@ class RunStateStore:
             self.data["current_stage"] = ""
             self.data["finished_at"] = now
             self.data["last_error"] = str(error or "")[:2000]
+            if artifacts is not None:
+                self.data["artifacts"] = dict(artifacts)
             self._save()

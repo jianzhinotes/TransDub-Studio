@@ -85,6 +85,10 @@ class WorkspacePage(QWidget):
         # 分步内嵌校对：识别后/翻译后/二次识别后校字幕，配音后校对齐
         if t in ('edit_subtitle_source', 'edit_subtitle_target',
                  'edit_recogn2_subtitle', 'edit_dubbing'):
+            # Keep an honest persistent status on the task card as well as
+            # opening the editor. Users who return to progress can then see
+            # exactly why the pipeline is paused.
+            self.progress_page.on_message(uuid, d)
             self._enter_proof(t, d)
             return
         self.progress_page.on_message(uuid, d)
@@ -107,11 +111,11 @@ class WorkspacePage(QWidget):
         info = getattr(self.flow.win_action, 'uuid_queue_mp4', {}).get(uuid)
         source = info[0] if info else ''
         target_dir = card.target_dir if card else (info[1] if info else '')
-        output = None
-        if target_dir and Path(target_dir).is_dir():
-            vids = sorted(Path(target_dir).rglob('*.mp4'), key=lambda p: p.stat().st_mtime)
-            output = vids[-1].as_posix() if vids else None
-        self.preview.show_result(source, output)
+        output = card.output_video_path() if card else None
+        # Subtitle-only jobs are valid, but must not be presented as a video
+        # result by silently falling back to the source clip.
+        if output:
+            self.preview.show_result(source, output)
 
     # ---- 分步内嵌校对 ----
     def _enter_proof(self, mtype: str, d: dict):

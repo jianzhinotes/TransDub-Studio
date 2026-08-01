@@ -123,6 +123,7 @@ class TaskCard(QFrame):
         self.stage = stages.STAGE_PREPARE
         self.done = False
         self._run_state_file = None
+        self._output_video = ''
         self.setObjectName('taskCard')
 
         layout = QVBoxLayout(self)
@@ -216,9 +217,47 @@ class TaskCard(QFrame):
         self.state_label.style().unpolish(self.state_label)
         self.state_label.style().polish(self.state_label)
 
-    def set_done(self, ok: bool, err: str = ''):
+    def output_video_path(self, reported_path=None):
+        """Find this task's final render without mistaking cache media for output."""
+        if not self.target_dir or not self.video_path:
+            return None
+        name = Path(self.video_path).stem
+        for raw_path in (reported_path, self._output_video):
+            if not raw_path:
+                continue
+            candidate = Path(raw_path)
+            try:
+                if (candidate.is_file() and candidate.stat().st_size > 0
+                        and candidate.resolve() != Path(self.video_path).resolve()):
+                    return candidate.as_posix()
+            except OSError:
+                continue
+        # Normal output lives inside the dedicated child folder. Do not search
+        # its parent: it can be the source directory, where finding the input
+        # clip would turn another failed export into a false success.
+        root = Path(self.target_dir)
+        for suffix in ('.mp4', '.mkv', '.mov', '.webm', '.avi'):
+            candidate = root / f'{name}{suffix}'
+            try:
+                if candidate.is_file() and candidate.stat().st_size > 0:
+                    return candidate.as_posix()
+            except OSError:
+                continue
+        return None
+
+    def set_done(self, ok: bool, err: str = '', expect_video=None, output_video=None):
         self.done = True
         if ok:
+            output_video = self.output_video_path(output_video)
+            # A success signal from a legacy worker, an overall queue "end",
+            # or a 100% progress tick is not proof that FFmpeg copied a file.
+            # Only explicit subtitle/audio-only jobs may complete without one.
+            if expect_video is not False and not output_video:
+                return self.set_done(
+                    False,
+                    '导出核验失败：任务没有生成有效成品视频。字幕和工程文件仍已保留，'
+                    '请重新导出或查看诊断信息。')
+            self._output_video = output_video or ''
             self.set_stage(stages.STAGE_ASSEMBLE)
             for lbl, key in zip(self.stage_labels, _STAGE_KEYS):
                 lbl.setText('● ' + tr(key))
@@ -226,19 +265,24 @@ class TaskCard(QFrame):
                 lbl.style().unpolish(lbl)
                 lbl.style().polish(lbl)
             self.bar.setValue(100)
-            self.set_state('✨ ' + tr('flow_status_succeed'), 'doneBanner')
+            state = ('✨ ' + tr('flow_status_succeed') if output_video
+                     else '✨ ' + tr('flow_status_subtitle_succeed'))
+            self.set_state(state, 'doneBanner')
             self.open_btn.setVisible(True)
-            self.preview_btn.setVisible(True)
+            self.preview_btn.setVisible(bool(output_video))
             self.edit_btn.setVisible(bool(self._project_dir()))
+            return True
         else:
             self.set_state(tr('flow_status_error'), 'errState')
             self.set_log(err)
             self.open_btn.setVisible(bool(self.target_dir))
+            return False
 
     def reset_for_run(self):
         """Clear terminal visuals when the same project starts a new attempt."""
         self.done = False
         self.stage = stages.STAGE_PREPARE
+        self._output_video = ''
         self.bar.setValue(0)
         self.set_state('')
         self.last_log.setText('')
@@ -278,7 +322,11 @@ class TaskCard(QFrame):
             if completed:
                 self.set_stage(max(completed))
         if status == 'completed' and not self.done:
-            self.set_done(True)
+            artifacts = payload.get('artifacts') or {}
+            self.set_done(
+                True,
+                expect_video=artifacts.get('expect_video'),
+                output_video=artifacts.get('output_video'))
         elif status == 'failed' and not self.done:
             self.set_done(False, payload.get('last_error') or '')
         elif status == 'interrupted' and not self.done:
@@ -426,7 +474,15 @@ class ProgressPage(QWidget):
             self.cancel_btn.setVisible(False)
             for card in self.cards.values():
                 if not card.done:
-                    card.set_done(True)
+                    # ``end`` is a queue-level notification, not a per-video
+                    # render receipt. Recover a journal if available; without
+                    # one, surface an actionable failure instead of a lie.
+                    card.sync_run_state()
+                    if not card.done:
+                        card.set_done(
+                            False,
+                            '任务队列已结束，但未收到该视频的有效导出结果。'
+                            '请打开输出文件夹查看保留的字幕/工程并重新导出。')
             return
         if not uuid:
             return
@@ -443,8 +499,6 @@ class ProgressPage(QWidget):
             if pct is not None:
                 card.set_percent(pct)
                 card.set_stage(stages.stage_from_percent(pct, card.stage))
-                if pct >= 100 and not card.done:
-                    card.set_done(True)
         elif mtype == 'logs':
             card.set_log(text)
             card.set_stage(stages.stage_from_text(text, card.stage, self._markers))
@@ -453,9 +507,14 @@ class ProgressPage(QWidget):
         elif mtype == 'replace_subtitle':
             pass
         elif mtype == 'succeed':
-            card.set_done(True)
-            if card.video_path:
+            succeeded = card.set_done(
+                True,
+                expect_video=d.get('expect_video'),
+                output_video=d.get('output_video'))
+            if succeeded and card.video_path:
                 recent_tasks.update_status(card.video_path, recent_tasks.STATUS_SUCCEED)
+            elif card.video_path:
+                recent_tasks.update_status(card.video_path, recent_tasks.STATUS_ERROR)
         elif mtype == 'error':
             card.set_done(False, err=text)
             if card.video_path:

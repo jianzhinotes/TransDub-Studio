@@ -958,8 +958,41 @@ class TransCreate(BaseTask):
         except OSError as e:
             logger.exception(f'仅输出mp4时清理临时文件移动视频位置出错，跳过 {e}', exc_info=True)
 
+        # ``set_end(True)`` 会立即通知 UI 成功并删除缓存，因此必须在此
+        # 之前确认最终媒体已真实落盘。此前 move/copy 失败会被吞掉，导致
+        # 用户看到“完成”但目录里只有 SRT。
+        if self.should_hebing and not self.final_output_video():
+            raise VideoTransError(
+                '导出核验失败：未找到有效成品视频。字幕和工程文件已保留，'
+                '请从该任务重新导出或查看错误详情。')
+
         self.set_end(True)
         logger.debug(f'[{self.cfg.name}视频翻译任务结束，总耗时]:{time.time()-self.cost_duration}s')
+
+    def final_output_video(self):
+        """Return the verified final render, never an intermediate novoice file.
+
+        The normal output may use MKV when soft subtitles require it; with
+        "only output mp4" the verified file is moved one directory upward.
+        Keep this small and deterministic rather than accepting any random
+        MP4 in the output tree.
+        """
+        if not self.should_hebing:
+            return None
+        root = Path(self.cfg.target_dir)
+        if self.cfg.only_out_mp4:
+            root = root.parent
+        base = root / self.cfg.noextname
+        for suffix in ('.mp4', '.mkv', '.mov', '.webm', '.avi'):
+            candidate = base.with_suffix(suffix)
+            if vail_file(candidate):
+                return candidate.as_posix()
+        # _join_video_audio_srt has a guarded fallback named 0.<ext>.
+        for suffix in ('.mp4', '.mkv', '.mov', '.webm', '.avi'):
+            candidate = root / f'0{suffix}'
+            if vail_file(candidate):
+                return candidate.as_posix()
+        return None
 
     # 从原始视频分离出 无声视频
     def _split_novoice_byraw(self):

@@ -261,7 +261,11 @@ class Worker(QThread):
 
             if self._exit(): return
             trk.task_done()
-            run_state.finish_run('completed')
+            output_video = trk.final_output_video()
+            run_state.finish_run('completed', artifacts={
+                'expect_video': bool(trk.should_hebing and not trk.is_audio_trans),
+                'output_video': output_video or '',
+            })
             performance.finish('completed')
             run_finished = True
             self._post(text="", type='end')

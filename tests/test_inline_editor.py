@@ -41,6 +41,7 @@ def test_target_mode_shows_source_and_saves(qapp, tmp_path):
     ed.table.item(0, 2).setText('你好啊')
     ed._collect_and_save()
     assert '你好啊' in tgt.read_text(encoding='utf-8')
+    assert ed.next_btn.text()
 
 
 def test_proof_signals(qapp, tmp_path):
