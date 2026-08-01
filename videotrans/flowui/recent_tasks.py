@@ -70,3 +70,44 @@ def update_fields(video_path: str, path: str = None, **fields) -> None:
             _write(entries, path)
         except OSError:
             pass
+
+
+def reconcile_run_states(path: str = None) -> list:
+    """Refresh stale recent-task status from durable per-project journals."""
+    path = path or _default_path()
+    entries = load(path)
+    changed = False
+    from videotrans.dub.run_state import effective_status, find_run_state, load_run_state
+    for entry in entries:
+        video_path = entry.get('video_path') or ''
+        # Fast paths first; recursive discovery is only needed once for old or
+        # early records whose predicted project location was not exact.
+        state_file = entry.get('run_state_file')
+        if state_file and not Path(state_file).is_file():
+            state_file = None
+        project_dir = entry.get('project_dir')
+        if not state_file and project_dir:
+            candidate = Path(project_dir) / 'run_state.json'
+            state_file = str(candidate) if candidate.is_file() else None
+        if not state_file:
+            state_file = find_run_state(entry.get('target_dir'), Path(video_path).stem)
+        payload = load_run_state(state_file) if state_file else None
+        status = effective_status(payload)
+        mapped = {
+            'completed': STATUS_SUCCEED,
+            'failed': STATUS_ERROR,
+            'interrupted': STATUS_STOPPED,
+            'running': STATUS_RUNNING,
+        }.get(status)
+        if mapped and entry.get('status') != mapped:
+            entry['status'] = mapped
+            changed = True
+        if state_file and entry.get('run_state_file') != state_file:
+            entry['run_state_file'] = state_file
+            changed = True
+    if changed:
+        try:
+            _write(entries, path)
+        except OSError:
+            pass
+    return entries

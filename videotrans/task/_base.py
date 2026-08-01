@@ -93,20 +93,43 @@ class BaseTask(BaseCon):
         source_len = len(source_srt_list)
         target_len = len(target_srt_list)
         if source_len == target_len:
-            logger.debug(f'原始语言字幕和目标语言字幕行数一致，均为 {source_len=}')
-            return target_srt_list
+            # An SRT-capable LLM is allowed to translate text, never to own the
+            # canonical source timeline.  Providers occasionally return one
+            # malformed timestamp (for example 00:16:29 -> 00:00:29) while all
+            # texts and the other timestamps remain correctly ordered.  Bind
+            # the translated text back onto immutable source rows by position
+            # after checking that the response is substantially the same SRT.
+            exact = sum(
+                int(source.get('start_time', 0) or 0) == int(target.get('start_time', 0) or 0)
+                and int(source.get('end_time', 0) or 0) == int(target.get('end_time', 0) or 0)
+                for source, target in zip(source_srt_list, target_srt_list)
+            )
+            minimum = 0 if source_len <= 3 else max(int(source_len * 0.8), 1)
+            if exact < minimum:
+                from videotrans.configure.excepts import DubbingSrtError
+                raise DubbingSrtError(
+                    f'翻译结果时间轴可信度过低：仅 {exact}/{source_len} 段与原文一致，'
+                    '已停止以防止字幕顺序错位。')
+            aligned = copy.deepcopy(source_srt_list)
+            for index, target in enumerate(target_srt_list):
+                aligned[index]['text'] = str(target.get('text') or '').strip()
+            corrected = source_len - exact
+            if corrected:
+                logger.warning(
+                    '翻译返回 %s 个异常时间戳，已保留译文并恢复原始时间轴', corrected)
+            else:
+                logger.debug(f'原始语言字幕和目标语言字幕行数一致，均为 {source_len=}')
+            return aligned
 
-        logger.warning(f'翻译结果行数{target_len}，原始字幕行数{source_len}，不一致,根据原始字幕时间轴获取对应目标字幕文本')
-        # 根据原始字幕的时间轴，到目标字幕内寻找同样时间轴的字幕文本，更准确
-        _time2srt={}
-        for it in target_srt_list:
-            _time2srt[it['time']]=it['text']
-
-        logger.debug(f'翻译结果行数{target_len} > 原始字幕行{source_len}，根据原始字幕的时间轴，到目标字幕内寻找同样时间轴的字幕文本')
-        _source=copy.deepcopy(source_srt_list)
-        for it in _source:
-            it['text']=_time2srt.get(it['time'],'')
-        return _source
+        # Never try to repair a count mismatch by matching timestamps.  If an
+        # LLM dropped one short block, later text may retain plausible-looking
+        # timestamps while being semantically shifted by one or more rows.
+        # The translator layer now retries malformed AI batches at a smaller
+        # size; reaching here means the provider result is still unsafe.
+        from videotrans.configure.excepts import DubbingSrtError
+        raise DubbingSrtError(
+            f'翻译结果无法与原文对齐：原文 {source_len} 段，译文 {target_len} 段。'
+            '已停止以防止后续字幕和配音整体错位。')
 
     # 手动调用设为结束，成功完成或出错时
     def set_end(self, succeed=False):

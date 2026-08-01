@@ -6,6 +6,7 @@ import platform
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import List, Dict, Union
@@ -32,7 +33,10 @@ class F5TTS(GradioBase):
     MAX_LANGUAGE_RETRIES=2
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
-    PIPELINE_VERSION="quality-v4-preflight"
+    PIPELINE_VERSION="quality-v6-chinese-anchor-bank"
+    QUALITY_RULES_VERSION="zh-content-v3-coverage"
+    VALIDATOR_BACKEND="faster-whisper-cpu"
+    VALIDATOR_MODEL="large-v3-turbo"
     SERVICE_ERROR_MARKERS = (
         "connection refused", "failed to connect", "could not connect",
         "cancelledError", "mps backend out of memory", "out of memory",
@@ -54,6 +58,7 @@ class F5TTS(GradioBase):
             self.dub_nums = 1
             self.wait_sec = float(settings.get("f5tts_dubbing_wait", 0.15) or 0.15)
             logger.info("F5-TTS 已启用 Apple Silicon 低内存模式（服务/门禁错峰加载）")
+        self._synthesis_supervisor_obj = self._new_synthesis_supervisor()
         # 参考质检与最终泄漏门禁共用。质量优先：优先 large-v3-turbo，
         # 只有显式允许时才退回 tiny，避免弱模型漏掉短促英文。
         validator = self._load_validator()
@@ -74,9 +79,53 @@ class F5TTS(GradioBase):
             for _key, value in sorted(self.resume_chinese_anchors.items())
         )
         self.dubb_cache_extra = (
-            f"{self.PIPELINE_VERSION}-nfe{int(settings.get('f5tts_nfe') or 32)}"
+            f"{self.PIPELINE_VERSION}-adaptive-slot-v1"
+            f"-nfe{int(settings.get('f5tts_nfe') or 32)}"
             f"-seed{int(settings.get('f5tts_seed', 42))}"
             f"-resume-anchor{anchor_sigs or self._file_sig(self.resume_chinese_anchor_ref or '')}")
+
+    @staticmethod
+    def _new_synthesis_supervisor():
+        from videotrans.dub.synthesis_supervisor import SynthesisSupervisor
+        return SynthesisSupervisor(
+            stall_floor_s=float(settings.get("f5tts_item_timeout_s", 180) or 180),
+            stall_multiplier=float(
+                settings.get("f5tts_item_timeout_multiplier", 4.0) or 4.0),
+            min_available_mb=int(
+                settings.get("f5tts_min_available_mb", 1536) or 1536),
+            max_slot_ratio=float(settings.get("f5tts_max_slot_ratio", 1.15) or 1.15),
+            max_backend_speed=float(
+                settings.get("f5tts_max_backend_speed", 1.3) or 1.3),
+        )
+
+    def _synthesis_supervisor(self):
+        supervisor = getattr(self, "_synthesis_supervisor_obj", None)
+        if supervisor is None:
+            supervisor = self._synthesis_supervisor_obj = self._new_synthesis_supervisor()
+        return supervisor
+
+    @staticmethod
+    def _slot_aware_speed(*, requested_speed: float, ref_text: str,
+                          gen_text: str, ref_duration_ms: int,
+                          target_duration_ms: int, fit_to_slot: bool) -> float:
+        """Keep F5 generation near the orchestration slot before alignment.
+
+        F5 estimates duration from UTF-8 byte counts.  A global -50% rate can
+        turn a five-second Chinese line into 10-15 seconds, only for the
+        alignment stage to compress it again.  That wastes Metal memory and is
+        less natural than synthesizing near the target in the first place.
+        """
+        from videotrans.dub.synthesis_supervisor import SynthesisSupervisor
+        from videotrans.util.resource_governor import ResourceSnapshot
+        supervisor = SynthesisSupervisor(snapshot_fn=lambda: ResourceSnapshot())
+        return supervisor.admit(
+            requested_speed=requested_speed,
+            ref_text=ref_text,
+            gen_text=gen_text,
+            ref_duration_ms=ref_duration_ms,
+            target_duration_ms=target_duration_ms,
+            fit_to_slot=fit_to_slot,
+        ).effective_speed
 
     @staticmethod
     def _reference_text_penalty(text: str) -> int:
@@ -115,7 +164,8 @@ class F5TTS(GradioBase):
     @staticmethod
     def _ensure_punct(text: str) -> str:
         text = (text or "").strip()
-        return text if F5TTS._punct_ok(text) else text + "."
+        suffix = "。" if re.search(r"[\u4e00-\u9fff]", text) else "."
+        return text if F5TTS._punct_ok(text) else text + suffix
 
     @staticmethod
     def _text_similarity(a: str, b: str) -> float:
@@ -133,12 +183,52 @@ class F5TTS(GradioBase):
 
     def _load_validator(self):
         try:
-            from faster_whisper import WhisperModel
-            return WhisperModel(str(self._get_validator_model_path()),
-                                device="cpu", compute_type="int8")
+            return self._new_validator()
         except Exception as e:
             logger.warning(f"参考质检模型不可用，跳过回读验证: {e}")
             return None
+
+    def _new_validator(self):
+        from faster_whisper import WhisperModel
+        from videotrans.util.resource_governor import runtime_limits
+
+        limits = runtime_limits(mode=settings.get("resource_mode", "auto"))
+        return WhisperModel(
+            str(self._get_validator_model_path()),
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=limits.validator_cpu_threads,
+            num_workers=1,
+        )
+
+    def _mlx_validator_model_path(self):
+        candidates = (
+            Path(ROOT_DIR) / "models/mlx--mlx-community--whisper-large-v3-turbo",
+            Path(ROOT_DIR) / "models/models--mlx-community--whisper-large-v3-turbo",
+        )
+        return next(
+            (path for path in candidates if (path / "weights.safetensors").is_file()),
+            None,
+        )
+
+    def _should_use_mlx_validator(self) -> bool:
+        if str(settings.get("use_mlx_whisper", False)).lower() != "true":
+            return False
+        if platform.system() != "Darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+            return False
+        try:
+            import importlib.util
+            return (
+                importlib.util.find_spec("mlx_whisper") is not None
+                and self._mlx_validator_model_path() is not None
+            )
+        except Exception:
+            return False
+
+    def _validator_identity(self):
+        if self._should_use_mlx_validator():
+            return "mlx-whisper-mps", self.VALIDATOR_MODEL
+        return self.VALIDATOR_BACKEND, self.VALIDATOR_MODEL
 
     def _collect_candidates(self, allowed=None):
         """收集克隆参考候选并打分。allowed 为 None 时考虑全部行，否则只看指定下标。
@@ -189,15 +279,30 @@ class F5TTS(GradioBase):
         """
         if not validator:
             return []
+        from videotrans.dub.quality_manifest import ReferenceValidationCache
+
         passed = []
         for cand in ranked[:max_try]:
-            try:
-                transcript = self._transcribe_one_for_validation(validator, cand[1])
-            except Exception as e:
-                logger.debug(f"参考回读失败,跳过候选: {e}")
-                continue
-            sim = self._text_similarity(transcript, cand[2])
             threshold = float(settings.get('f5tts_ref_similarity', 0.75) or 0.75)
+            cached = ReferenceValidationCache.lookup(
+                cand[1], cand[2], self.VALIDATOR_MODEL
+            )
+            if cached is not None:
+                transcript = str(cached.get("transcript") or "")
+                sim = float(cached.get("similarity") or 0)
+            else:
+                try:
+                    transcript = self._transcribe_one_for_validation(validator, cand[1])
+                except Exception as e:
+                    logger.debug(f"参考回读失败,跳过候选: {e}")
+                    continue
+                sim = self._text_similarity(transcript, cand[2])
+                ReferenceValidationCache.record(
+                    cand[1], cand[2], self.VALIDATOR_MODEL,
+                    transcript=transcript,
+                    similarity=sim,
+                    passed=sim >= threshold,
+                )
             if sim >= threshold:
                 passed.append(cand)
             else:
@@ -310,7 +415,7 @@ class F5TTS(GradioBase):
             logger.debug('次要说话人占比过低,视为单说话人,维持单参考')
             return
         # 每簇独立选参考（同样走打分+回读验证+复合）
-        cluster_refs = {}
+        cluster_banks = {}
         for label in totals:
             allowed = {i for pos, (i, _it) in enumerate(lines) if labels.get(pos) == label}
             cands = self._collect_candidates(allowed=allowed)
@@ -324,17 +429,28 @@ class F5TTS(GradioBase):
             if not pool:
                 logger.warning("F5-TTS 声纹簇 %s 无安全参考，跳过该簇", label)
                 continue
-            cluster_refs[label] = self._choose_reference(pool, tag=f"spk{label}")
-        if len(cluster_refs) < 2:
+            bank = [
+                self._anchor_entry(wav, text, duration_ms)
+                for _score, wav, text, _index, duration_ms in pool[:3]
+            ]
+            if bank:
+                cluster_banks[label] = bank
+        if len(cluster_banks) < 2:
             return
-        # 把归属写进条目：_run 按行取所属簇的参考；缓存键含 cluster_ref 指纹
+        # 把稳定声纹簇 ID 与候选库写进条目。每行可按句式选择不同参考，
+        # speaker_cluster_id 保证换参考不会被误判成换说话人。
         assigned = 0
         for pos, (i, it) in enumerate(lines):
             label = labels.get(pos)
-            if label in cluster_refs:
-                it['cluster_ref'], it['cluster_ref_text'] = cluster_refs[label]
+            bank = cluster_banks.get(label)
+            if bank:
+                anchor = self._choose_chinese_anchor(bank, it)
+                it['speaker_cluster_id'] = f'cluster:{label}'
+                it['cluster_ref_bank'] = bank
+                it['cluster_ref'] = anchor['wav']
+                it['cluster_ref_text'] = anchor['text']
                 assigned += 1
-        logger.debug(f'多说话人参考启用: {len(cluster_refs)} 簇, 覆盖 {assigned}/{len(lines)} 行, 时长占比={totals}')
+        logger.debug(f'多说话人参考库启用: {len(cluster_banks)} 簇, 覆盖 {assigned}/{len(lines)} 行, 时长占比={totals}')
 
     @staticmethod
     def _keep_dominant_speaker(candidates):
@@ -368,9 +484,21 @@ class F5TTS(GradioBase):
     def _exec(self) -> None:
         managed_local = self._is_managed_local_service()
         low_memory = bool(getattr(self, "_low_memory_profile", False))
+        needs_content_gate = bool(
+            not self.is_test and self.language and self.language[:2].lower() == "zh"
+        )
+        serialize_validator = bool(
+            low_memory or (needs_content_gate and self._should_use_mlx_validator())
+        )
+        self._service_circuit_error = ""
         try:
             # The app no longer keeps F5 resident from launch.  Start it only
             # when an F5 dubbing task actually reaches synthesis.
+            if managed_local and not self._wait_for_synthesis_resources(0):
+                raise DubbingSrtError(
+                    str(getattr(self, "_service_circuit_error", ""))
+                    or "F5-TTS 启动前资源保护未放行"
+                )
             if managed_local and not self._start_local_service():
                 # A long reference-analysis pass can leave reclaimable native
                 # pages behind.  Give macOS one pressure-relief cycle and retry
@@ -381,51 +509,51 @@ class F5TTS(GradioBase):
                 self._release_memory_pressure()
                 time.sleep(2)
                 if not self._start_local_service(recovery=True):
-                    raise DubbingSrtError("F5-TTS 本地服务按需启动失败，请查看 F5-TTS 日志。")
+                    raise self._service_start_error("F5-TTS 本地服务按需启动失败")
             if self._should_run_preflight():
                 self._run_preflight()
                 # 16 GB 机型会在预飞回读前停掉 F5，全片放行前再启动。
                 if managed_local and not self._local_service_is_ready():
                     if not self._start_local_service():
-                        raise DubbingSrtError("F5-TTS 预飞通过后重启本地服务失败。")
+                        raise self._service_start_error("F5-TTS 预飞通过后重启本地服务失败")
             super()._exec()
+            missing = [
+                idx for idx, item in enumerate(self.queue_tts)
+                if item.get("text", "").strip() and not vail_file(item.get("filename"))
+            ]
+            if missing:
+                detail = str(
+                    getattr(self, "_service_circuit_error", "")
+                    or getattr(self, "error", "") or "本地服务未生成音频"
+                )
+                raise DubbingSrtError(
+                    f"F5-TTS 配音未完成：已保留成功片段，仍缺少 {len(missing)} 段。"
+                    f"下次重试将复用成功片段。原因：{detail[:300]}"
+                )
             if self.is_test or not self.language or self.language[:2].lower() != "zh":
                 return
-            if low_memory:
+            if serialize_validator:
                 # Never overlap the F5 Metal model with large-v3-turbo's CPU
-                # buffers on a 16 GB unified-memory Mac.
+                # buffers or MLX Metal allocations.
                 self._stop_local_service()
             self._verify_chinese_outputs()
         finally:
-            if low_memory:
+            if serialize_validator:
                 self._stop_local_service()
 
     @staticmethod
     def _latin_words(text: str) -> List[str]:
-        return re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text or "")
+        from videotrans.dub.chinese_quality import latin_words
+        return latin_words(text)
 
     def _has_unexpected_english(self, expected: str, transcript: str) -> bool:
-        expected_words = {word.lower() for word in self._latin_words(expected)}
-        unexpected = [
-            word for word in self._latin_words(transcript)
-            if word.lower() not in expected_words
-        ]
-        # Whisper occasionally renders one short Chinese sound as an English word.
-        # A longer word or several words is a much stronger signal that F5 copied
-        # speech from the English reference clip.
-        latin_chars = sum(len(word.replace("'", "")) for word in unexpected)
-        if latin_chars >= 8 or (len(unexpected) >= 2 and latin_chars >= 6):
-            return True
-
-        reference_words = {
-            word.lower() for word in self._latin_words(self.safe_ref_text or "")
-            if len(word.replace("'", "")) >= 5
-        }
-        # Catch a single leaked proper name such as "Hansen". This used to slip
-        # through the general threshold because it is only six letters long.
-        return any(
-            word.lower() in reference_words and word.lower() not in expected_words
-            for word in unexpected
+        from videotrans.dub.chinese_quality import has_unexpected_english
+        return has_unexpected_english(
+            expected,
+            transcript,
+            safe_reference_text=getattr(self, "safe_ref_text", "") or "",
+            zero_unexpected_latin=str(settings.get(
+                "f5tts_zero_unexpected_latin", True)).lower() != "false",
         )
 
     def _get_validator_model_path(self) -> Path:
@@ -443,11 +571,21 @@ class F5TTS(GradioBase):
             "F5-TTS 中文配音验收需要已下载的 large-v3-turbo 识别模型，但没有找到该模型。"
         )
 
-    def _transcribe_batch_for_validation(self, model) -> Dict[int, str]:
+    def _transcribe_batch_for_validation(self, model, indices=None) -> Dict[int, str]:
+        """Screen one bounded micro-batch and map transcripts back to queue rows.
+
+        The previous implementation concatenated the entire long video plus
+        700 ms after every line.  Keeping batches bounded makes checkpoints and
+        cancellation cheap and avoids transcribing minutes of synthetic silence.
+        Suspicious rows are still confirmed individually before regeneration.
+        """
         batch_audio = AudioSegment.empty()
         boundaries = []
-        gap_ms = 700
+        gap_ms = max(150, min(int(settings.get("f5tts_validation_gap_ms", 250) or 250), 500))
+        allowed = set(indices) if indices is not None else None
         for idx, item in enumerate(self.queue_tts):
+            if allowed is not None and idx not in allowed:
+                continue
             if not item.get("text", "").strip() or not vail_file(item.get("filename")):
                 continue
             clip = AudioSegment.from_file(item["filename"])
@@ -459,7 +597,8 @@ class F5TTS(GradioBase):
         if not boundaries:
             return {}
 
-        batch_file = Path(ROOT_DIR) / "tmp" / f"f5-language-check-{self.uuid}.wav"
+        marker = f"{boundaries[0][2]}-{boundaries[-1][2]}-{time.time_ns()}"
+        batch_file = Path(ROOT_DIR) / "tmp" / f"f5-language-check-{self.uuid}-{marker}.wav"
         batch_file.parent.mkdir(parents=True, exist_ok=True)
         batch_audio.export(batch_file, format="wav")
         transcripts = {idx: [] for _, _, idx in boundaries}
@@ -498,7 +637,43 @@ class F5TTS(GradioBase):
     @staticmethod
     def _speaker_key(item) -> str:
         """把中文锚点限制在同一个自动声纹簇，避免重试时发生音色串人。"""
-        return str(item.get("cluster_ref") or "__main_speaker__")
+        return str(
+            item.get("speaker_cluster_id")
+            or item.get("cluster_ref")
+            or "__main_speaker__"
+        )
+
+    @staticmethod
+    def _anchor_style(text: str) -> str:
+        value = (text or "").strip()
+        if value.endswith(("?", "？")):
+            return "question"
+        if value.endswith(("!", "！")):
+            return "exclamation"
+        return "statement"
+
+    def _anchor_entry(self, filename, text, duration_ms) -> dict:
+        text = self._ensure_punct(text)
+        return {
+            "wav": str(filename),
+            "text": text,
+            "duration_ms": int(duration_ms),
+            "style": self._anchor_style(text),
+            "cjk_chars": len(re.findall(r"[\u4e00-\u9fff]", text)),
+        }
+
+    def _choose_chinese_anchor(self, bank, item, retry_no=0):
+        if not bank:
+            return None
+        target_text = str(item.get("text") or "")
+        target_style = self._anchor_style(target_text)
+        target_chars = len(re.findall(r"[\u4e00-\u9fff]", target_text))
+        ranked = sorted(bank, key=lambda anchor: (
+            0 if anchor.get("style") == target_style else 1,
+            abs(int(anchor.get("cjk_chars") or 0) - target_chars),
+            abs(int(anchor.get("duration_ms") or 0) - 6500),
+        ))
+        return ranked[max(int(retry_no or 0), 0) % len(ranked)]
 
     def _assign_chinese_anchors(self, failed, transcripts) -> int:
         """从已通过验收的成品中挑同说话人 5-8.5s 中文片段作为重试参考。"""
@@ -520,7 +695,7 @@ class F5TTS(GradioBase):
                 continue
             score = abs(duration_ms - 6500)
             candidates.setdefault(self._speaker_key(item), []).append(
-                (score, item["filename"], self._ensure_punct(text))
+                (score, self._anchor_entry(item["filename"], text, duration_ms))
             )
 
         assigned = 0
@@ -528,9 +703,11 @@ class F5TTS(GradioBase):
             pool = candidates.get(self._speaker_key(item)) or []
             if not pool:
                 continue
-            _, wav, text = min(pool, key=lambda row: row[0])
-            item["chinese_anchor_ref"] = wav
-            item["chinese_anchor_text"] = text
+            bank = [entry for _score, entry in sorted(pool, key=lambda row: row[0])[:3]]
+            anchor = self._choose_chinese_anchor(bank, item)
+            item["chinese_anchor_bank"] = bank
+            item["chinese_anchor_ref"] = anchor["wav"]
+            item["chinese_anchor_text"] = anchor["text"]
             assigned += 1
         if assigned:
             logger.debug("F5-TTS 中文锚点已分配给 %s/%s 个泄漏重试段", assigned, len(failed))
@@ -565,7 +742,9 @@ class F5TTS(GradioBase):
             )
 
         selected = {}
+        banks = {}
         for speaker_key, pool in candidates.items():
+            bank = []
             for _score, idx, item in sorted(pool)[:16]:
                 try:
                     transcript = self._transcribe_one_for_validation(validator, item["filename"])
@@ -578,13 +757,21 @@ class F5TTS(GradioBase):
                     and not self._has_pathological_repetition(transcript)
                 ):
                     text = self._ensure_punct(item["text"])
-                    selected[speaker_key] = (item["filename"], text)
+                    bank.append(self._anchor_entry(
+                        item["filename"], text,
+                        len(AudioSegment.from_file(item["filename"]))))
                     logger.info(
                         "F5-TTS 恢复任务已选定同说话人中文锚点: 第 %s 段 %s",
                         idx + 1, item["filename"],
                     )
-                    break
+                    if len(bank) >= 3:
+                        break
+            if bank:
+                banks[speaker_key] = bank
+                anchor = self._choose_chinese_anchor(bank, pool[0][2])
+                selected[speaker_key] = (anchor["wav"], anchor["text"])
 
+        self.resume_chinese_anchor_banks = banks
         self.resume_chinese_anchors = selected
         if selected:
             self.signal(text=f"F5-TTS 已从现有成品选定 {len(selected)} 个同说话人中文音色锚点")
@@ -607,6 +794,71 @@ class F5TTS(GradioBase):
             temperature=0,
         )
         return "".join(segment.text for segment in segments).strip()
+
+    def _hard_quality_failures(self, expected: str, transcript: str) -> List[str]:
+        from videotrans.dub.chinese_quality import hard_quality_failures
+        return hard_quality_failures(
+            expected,
+            transcript,
+            safe_reference_text=getattr(self, "safe_ref_text", "") or "",
+            zero_unexpected_latin=str(settings.get(
+                "f5tts_zero_unexpected_latin", True)).lower() != "false",
+        )
+
+    @staticmethod
+    def _chinese_similarity(expected: str, transcript: str) -> float:
+        from videotrans.dub.chinese_quality import chinese_similarity
+        return chinese_similarity(expected, transcript)
+
+    def _quality_metrics(self, expected: str, transcript: str) -> dict:
+        from videotrans.dub.chinese_quality import quality_metrics
+        return quality_metrics(expected, transcript)
+
+    def _transcribe_isolated_for_validation(self, indices, backend=None) -> Dict[int, str]:
+        from videotrans.process.quality_validator import (
+            validate_faster_whisper_files,
+            validate_mlx_whisper_files,
+        )
+        from videotrans.util.resource_governor import runtime_limits
+
+        files = [
+            (idx, self.queue_tts[idx]["filename"])
+            for idx in indices
+            if vail_file(self.queue_tts[idx].get("filename"))
+        ]
+        if not files:
+            return {}
+        logs_file = str(
+            Path(ROOT_DIR) / "tmp"
+            / f"f5-validator-{self.uuid}-{indices[0]}-{indices[-1]}.log"
+        )
+        backend = backend or self._validator_identity()[0]
+        use_mlx = backend == "mlx-whisper-mps"
+        callback = validate_mlx_whisper_files if use_mlx else validate_faster_whisper_files
+        model_path = self._mlx_validator_model_path() if use_mlx else self._get_validator_model_path()
+        limits = runtime_limits(mode=settings.get("resource_mode", "auto"))
+        return self._new_process(
+            callback=callback,
+            title=f"F5-TTS quality {indices[0] + 1}-{indices[-1] + 1}",
+            is_cuda=False,
+            kwargs={
+                "files": files,
+                "model_path": str(model_path),
+                "cpu_threads": limits.validator_cpu_threads,
+                "logs_file": logs_file,
+            },
+        )
+
+    def _transcribe_isolated_with_fallback(self, indices, backend):
+        try:
+            return self._transcribe_isolated_for_validation(indices, backend=backend), backend
+        except Exception as error:
+            if backend != "mlx-whisper-mps":
+                raise
+            logger.warning("MLX 配音核验不可用，自动回退隔离 CPU 核验: %s", error)
+            self.signal(text="MLX 核验当前不可用，已自动切换 CPU 强模型，不降低核验等级")
+            fallback = self.VALIDATOR_BACKEND
+            return self._transcribe_isolated_for_validation(indices, backend=fallback), fallback
 
     @staticmethod
     def _human_duration(seconds: float) -> str:
@@ -646,6 +898,30 @@ class F5TTS(GradioBase):
         text = (item.get("text") or "").strip()
         return len(re.findall(r"[\u4e00-\u9fff]", text)), len(text)
 
+    @staticmethod
+    def _preflight_compute_risk(item) -> float:
+        """Estimate F5 work, including a slow requested rate and a tight slot."""
+        text = str(item.get("text") or "").strip()
+        ref_text = str(item.get("ref_text") or "").strip()
+        ref_ms = max(
+            int(item.get("end_time_source") or item.get("end_time") or 0)
+            - int(item.get("start_time_source") or item.get("start_time") or 0),
+            1000,
+        )
+        slot_ms = max(
+            int(item.get("target_duration_ms") or 0)
+            or (int(item.get("end_time") or 0) - int(item.get("start_time") or 0)),
+            500,
+        )
+        rate = str(item.get("rate") or "+0%").strip()
+        try:
+            speed = max(1 + float(rate.replace("%", "")) / 100, 0.3)
+        except (TypeError, ValueError):
+            speed = 1.0
+        byte_ratio = len(text.encode("utf-8")) / max(len(ref_text.encode("utf-8")), 1)
+        predicted_ratio = ref_ms * byte_ratio / speed / slot_ms
+        return round(predicted_ratio * max(len(text), 1), 3)
+
     def _preflight_indices(self, limit: int) -> List[int]:
         pending = [
             idx for idx, item in enumerate(self.queue_tts)
@@ -659,21 +935,38 @@ class F5TTS(GradioBase):
         by_long = sorted(
             pending, key=lambda idx: self._preflight_risk(self.queue_tts[idx]), reverse=True
         )
-
-        # 先覆盖不同声纹参考，避免只验证到主讲人。
-        seen_refs = set()
-        for idx in by_short:
-            item = self.queue_tts[idx]
-            ref = str(item.get("cluster_ref") or self.safe_ref_wav or item.get("ref_wav") or "")
-            if ref and ref not in seen_refs:
-                chosen.append(idx)
-                seen_refs.add(ref)
-            if len(chosen) >= limit:
-                return chosen
+        by_compute = sorted(
+            pending,
+            key=lambda idx: self._preflight_compute_risk(self.queue_tts[idx]),
+            reverse=True,
+        )
 
         def add(idx):
             if idx not in chosen:
                 chosen.append(idx)
+
+        # The row most likely to cause a Metal peak is mandatory.  Previously,
+        # many speaker references could consume the whole sample budget before
+        # this pathological row was considered.
+        add(by_compute[0])
+
+        # 先覆盖不同声纹参考，并优先为每位说话人选择较长句，以便预飞
+        # 通过后立刻把它升级成中文锚点供后续全片使用。
+        by_reference = {}
+        for idx in pending:
+            item = self.queue_tts[idx]
+            ref = str(item.get("cluster_ref") or self.safe_ref_wav or item.get("ref_wav") or "")
+            if ref:
+                old = by_reference.get(ref)
+                if old is None or self._preflight_risk(item) > self._preflight_risk(
+                        self.queue_tts[old]):
+                    by_reference[ref] = idx
+        speaker_budget = max(0, limit - 2)
+        for idx in sorted(
+                by_reference.values(),
+                key=lambda value: self._preflight_compute_risk(self.queue_tts[value]),
+                reverse=True)[:speaker_budget]:
+            add(idx)
 
         # 短文本最容易续写英文参考，长文本最容易触发 MPS 峰值。
         add(by_short[0])
@@ -688,12 +981,10 @@ class F5TTS(GradioBase):
 
     @staticmethod
     def _has_pathological_repetition(transcript: str) -> bool:
-        compact = re.sub(r"[^A-Za-z\u4e00-\u9fff]+", "", transcript or "")
-        return bool(re.search(r"(.{1,4})\1{4,}", compact))
+        from videotrans.dub.chinese_quality import has_pathological_repetition
+        return has_pathological_repetition(transcript)
 
     def _run_preflight(self) -> None:
-        from faster_whisper import WhisperModel
-
         limit = max(1, min(int(settings.get("f5tts_preflight_samples", 5) or 5), 8))
         indices = self._preflight_indices(limit)
         if not indices:
@@ -723,13 +1014,13 @@ class F5TTS(GradioBase):
             if getattr(self, "_low_memory_profile", False):
                 self._stop_local_service()
             self.signal(text="F5-TTS 预飞合成完成，正在回读内容与重复度")
-            model = WhisperModel(
-                str(self._get_validator_model_path()), device="cpu", compute_type="int8"
-            )
+            model = self._new_validator()
             failures = []
+            sample_transcripts = {}
             try:
                 for idx, original, sample in samples:
                     transcript = self._transcribe_one_for_validation(model, sample["filename"])
+                    sample_transcripts[idx] = transcript
                     cjk_count = len(re.findall(r"[\u4e00-\u9fff]", transcript))
                     if (
                         cjk_count < 2
@@ -741,23 +1032,94 @@ class F5TTS(GradioBase):
                 model = None
                 gc.collect()
 
-            if failures:
-                details = "；".join(
-                    f"第 {idx + 1} 段：{transcript[:70]}" for idx, transcript in failures[:3]
-                )
-                raise DubbingSrtError(
-                    f"F5-TTS 预飞质量核对未通过 {len(failures)}/{len(samples)} 段，"
-                    f"已在全片生成前停止。{details}"
-                )
-
             # 预飞参数与正式任务完全相同，通过的音频直接复用。
             for _idx, original, sample in samples:
                 target = Path(original["filename"])
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(sample["filename"], target)
-            self.signal(text=f"F5-TTS 预飞通过 {len(samples)}/{len(samples)}，开始全片配音")
+            if any(original.get("dub_unit_id") for _, original, _ in samples):
+                from videotrans.dub.quality_manifest import QualityManifest
+                manifest = QualityManifest.for_queue(self.queue_tts)
+                failed_indices = {idx for idx, _transcript in failures}
+                for idx, original, _sample in samples:
+                    transcript = sample_transcripts.get(idx, "")
+                    passed = idx not in failed_indices
+                    manifest.record(
+                        original,
+                        index=idx,
+                        validator_backend=self.VALIDATOR_BACKEND,
+                        validator_model=self.VALIDATOR_MODEL,
+                        rules_version=self.QUALITY_RULES_VERSION,
+                        passed=passed,
+                        transcript=transcript,
+                        hard_failures=(
+                            [] if passed else
+                            self._hard_quality_failures(original["text"], transcript)
+                        ),
+                        disposition="passed" if passed else "retryable",
+                        metrics=self._quality_metrics(original["text"], transcript),
+                        save=False,
+                    )
+                manifest.save()
+            anchor_count = self._bootstrap_chinese_anchors(
+                samples, sample_transcripts, failures)
+            if failures:
+                details = "；".join(
+                    f"第 {idx + 1} 段：{transcript[:70]}"
+                    for idx, transcript in failures[:3]
+                )
+                self.signal(text=(
+                    f"F5-TTS 预飞发现 {len(failures)}/{len(samples)} 段内容异常，"
+                    f"已标记并继续；稍后只返工这些片段。{details}"
+                ))
+            else:
+                self.signal(text=f"F5-TTS 预飞通过 {len(samples)}/{len(samples)}，开始全片配音")
+            if anchor_count:
+                self.signal(text=(
+                    f"F5-TTS 已建立 {anchor_count} 个中文音色锚点；"
+                    "后续片段不再持续使用英文参考条件"
+                ))
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _bootstrap_chinese_anchors(self, samples, transcripts, failures) -> int:
+        """Promote clean preflight outputs to per-speaker Chinese references."""
+        failed_indices = {idx for idx, _transcript in failures}
+        candidates = {}
+        for idx, original, _sample in samples:
+            if idx in failed_indices or not vail_file(original.get("filename")):
+                continue
+            transcript = str(transcripts.get(idx) or "")
+            if self._hard_quality_failures(original.get("text", ""), transcript):
+                continue
+            try:
+                duration_ms = len(AudioSegment.from_file(original["filename"]))
+            except Exception:
+                continue
+            if not 2500 <= duration_ms <= self.MAX_REF_AUDIO_MS:
+                continue
+            key = self._speaker_key(original)
+            score = abs(duration_ms - 6500)
+            candidates.setdefault(key, []).append((
+                score,
+                self._anchor_entry(
+                    original["filename"], original.get("text", ""), duration_ms),
+            ))
+        if not candidates:
+            return 0
+        for item in self.queue_tts:
+            pool = candidates.get(self._speaker_key(item)) or []
+            bank = [entry for _score, entry in sorted(pool, key=lambda row: row[0])[:3]]
+            anchor = self._choose_chinese_anchor(bank, item)
+            if anchor and item.get("filename") != anchor["wav"]:
+                item["chinese_anchor_bank"] = bank
+                item["chinese_anchor_ref"] = anchor["wav"]
+                item["chinese_anchor_text"] = anchor["text"]
+        self.preflight_chinese_anchors = {
+            key: [entry for _score, entry in sorted(value, key=lambda row: row[0])[:3]]
+            for key, value in candidates.items()
+        }
+        return len(candidates)
 
     def _confirm_batch_failures(self, model, failed, transcripts):
         """Individually re-read batch-gate candidates before expensive redubbing.
@@ -796,7 +1158,7 @@ class F5TTS(GradioBase):
                 confirmed.append((idx, item, transcript))
             else:
                 transcripts[idx] = transcript
-                if self._has_unexpected_english(item["text"], transcript):
+                if self._hard_quality_failures(item["text"], transcript):
                     confirmed.append((idx, item, transcript))
             if pos == 1 or pos == len(failed) or pos % 5 == 0:
                 self.signal(text=self._eta_text(
@@ -820,22 +1182,42 @@ class F5TTS(GradioBase):
             and len(failed) / max(eligible, 1) >= self.MASS_GATE_FAILURE_RATIO
         )
 
+    @staticmethod
+    def _defer_clip_failures() -> bool:
+        return str(settings.get("f5tts_defer_clip_failures", True)).lower() != "false"
+
     def _write_leak_sidecar(self, failed) -> None:
         """BaseTTS 对 queue_tts 做了 deepcopy，直接改条目传不回调用方。
         把 {文件名: 转写} 写到配音目录的 lang_leak.json，由 trans_create 合并回真正的队列。"""
         try:
             import json
+            first = next((it for it in self.queue_tts if it.get("filename")), None)
+            if not first:
+                return
+            sidecar = Path(first["filename"]).parent / "lang_leak.json"
             marks = {}
+            if sidecar.is_file():
+                try:
+                    loaded = json.loads(sidecar.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        marks.update(loaded)
+                except (OSError, json.JSONDecodeError):
+                    pass
+            # This queue is authoritative only for its own filenames. Preserve
+            # marks belonging to other concurrently repairable clips.
+            for item in self.queue_tts:
+                name = Path(item.get("filename") or "").name
+                if name:
+                    marks.pop(name, None)
             for _, item, transcript in failed:
                 name = Path(item.get("filename") or "").name
                 if name:
                     marks[name] = transcript[:120]
-            if not marks:
-                return
-            first = next((it for it in self.queue_tts if it.get("filename")), None)
-            if first:
-                sidecar = Path(first["filename"]).parent / "lang_leak.json"
-                sidecar.write_text(json.dumps(marks, ensure_ascii=False), encoding="utf-8")
+            from videotrans.dub.store import atomic_write_json
+            if marks:
+                atomic_write_json(sidecar, marks)
+            else:
+                sidecar.unlink(missing_ok=True)
         except Exception as e:
             logger.warning(f"写配音泄漏标记文件失败,忽略: {e}")
 
@@ -898,6 +1280,96 @@ class F5TTS(GradioBase):
         parsed = urlparse(self.api_url)
         return f"{parsed.scheme or 'http'}://{parsed.hostname}:{parsed.port or 7860}/gradio_api/info"
 
+    @staticmethod
+    def _local_service_environment(script: Path) -> dict:
+        """Isolate the service cache from HF variables inherited from the app.
+
+        The main application deliberately points ``HF_HUB_CACHE`` at its ASR
+        model directory. Merely setting ``HF_HOME`` in the shell launcher does
+        not override that more specific variable, which made a complete local
+        Vocos cache appear missing while offline mode was enabled.
+        """
+        env = os.environ.copy()
+        service_cache = script.parent / "cache"
+        hf_home = service_cache / "huggingface"
+        hub = hf_home / "hub"
+        env.update({
+            "HF_HOME": str(hf_home),
+            "HF_HUB_CACHE": str(hub),
+            "HUGGINGFACE_HUB_CACHE": str(hub),
+            "XDG_CACHE_HOME": str(service_cache),
+            "CACHED_PATH_CACHE_ROOT": str(hub),
+        })
+        return env
+
+    @staticmethod
+    def _summarize_local_service_error(text: str) -> str:
+        text = str(text or "")
+        lowered = text.lower()
+        if "vocos-mel-24khz" in lowered and (
+                "localentrynotfounderror" in lowered
+                or "offlinemodeisenabled" in lowered):
+            return "Vocos 声码器缓存不可用或启动环境指向了错误的模型目录"
+        if "mps backend out of memory" in lowered or "out of memory" in lowered:
+            return "Metal 统一内存不足"
+        if "address already in use" in lowered:
+            return "本地端口 7860 已被其他程序占用"
+        missing = re.findall(r"(?:No module named|ModuleNotFoundError:)\s*['\"]?([^'\"\n]+)", text)
+        if missing:
+            return f"F5-TTS 环境缺少依赖：{missing[-1].strip()}"
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in reversed(lines):
+            if not line.startswith(("File ", "Traceback", "warnings.warn")):
+                return line[:300]
+        return "未知启动错误"
+
+    @staticmethod
+    def _new_log_text(log_file: Path, start_size: int) -> str:
+        try:
+            with log_file.open("rb") as stream:
+                stream.seek(min(max(int(start_size), 0), log_file.stat().st_size))
+                return stream.read()[-12000:].decode("utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    def _service_start_error(self, context: str) -> DubbingSrtError:
+        detail = str(getattr(self, "_local_service_error", "") or "").strip()
+        return DubbingSrtError(f"{context}：{detail or '请查看 F5-TTS 日志'}。")
+
+    def _wait_for_f5_headroom(self, timeout_s: int = 45) -> bool:
+        """Wait briefly for a disposable validator process to release memory."""
+        from videotrans.util.resource_governor import resource_snapshot
+
+        deadline = time.monotonic() + max(int(timeout_s), 0)
+        announced = False
+        while True:
+            snapshot = resource_snapshot()
+            if (
+                    (not snapshot.available_mb or snapshot.available_mb >= 3072)
+                    and snapshot.memory_percent < 86
+            ):
+                return True
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "F5-TTS 返工前内存未恢复: available=%sMB memory=%s%% swap=%sMB",
+                    snapshot.available_mb, snapshot.memory_percent, snapshot.swap_used_mb,
+                )
+                return False
+            if not announced:
+                announced = True
+                self.signal(text=(
+                    f"强模型已退出，正在等待系统回收内存后再局部返工…"
+                    f"（当前可用 {snapshot.available_mb} MB）"
+                ))
+            self._release_memory_pressure()
+            time.sleep(1)
+
+    @staticmethod
+    def _quality_retry_path(filename: str, retry_index: int) -> Path:
+        path = Path(filename)
+        return path.with_name(
+            f".{path.stem}.quality-retry-{int(retry_index) + 1}{path.suffix or '.wav'}")
+
     def _local_service_is_ready(self) -> bool:
         if not self._is_managed_local_service():
             return False
@@ -914,9 +1386,17 @@ class F5TTS(GradioBase):
             self.reset_thread_client()
             return True
         script = self._local_service_script("start_service.sh")
+        self._local_service_error = ""
         if script is None:
             logger.error("F5-TTS 本地服务启动失败：未找到 start_service.sh")
+            self._local_service_error = "未找到本地服务启动脚本"
             return False
+
+        log_file = script.parent / "logs" / "f5-tts.log"
+        try:
+            log_start_size = log_file.stat().st_size
+        except OSError:
+            log_start_size = 0
 
         self.reset_thread_client()
         if recovery:
@@ -929,12 +1409,14 @@ class F5TTS(GradioBase):
             process = subprocess.Popen(
                 [str(script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, start_new_session=True,
+                env=self._local_service_environment(script),
             )
         except Exception as error:
             logger.error("F5-TTS 本地服务启动失败: %s", error)
+            self._local_service_error = str(error)[:300]
             return False
 
-        for _ in range(240):
+        for waited_s in range(240):
             if self._exit():
                 return False
             if self._local_service_is_ready():
@@ -949,13 +1431,24 @@ class F5TTS(GradioBase):
                     output = (process.communicate(timeout=1)[0] or "").strip()
                 except Exception:
                     pass
+                log_text = self._new_log_text(log_file, log_start_size)
+                self._local_service_error = self._summarize_local_service_error(
+                    f"{output}\n{log_text}")
                 logger.error(
-                    "F5-TTS 启动脚本已退出，错误代码: %s，输出: %s",
-                    process.returncode, output or "<无输出，子进程可能被系统终止>",
+                    "F5-TTS 启动脚本已退出，错误代码: %s，原因: %s，输出: %s",
+                    process.returncode, self._local_service_error,
+                    output or "<无输出，子进程可能被系统终止>",
                 )
+                self.signal(text=f"F5-TTS 启动失败：{self._local_service_error}")
                 return False
+            if waited_s and waited_s % 15 == 0:
+                self.signal(text=(
+                    f"F5-TTS 正在加载模型｜已用 {waited_s} 秒｜"
+                    "首次冷启动通常需要 1–2 分钟"
+                ))
             time.sleep(1)
         logger.error("F5-TTS 本地服务启动超时: %s", self._local_health_url())
+        self._local_service_error = "模型加载超过 240 秒"
         return False
 
     def _stop_local_service(self) -> bool:
@@ -999,6 +1492,78 @@ class F5TTS(GradioBase):
         self._release_memory_pressure()
         return self._start_local_service(recovery=True)
 
+    def _wait_for_synthesis_resources(self, idx: int) -> bool:
+        """Do not submit another Metal job while this run is actively swapping."""
+        if not self._is_managed_local_service():
+            return True
+        supervisor = self._synthesis_supervisor()
+        decision = supervisor.resource_decision()
+        if decision.allow:
+            if getattr(self, "_resource_recycle_pending", False):
+                if not self._start_local_service(recovery=True):
+                    return False
+                self._resource_recycle_pending = False
+            return True
+
+        if self._local_service_is_ready():
+            self.signal(text=(
+                f"F5-TTS 第 {idx + 1} 段提交前检测到资源压力：{decision.reason}；"
+                "正在释放模型，已生成片段不会丢失"
+            ))
+            self._stop_local_service()
+            supervisor.mark_recycle()
+        self._resource_recycle_pending = True
+        deadline = time.monotonic() + max(
+            int(settings.get("f5tts_resource_wait_s", 60) or 60), 1)
+        last_signal = 0.0
+        while time.monotonic() < deadline and not self._exit():
+            self._release_memory_pressure()
+            decision = supervisor.resource_decision()
+            if decision.allow:
+                if self._start_local_service(recovery=True):
+                    self._resource_recycle_pending = False
+                    return True
+                return False
+            now = time.monotonic()
+            if now - last_signal >= 10:
+                last_signal = now
+                self.signal(text=(
+                    f"F5-TTS 正在等待系统回收内存｜{decision.reason}｜"
+                    "可安全停止，已完成片段已保存"
+                ))
+            time.sleep(1)
+        self._service_circuit_error = (
+            f"F5-TTS 资源保护已暂停新片段：{decision.reason}。"
+            "请关闭高内存应用后继续，已完成片段会自动复用。"
+        )
+        return False
+
+    def _post_clip_resource_guard(self, idx: int) -> None:
+        if not self._is_managed_local_service():
+            return
+        decision = self._synthesis_supervisor().resource_decision()
+        if decision.allow or not self._local_service_is_ready():
+            return
+        self.signal(text=(
+            f"F5-TTS 第 {idx + 1} 段完成后触发资源保护：{decision.reason}；"
+            "先释放模型，下段自动恢复"
+        ))
+        self._stop_local_service()
+        self._synthesis_supervisor().mark_recycle()
+        self._resource_recycle_pending = True
+
+    def _persist_synthesis_supervisor(self, data_item) -> None:
+        try:
+            from videotrans.dub.store import atomic_write_json
+            filename = data_item.get("filename") if isinstance(data_item, dict) else None
+            if filename:
+                atomic_write_json(
+                    Path(filename).parent / "synthesis_supervisor.json",
+                    self._synthesis_supervisor().diagnostics(),
+                )
+        except Exception as error:
+            logger.debug("保存合成监督器诊断失败，忽略: %s", error)
+
     def _item_task(self, data_item, idx=-1):
         """Retry one local infrastructure failure immediately on a fresh model.
 
@@ -1007,6 +1572,14 @@ class F5TTS(GradioBase):
         retry batch finishes leaves several deleted clips behind.  Restart and
         retry the affected clip at the point of failure instead.
         """
+        if getattr(self, "_service_circuit_error", ""):
+            return self._service_circuit_error
+        if not self._wait_for_synthesis_resources(idx):
+            return str(
+                getattr(self, "_service_circuit_error", "")
+                or getattr(self, "_local_service_error", "")
+                or "F5-TTS 资源保护未放行"
+            )
         error = super()._item_task(data_item, idx)
         if (
             not error
@@ -1014,6 +1587,8 @@ class F5TTS(GradioBase):
             or not self._is_managed_local_service()
             or not self._is_service_error(error)
         ):
+            if not error:
+                self._post_clip_resource_guard(idx)
             return error
         self.signal(text=f"F5-TTS 第 {idx + 1} 段后端内存异常，正在隔离重启并只重试该段")
         logger.warning("F5-TTS 第 %s 段服务异常，立即重启后单段重试: %s", idx + 1, error)
@@ -1021,8 +1596,12 @@ class F5TTS(GradioBase):
         if filename:
             Path(filename).unlink(missing_ok=True)
         if not self._recover_local_service():
+            self._service_circuit_error = str(error)
             return error
-        return super()._item_task(data_item, idx)
+        error = super()._item_task(data_item, idx)
+        if not error:
+            self._post_clip_resource_guard(idx)
+        return error
 
     def _retry_service_failures(self, failures, retry_index):
         """Retry only infrastructure-failed items after one service recovery."""
@@ -1038,41 +1617,178 @@ class F5TTS(GradioBase):
         return remaining
 
     def _verify_chinese_outputs(self) -> None:
-        from faster_whisper import WhisperModel
+        from videotrans.dub.quality_manifest import QualityManifest
 
+        persist_quality = any(item.get("dub_unit_id") for item in self.queue_tts)
+        manifest = QualityManifest.for_queue(self.queue_tts) if persist_quality else None
+        isolated_validation = (
+            persist_quality
+            and str(settings.get("f5tts_isolate_validator", True)).lower() != "false"
+        )
         model = None
-        try:
-            self.signal(text="正在检查 F5-TTS 配音中是否混入英文原声…")
-            logger.debug("开始对 F5-TTS 中文配音执行英文原声泄漏检查")
-            model = WhisperModel(
-                str(self._get_validator_model_path()),
-                device="cpu",
-                compute_type="int8",
+        validator_backend, validator_model = (
+            self._validator_identity()
+            if isolated_validation else
+            (self.VALIDATOR_BACKEND, self.VALIDATOR_MODEL)
+        )
+        validator_args = {
+            "validator_backend": validator_backend,
+            "validator_model": validator_model,
+            "rules_version": self.QUALITY_RULES_VERSION,
+        }
+
+        def record(idx, item, transcript, passed, *, save=False):
+            if manifest is None:
+                return
+            failures = [] if passed else self._hard_quality_failures(item["text"], transcript)
+            manifest.record(
+                item,
+                index=idx,
+                passed=passed,
+                transcript=transcript,
+                hard_failures=failures,
+                metrics=self._quality_metrics(item["text"], transcript),
+                save=save,
+                **validator_args,
             )
 
-            transcripts = self._transcribe_batch_for_validation(model)
+        def defer_failed(failures, reason: str, *, attempts=0):
+            for idx, item, transcript in failures:
+                item["lang_leak"] = str(transcript or "")[:120]
+                item["quality_status"] = "needs_review"
+                if manifest is not None:
+                    manifest.set_disposition(
+                        item, "needs_review", index=idx, attempts=attempts,
+                        reason=reason, save=False)
+            if manifest is not None:
+                manifest.save()
+            self._write_leak_sidecar(failures)
+
+        try:
+            self.signal(text="正在增量核对 F5-TTS 中文配音内容…")
+            transcripts = {}
             failed = []
+            pending = []
+            cache_hits = 0
             for idx, item in enumerate(self.queue_tts):
                 if not item.get("text", "").strip() or not vail_file(item.get("filename")):
                     continue
-                transcript = transcripts.get(idx, "")
-                if self._has_unexpected_english(item["text"], transcript):
-                    failed.append((idx, item, transcript))
+                cached = None
+                if manifest is not None and getattr(self, "use_cache", True):
+                    cached = manifest.lookup(item, index=idx, **validator_args)
+                if cached:
+                    cache_hits += 1
+                    transcript = str(cached.get("transcript") or "")
+                    transcripts[idx] = transcript
+                    if not cached.get("passed"):
+                        failed.append((idx, item, transcript))
+                    continue
+                pending.append(idx)
 
-            # 批量音频只负责高召回初筛；逐文件确认后才允许触发昂贵的 F5 重配。
-            failed = self._confirm_batch_failures(model, failed, transcripts)
+            if cache_hits:
+                self.signal(text=f"质量记录复用 {cache_hits} 段，仅核对新增或变化片段")
+
+            if pending:
+                backend_label = (
+                    "MLX/Metal large-v3-turbo"
+                    if validator_backend == "mlx-whisper-mps" else
+                    "CPU large-v3-turbo"
+                )
+                self.signal(text=f"质量核验后端：{backend_label}，待核对 {len(pending)} 段")
+                if not isolated_validation:
+                    model = self._new_validator()
+                from videotrans.util.resource_governor import runtime_limits
+                configured_batch = max(
+                    4, min(int(settings.get("f5tts_validation_batch_size", 24) or 24), 40)
+                )
+                limits = runtime_limits(
+                    mode=settings.get("resource_mode", "auto"),
+                    validation_batch_size=configured_batch,
+                )
+                # The isolated worker already transcribes files one by one and
+                # never concatenates audio. Loading large-v3-turbo once for the
+                # whole pending set is both cooler and lower-memory than spawning
+                # a fresh model process for every micro-batch.
+                batch_size = len(pending) if isolated_validation else limits.validation_batch_size
+                if limits.pressure != "normal":
+                    pressure_labels = {
+                        "elevated": "偏高", "high": "较高", "critical": "严重"
+                    }
+                    self.signal(text=(
+                        f"系统资源压力{pressure_labels.get(limits.pressure, limits.pressure)}，"
+                        f"已自动降低核验线程；逐文件串行检查 {len(pending)} 段，"
+                        "强模型只加载一次，配音质量不变"
+                    ))
+                started = time.monotonic()
+                for offset in range(0, len(pending), batch_size):
+                    indices = pending[offset:offset + batch_size]
+                    if isolated_validation:
+                        screened, used_backend = self._transcribe_isolated_with_fallback(
+                            indices, backend=validator_backend
+                        )
+                        if used_backend != validator_backend:
+                            validator_backend = used_backend
+                            validator_args["validator_backend"] = used_backend
+                    else:
+                        try:
+                            screened = self._transcribe_batch_for_validation(model, indices)
+                        except TypeError:
+                            # Compatibility for subclasses implementing the former
+                            # one-argument hook.
+                            screened = self._transcribe_batch_for_validation(model)
+                    transcripts.update(screened)
+                    suspicious = []
+                    for idx in indices:
+                        item = self.queue_tts[idx]
+                        transcript = transcripts.get(idx, "")
+                        if self._hard_quality_failures(item["text"], transcript):
+                            suspicious.append((idx, item, transcript))
+
+                    # Micro-batches are only a high-recall screen. Standalone
+                    # confirmation prevents timestamp drift causing rework.
+                    confirmed = (
+                        suspicious if isolated_validation else
+                        self._confirm_batch_failures(model, suspicious, transcripts)
+                    )
+                    confirmed_indices = {idx for idx, _, _ in confirmed}
+                    failed.extend(confirmed)
+                    for idx in indices:
+                        item = self.queue_tts[idx]
+                        transcript = transcripts.get(idx, "")
+                        record(idx, item, transcript, idx not in confirmed_indices)
+                    if manifest is not None:
+                        manifest.save()
+                    completed = min(offset + len(indices), len(pending))
+                    self.signal(text=self._eta_text(
+                        "F5-TTS 增量质量核对", completed, len(pending),
+                        time.monotonic() - started,
+                    ))
+
+            if not pending and not failed:
+                logger.info("F5-TTS 全部片段命中已通过的质量记录: %s", cache_hits)
+                self.signal(text=f"F5-TTS 配音内容检查通过（复用 {cache_hits} 段质量记录）")
+                return
 
             if self._is_systemic_language_failure(failed):
                 for idx, item, transcript in failed:
                     item["lang_leak"] = transcript[:120]
+                    item["quality_status"] = "needs_reference"
+                    if manifest is not None:
+                        manifest.set_disposition(
+                            item, "needs_reference", index=idx,
+                            reason="systemic content failure", save=False)
+                if manifest is not None:
+                    manifest.save()
                 self._write_leak_sidecar(failed)
                 message = (
-                    f"F5-TTS 智能熔断：逐段复核确认 {len(failed)} 段存在语言异常，"
+                    f"F5-TTS 智能熔断：逐段复核确认 {len(failed)} 段存在内容异常，"
                     "已停止大规模自动返工，避免继续浪费数小时。"
-                    "请在修复参考音频后重新运行。"
+                    "已保留全部成功片段，并把异常片段送入工作台。"
                 )
                 logger.error(message)
                 self.signal(text=message)
+                if self._defer_clip_failures():
+                    return
                 raise DubbingSrtError(message)
 
             if failed and str(settings.get("f5tts_chinese_anchor", True)).lower() != "false":
@@ -1082,11 +1798,11 @@ class F5TTS(GradioBase):
                 if not failed:
                     break
                 logger.warning(
-                    "检测到 %s 段 F5-TTS 配音混入字幕之外的英文，开始第 %s 次重生成",
+                    "检测到 %s 段 F5-TTS 配音内容异常，开始第 %s 次重生成",
                     len(failed), retry_index + 1
                 )
                 self.signal(
-                    text=f"检测到 {len(failed)} 段混入英文原声，正在自动重配 "
+                    text=f"检测到 {len(failed)} 段内容异常，正在自动重配 "
                          f"({retry_index + 1}/{self.MAX_LANGUAGE_RETRIES})…"
                 )
                 # CTranslate2/Whisper and F5 both use unified memory on Apple
@@ -1097,110 +1813,169 @@ class F5TTS(GradioBase):
                 gc.collect()
                 regenerated = []
                 service_failed = []
+                service_errors = []
                 low_memory = bool(getattr(self, "_low_memory_profile", False))
-                if low_memory and not self._start_local_service():
-                    raise DubbingSrtError("F5-TTS 本地服务在质量复核重配前启动失败。")
+                serialize_models = bool(low_memory or validator_backend == "mlx-whisper-mps")
+                if serialize_models and (
+                        not self._wait_for_f5_headroom()
+                        or not self._start_local_service()
+                ):
+                    detail = str(getattr(self, "_local_service_error", "") or "")
+                    message = (
+                        f"系统资源尚未恢复，已跳过本轮自动返工并保留 {len(failed)} 个"
+                        f"异常片段，稍后可在工作台只重配这些片段。{detail}"
+                    )
+                    logger.warning(message)
+                    self.signal(text=message)
+                    defer_failed(
+                        failed, "automatic repair deferred: insufficient resources",
+                        attempts=retry_index)
+                    if self._defer_clip_failures():
+                        return
+                    raise self._service_start_error("F5-TTS 本地服务在质量复核重配前启动失败")
                 try:
                     retry_started = time.monotonic()
                     retry_total = len(failed)
                     for retry_pos, (idx, item, old_transcript) in enumerate(failed, 1):
-                        Path(item["filename"]).unlink(missing_ok=True)
+                        candidate_path = self._quality_retry_path(
+                            item["filename"], retry_index)
+                        candidate_path.unlink(missing_ok=True)
+                        candidate_item = copy.deepcopy(item)
+                        candidate_item["filename"] = str(candidate_path)
                         # 标记重试轮次：_run 据此偏移种子（第 2 轮起换备选参考），
                         # 否则固定种子下重新生成的结果与上次完全相同
-                        item['lang_leak_retry'] = retry_index + 1
-                        error = self._item_task(item, idx)
-                        item.pop('lang_leak_retry', None)
-                        if error or not vail_file(item["filename"]):
-                            service_failed.append((idx, item, str(error or old_transcript)))
+                        candidate_item['lang_leak_retry'] = retry_index + 1
+                        error = self._item_task(candidate_item, idx)
+                        if error or not vail_file(candidate_path):
+                            candidate_path.unlink(missing_ok=True)
+                            service_failed.append((idx, item, old_transcript))
+                            service_errors.append((idx, str(error or "未生成候选音频")))
                         else:
-                            regenerated.append((idx, item, old_transcript))
+                            regenerated.append((idx, item, old_transcript, candidate_path))
                         self.signal(text=self._eta_text(
                             f"F5-TTS 质量返工 {retry_index + 1}/{self.MAX_LANGUAGE_RETRIES}",
                             retry_pos, retry_total, time.monotonic() - retry_started,
                         ))
-
-                    if service_failed and any(
-                            self._is_service_error(error) for _, _, error in service_failed):
-                        service_failed = self._retry_service_failures(service_failed, retry_index)
-                        regenerated.extend(
-                            (idx, item, old_error)
-                            for idx, item, old_error in failed
-                            if vail_file(item.get("filename"))
-                            and not any(idx == failed_idx for failed_idx, _, _ in regenerated)
-                        )
                 finally:
-                    if low_memory:
+                    if serialize_models:
                         # Reload Whisper only after Metal allocations are gone.
                         self._stop_local_service()
 
-                if service_failed:
+                if service_errors:
                     details = "；".join(
                         f"第 {idx + 1} 段：{error[:100]}"
-                        for idx, _, error in service_failed[:5]
+                        for idx, error in service_errors[:5]
                     )
                     message = (
-                        f"F5-TTS 本地服务在质量复核重配时失败，已保留其他成功片段。"
+                        f"F5-TTS 有 {len(service_errors)} 个返工候选生成失败，"
+                        "原音频未删除；"
                         f"{details}"
                     )
-                    logger.error(message)
+                    logger.warning(message)
                     self.signal(text=message)
-                    raise DubbingSrtError(message)
 
-                model = WhisperModel(
-                    str(self._get_validator_model_path()),
-                    device="cpu",
-                    compute_type="int8",
-                )
                 retry_failed = []
-                for idx, item, _ in regenerated:
-                    transcript = self._transcribe_one_for_validation(model, item["filename"])
-                    if self._has_unexpected_english(item["text"], transcript):
-                        retry_failed.append((idx, item, transcript))
-                failed = retry_failed
+                regenerated_indices = [idx for idx, _, _, _ in regenerated]
+                if isolated_validation and regenerated:
+                    original_paths = {
+                        idx: item["filename"] for idx, item, _, _ in regenerated
+                    }
+                    try:
+                        for idx, item, _, candidate_path in regenerated:
+                            item["filename"] = str(candidate_path)
+                        isolated_transcripts, used_backend = (
+                            self._transcribe_isolated_with_fallback(
+                                regenerated_indices, backend=validator_backend
+                            )
+                        )
+                    finally:
+                        for idx, item, _, _ in regenerated:
+                            item["filename"] = original_paths[idx]
+                    if used_backend != validator_backend:
+                        validator_backend = used_backend
+                        validator_args["validator_backend"] = used_backend
+                else:
+                    isolated_transcripts = {}
+                if not isolated_validation and regenerated:
+                    model = self._new_validator()
+                for idx, item, old_transcript, candidate_path in regenerated:
+                    transcript = (
+                        isolated_transcripts.get(idx, "") if isolated_validation else
+                        self._transcribe_one_for_validation(model, str(candidate_path))
+                    )
+                    failures = self._hard_quality_failures(item["text"], transcript)
+                    if failures:
+                        candidate_path.unlink(missing_ok=True)
+                        retry_failed.append((idx, item, old_transcript))
+                    else:
+                        os.replace(candidate_path, item["filename"])
+                        record(idx, item, transcript, True)
+                        item.pop("lang_leak", None)
+                if manifest is not None:
+                    manifest.save()
+                failed = retry_failed + service_failed
 
             if failed:
-                for idx, item, transcript in failed:
-                    item["lang_leak"] = transcript[:120]
-                self._write_leak_sidecar(failed)
+                defer_failed(
+                    failed, "automatic retries exhausted",
+                    attempts=self.MAX_LANGUAGE_RETRIES)
                 details = "；".join(
                     f"第 {idx + 1} 段：{transcript[:80]}"
                     for idx, _, transcript in failed[:5]
                 )
                 message = (
-                    f"F5-TTS 质量门禁未通过：重试后仍有 {len(failed)} 段疑似混入"
-                    f"字幕之外的英文，已停止合成。{details}"
+                    f"F5-TTS 质量门禁未通过：重试后仍有 {len(failed)} 段内容异常，"
+                    f"已保留成功结果，异常片段等待局部返工。{details}"
                 )
                 logger.error(message)
                 self.signal(text=message)
+                if self._defer_clip_failures():
+                    return
                 if str(settings.get("f5tts_strict_language_gate", True)).lower() != "false":
                     raise DubbingSrtError(message)
                 logger.warning("严格语言门禁已被关闭，保留泄漏标记并继续流程")
             else:
-                logger.debug("F5-TTS 英文原声泄漏检查通过")
+                logger.debug("F5-TTS 增量内容检查通过")
                 self.signal(text="F5-TTS 配音内容检查通过")
         finally:
+            if manifest is not None:
+                manifest.save()
             model = None
             gc.collect()
 
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:
         ref_wav,ref_text=self.get_ref_wav(data_item)
+        used_chinese_anchor = False
         if data_item.get("role") == "clone":
+            retry_no = int(data_item.get('lang_leak_retry') or 0)
             resume_anchor = getattr(self, "resume_chinese_anchors", {}).get(
                 self._speaker_key(data_item)
             )
-            if data_item.get("chinese_anchor_ref"):
+            item_bank = data_item.get("chinese_anchor_bank") or []
+            resume_bank = getattr(self, "resume_chinese_anchor_banks", {}).get(
+                self._speaker_key(data_item), [])
+            selected_bank_anchor = self._choose_chinese_anchor(
+                item_bank or resume_bank, data_item, retry_no=retry_no)
+            if selected_bank_anchor:
+                ref_wav = selected_bank_anchor["wav"]
+                ref_text = selected_bank_anchor["text"]
+                used_chinese_anchor = True
+            elif data_item.get("chinese_anchor_ref"):
                 # 泄漏重试专用：用已验收的同说话人中文成品约束生成语言。
                 ref_wav = data_item["chinese_anchor_ref"]
                 ref_text = data_item.get("chinese_anchor_text") or ref_text
+                used_chinese_anchor = True
             elif resume_anchor:
                 # 中断恢复时，对尚未生成的片段优先使用已验收中文
                 # 成品；按说话人簇匹配，避免主持人与嘉宾互换音色。
                 ref_wav, ref_text = resume_anchor
+                used_chinese_anchor = True
             elif (not data_item.get("cluster_ref")
                   and getattr(self, "resume_chinese_anchor_ref", None)):
                 # 兼容没有可靠声纹分簇的单说话人项目。
                 ref_wav = self.resume_chinese_anchor_ref
                 ref_text = self.resume_chinese_anchor_text or ref_text
+                used_chinese_anchor = True
             elif data_item.get('cluster_ref'):
                 # 多说话人：该行所属说话人簇的参考（各说各的音色）
                 ref_wav, ref_text = data_item['cluster_ref'], data_item.get('cluster_ref_text') or ref_text
@@ -1208,14 +1983,33 @@ class F5TTS(GradioBase):
                 ref_wav, ref_text = self.safe_ref_wav, self.safe_ref_text
         # 泄漏重试：第 2 轮起换备选参考——主参考自身导致大面积串音时，换参考才有救
         retry_no = int(data_item.get('lang_leak_retry') or 0)
-        if (retry_no >= 2 and not data_item.get("chinese_anchor_ref")
+        if (retry_no >= 2 and not used_chinese_anchor
                 and data_item.get("role") == "clone"
                 and getattr(self, 'ref_backups', None)):
             ref_wav, ref_text = self.ref_backups[(retry_no - 2) % len(self.ref_backups)]
-        speed_slider = 0.5 if ref_text  and len(ref_text) < 10 else self.get_speed()
         gen_text = data_item['text'].strip()
         if gen_text[-1:] not in ".!?。！？":
             gen_text += "。"
+        ref_wav_audio = AudioSegment.from_file(ref_wav)
+        requested_speed = 0.5 if ref_text and len(ref_text) < 10 else self.get_speed()
+        target_duration_ms = max(
+            int(data_item.get("target_duration_ms") or 0)
+            or (
+                int(data_item.get("end_time") or 0)
+                - int(data_item.get("start_time") or 0)
+            ),
+            0,
+        )
+        supervisor = self._synthesis_supervisor()
+        admission = supervisor.admit(
+            requested_speed=requested_speed,
+            ref_text=ref_text,
+            gen_text=gen_text,
+            ref_duration_ms=len(ref_wav_audio),
+            target_duration_ms=target_duration_ms,
+            fit_to_slot=bool(data_item.get("fit_to_slot")),
+        )
+        speed_slider = admission.effective_speed
         # nfe: F5 默认 32 步；16 是曾经的 Apple Silicon 轻量模式（省一半时间但损失音质细节）。
         # seed: 固定种子保证全片音色一致，逐句随机会导致音色漂移；设为负数恢复随机。
         nfe = int(settings.get('f5tts_nfe') or 32)
@@ -1235,11 +2029,75 @@ class F5TTS(GradioBase):
             "speed_slider":speed_slider,
             "api_name":'/basic_tts'
         }
-        ref_wav_audio=AudioSegment.from_file(ref_wav)
         if len(ref_wav_audio)>self.MAX_REF_AUDIO_MS:
             raise DubbingSrtError(
                 f"F5-TTS 参考音频超过 {self.MAX_REF_AUDIO_MS / 1000:.0f} 秒，"
                 "已停止以避免复制英文原声。"
             )
 
-        return self._send(kwargs,data_item)
+        started = time.monotonic()
+        heartbeat_stop = threading.Event()
+        watchdog_fired = threading.Event()
+        total_items = int(getattr(self, "len", 0) or len(getattr(self, "queue_tts", [])) or 1)
+
+        def heartbeat():
+            while not heartbeat_stop.wait(15):
+                elapsed = int(time.monotonic() - started)
+                if supervisor.is_stalled(started) and not watchdog_fired.is_set():
+                    watchdog_fired.set()
+                    self._resource_recycle_pending = True
+                    self.signal(text=(
+                        f"F5-TTS 第 {idx + 1}/{total_items} 段超过动态看门狗 "
+                        f"{int(supervisor.timeout_seconds())} 秒，正在终止后端并只重试该段"
+                    ))
+                    logger.error(
+                        "F5-TTS 第 %s 段触发合成看门狗: elapsed=%ss timeout=%ss",
+                        idx + 1, elapsed, supervisor.timeout_seconds(),
+                    )
+                    if self._is_managed_local_service():
+                        self._stop_local_service()
+                    return
+                self.signal(text=(
+                    f"F5-TTS 第 {idx + 1}/{total_items} 段正在生成｜"
+                    f"已用 {elapsed} 秒｜推理速度 {speed_slider:.2f}x｜"
+                    f"看门狗 {int(supervisor.timeout_seconds())} 秒"
+                ))
+
+        heartbeat_thread = threading.Thread(
+            target=heartbeat,
+            name=f"f5-progress-{idx}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        admission_note = ""
+        if admission.action != "preserve_rate":
+            admission_note = (
+                f"｜智能时长准入 {admission.requested_speed:.2f}→"
+                f"{admission.effective_speed:.2f}x"
+            )
+        self.signal(text=(
+            f"F5-TTS 第 {idx + 1}/{total_items} 段开始｜"
+            f"目标 {target_duration_ms / 1000:.1f} 秒｜推理速度 {speed_slider:.2f}x"
+            f"{admission_note}"
+        ))
+        result = None
+        send_error = None
+        try:
+            try:
+                result = self._send(kwargs,data_item)
+            except Exception as error:
+                send_error = error
+        finally:
+            heartbeat_stop.set()
+            elapsed = time.monotonic() - started
+            supervisor.finish(
+                elapsed,
+                success=vail_file(data_item.get("filename")),
+                timed_out=watchdog_fired.is_set(),
+            )
+            self._persist_synthesis_supervisor(data_item)
+        if watchdog_fired.is_set():
+            return "F5-TTS watchdog timeout: connection refused after service recycle"
+        if send_error is not None:
+            raise send_error
+        return result

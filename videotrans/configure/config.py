@@ -389,16 +389,36 @@ class AppSettings:
             "f5tts_chinese_anchor": True,
             # 最终仍检出额外英文时停止合成，避免有缺陷的成品被误发布
             "f5tts_strict_language_gate": True,
+            # 普通坏段进入工作台局部返工；只让服务/模型等全局错误终止长任务
+            "f5tts_defer_clip_failures": True,
+            # 中文成品中，除译文本来就包含的品牌/型号外，不容忍额外拉丁词
+            "f5tts_zero_unexpected_latin": True,
             # tiny 无法胜任最终门禁；仅供资源不足时由用户显式应急开启
             "f5tts_allow_weak_validator": False,
             # 多说话人自动分音色（声纹逐句归属，各簇独立参考）；false=全片单一主讲人音色
             "f5tts_multi_speaker": True,
             # 16/18GB Apple Silicon 自动让 F5 与 Whisper 错峰驻留，避免系统换页卡顿
             "f5tts_low_memory_mode": True,
+            # 自动随内存/交换区/系统负载收缩并发；cool=更凉，performance=更快
+            "resource_mode": "auto",
             # 长视频先对少量高风险片段进行合成+ASR 预飞验收。
             "f5tts_preflight_samples": 5,
+            # 强模型核验按小批次持久化，避免把整条长视频拼成一个巨大 WAV。
+            "f5tts_validation_batch_size": 24,
+            "f5tts_validation_gap_ms": 250,
+            # 在一次性子进程中运行强模型，退出即释放 CTranslate2 原生内存。
+            "f5tts_isolate_validator": True,
             # F5 本地推理已经串行，无需沿用云接口每句 1 秒的节流等待
             "f5tts_dubbing_wait": 0.15,
+            # 合成监督器：单段静默超过滚动中位数 4 倍且至少 180 秒即重启服务。
+            "f5tts_item_timeout_s": 180,
+            "f5tts_item_timeout_multiplier": 4.0,
+            # 低于该可用内存时不再向 Metal 提交新片段；先释放/重启服务。
+            "f5tts_min_available_mb": 1536,
+            "f5tts_resource_wait_s": 60,
+            # 智能编排允许原始合成比时间槽最多长 15%，随后由高质量对齐收口。
+            "f5tts_max_slot_ratio": 1.15,
+            "f5tts_max_backend_speed": 1.3,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,
@@ -582,6 +602,9 @@ class AppSettings:
                 "repetition_penalty",
                 "compression_ratio_threshold",
                 "f5tts_dubbing_wait",
+                "f5tts_item_timeout_multiplier",
+                "f5tts_max_slot_ratio",
+                "f5tts_max_backend_speed",
             ]
         # 对数字类型进行处理
         int_type=[
@@ -613,6 +636,9 @@ class AppSettings:
                 "process_max_gpu",
                 "retry_nums",
                 "f5tts_preflight_samples",
+                "f5tts_item_timeout_s",
+                "f5tts_min_available_mb",
+                "f5tts_resource_wait_s",
             ]
         try:
             if key in int_type:

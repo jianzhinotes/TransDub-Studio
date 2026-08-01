@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Union, Tuple, Callable
 from tenacity import RetryError
 from videotrans.configure.base import BaseCon
 from videotrans.configure.config import tr, settings, logger, ROOT_DIR
@@ -65,6 +65,10 @@ class BaseTTS(BaseCon):
     is_cuda: bool = False
     # 是否允许从跨运行配音缓存恢复（勾选"重新处理"时为 False；生成结果总是写入缓存）
     use_cache: bool = True
+    # Optional durable-checkpoint hook.  Long local synthesis calls it after
+    # each completed clip so an app/service crash cannot discard the batch.
+    on_item_done: Optional[Callable[[Dict[str, Any], int], None]] = field(
+        default=None, repr=False)
 
     def __post_init__(self):
         super().__post_init__()
@@ -144,6 +148,7 @@ class BaseTTS(BaseCon):
         if hits:
             logger.debug(f'配音缓存命中 {hits}/{self.len} 条')
             self.signal(text=tr('Reused {} cached dubbing lines', hits))
+        self._dubb_cache_hits = hits
 
     def _dubb_cache_store(self) -> None:
         """_exec 后调用：把本次成功生成且未被标记疑似泄漏的行写入缓存。"""
@@ -165,6 +170,8 @@ class BaseTTS(BaseCon):
     # 子类重写  _exec()方法 run() -> _exec()
     def run(self) -> None:
         if self._exit(): return
+        run_started = time.monotonic()
+        self._dubb_cache_hits = 0
         from videotrans.configure.excepts import DubbingSrtError
         _tts_name=get_tts_type(self.tts_type)
         logger.debug(f'当前使用配音渠道：{_tts_name}')
@@ -219,6 +226,14 @@ class BaseTTS(BaseCon):
                 finally:
                     # 4: 最终关闭事件循环
                     loop.close()
+            # A quality/infrastructure exception must not discard every clip
+            # generated before it. Generation cache is not a quality pass: F5
+            # still revalidates restored audio against the current rules.
+            if (
+                    not self.play and not self.is_test
+                    and settings.get('dubb_cache', True)
+            ):
+                self._dubb_cache_store()
 
         # 试听或测试时播放
         if self.play:
@@ -243,10 +258,23 @@ class BaseTTS(BaseCon):
                 raise self.error.last_attempt.exception() if isinstance(self.error, RetryError) else self.error
 
             raise DubbingSrtError(tr("Dubbing failed") + str(self.error))
-        # 成功的行写入跨运行缓存（部分成功也写，方便失败重试时命中）
-        if not self.play and not self.is_test and settings.get('dubb_cache', True):
-            self._dubb_cache_store()
         logger.debug(f'本次 {_tts_name} 配音成功 {succeed_nums} 个，失败 {self.len - succeed_nums} 个')
+        try:
+            from videotrans.dub.performance_report import TTS_RUN_STATS_FILE
+            from videotrans.dub.store import atomic_write_json
+            first = next((item for item in self.queue_tts if item.get('filename')), None)
+            if first:
+                atomic_write_json(Path(first['filename']).parent / TTS_RUN_STATS_FILE, {
+                    'tts_type': self.tts_type,
+                    'total': self.len,
+                    'succeeded': succeed_nums,
+                    'failed': self.len - succeed_nums,
+                    'cache_hits': int(getattr(self, '_dubb_cache_hits', 0) or 0),
+                    'duration_s': round(time.monotonic() - run_started, 3),
+                    'updated_at': int(time.time()),
+                })
+        except Exception as stats_error:
+            logger.debug(f'保存配音性能统计失败,忽略: {stats_error}')
         self.signal(text=tr("Dubbing succeeded {}，failed {}", succeed_nums, self.len - succeed_nums))
         if self.tts_type == 8 and succeed_nums != self.len:
             raise DubbingSrtError(
@@ -338,7 +366,18 @@ class BaseTTS(BaseCon):
         # 有些不可恢复的错误，例如 404 sk错误 无权访问等，直接发送 error 信号，无需继续多线程
         try:
             self.signal(text=f'Dubbing {idx}/{self.len}')
-            return self._run(data_item,idx)
+            error = self._run(data_item,idx)
+            if not error and vail_file(data_item.get('filename')) and self.on_item_done:
+                try:
+                    self.on_item_done(data_item, idx)
+                except Exception as checkpoint_error:
+                    # Checkpoint I/O must never turn a valid synthesis into a
+                    # failed clip; the batch-level finally remains a fallback.
+                    logger.warning(
+                        '保存单段配音断点失败，批次结束时将再次尝试: %s',
+                        checkpoint_error,
+                    )
+            return error
         except RetryError as e:
             logger.exception(f'\n第{idx}条字幕配音失败,字幕文本:{data_item}\n{e}', exc_info=True)
             return e.last_attempt.exception()

@@ -25,6 +25,7 @@ AI嘲: 码之烂平生仅见
 
 import os
 import atexit, sys, time
+import subprocess
 from PySide6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QMessageBox
 from PySide6.QtCore import Qt, qInstallMessageHandler, QTimer
 from PySide6.QtGui import QPixmap, QGuiApplication, QIcon
@@ -65,8 +66,53 @@ def suppress_qt_warnings(msg_type, context, message):
         return
 
 
+_launcher_cleanup_done = False
+
+
+def _cleanup_launcher_runtime():
+    """Release resources owned by the macOS launcher.
+
+    The launcher replaces itself with this Python process via ``exec`` so a
+    macOS quit signal cannot strand the GUI as an orphan.  Cleanup therefore
+    belongs here rather than in a supervising shell.
+    """
+    global _launcher_cleanup_done
+    if _launcher_cleanup_done:
+        return
+    _launcher_cleanup_done = True
+
+    stop_script = os.environ.get("TRANSDUB_F5_STOP", "").strip()
+    if stop_script and os.path.isfile(stop_script) and os.access(stop_script, os.X_OK):
+        try:
+            subprocess.run(
+                [stop_script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    pid_file = os.environ.get("TRANSDUB_PID_FILE", "").strip()
+    if not pid_file:
+        return
+    try:
+        recorded_pid = Path(pid_file).read_text(encoding="utf-8").strip()
+        if recorded_pid != str(os.getpid()):
+            return
+        Path(pid_file).unlink(missing_ok=True)
+        try:
+            Path(pid_file).parent.rmdir()
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+
 def cleanup():
     """强制清理函数"""
+    _cleanup_launcher_runtime()
     try:
         if 'app' in globals():
             app.quit()
@@ -253,6 +299,14 @@ if __name__ == "__main__":
     app.setApplicationDisplayName("TransDub Studio")
     app.setOrganizationName("TransDub Studio")
     app.setWindowIcon(get_app_icon())
+    # CPython only runs Python signal handlers when control briefly returns
+    # from Qt's native event loop.  A tiny heartbeat makes SIGTERM/SIGINT from
+    # the macOS launcher responsive even while the GUI is otherwise idle.
+    signal_heartbeat = None
+    if sys.platform != "win32":
+        signal_heartbeat = QTimer()
+        signal_heartbeat.timeout.connect(lambda: None)
+        signal_heartbeat.start(250)
     res = 0
     if getattr(sys, 'frozen', False) and (Path(sys.executable).parent.as_posix()).startswith(
             Path(tempfile.gettempdir()).as_posix()):

@@ -23,7 +23,8 @@ def test_smart_orchestration_resumes_materialized_queue(tmp_path):
     fake = SimpleNamespace(
         cfg=SimpleNamespace(
             target_language_code='zh-cn', target_dir=str(tmp_path / 'output'),
-            cache_folder=str(tmp_path / 'new-cache'), clear_cache=False),
+            cache_folder=str(tmp_path / 'new-cache'), clear_cache=False,
+            noextname='demo'),
         queue_tts=[{'text': '旧文案'}],
         signal=lambda **kwargs: signals.append(kwargs.get('text')),
         _save_srt_target=lambda rows, path: written.append((rows, path)),
@@ -37,6 +38,32 @@ def test_smart_orchestration_resumes_materialized_queue(tmp_path):
     assert Path(fake.queue_tts[0]['ref_wav']).parent == tmp_path / 'new-cache'
     assert written and written[0][1] == fake.cfg.target_sub
     assert signals
+    migrated = checkpoint.parent / 'demo.tdproj' / 'checkpoints' / 'smart-plan' / 'smart_queue.json'
+    assert migrated.is_file()
+
+
+def test_smart_orchestration_prefers_project_checkpoint(tmp_path):
+    checkpoint = (tmp_path / 'output' / 'demo.tdproj'
+                  / 'checkpoints' / 'smart-plan')
+    checkpoint.mkdir(parents=True)
+    saved = [{
+        'line': 1, 'text': '工程内断点', 'ref_text': 'Project checkpoint',
+        'filename': '/old/smart-0.wav', 'ref_wav': '',
+    }]
+    (checkpoint / 'smart_queue.json').write_text(
+        json.dumps(saved, ensure_ascii=False), encoding='utf-8')
+    fake = SimpleNamespace(
+        cfg=SimpleNamespace(
+            target_language_code='zh-cn', target_dir=str(tmp_path / 'output'),
+            cache_folder=str(tmp_path / 'cache'), clear_cache=False,
+            noextname='demo', target_sub=str(tmp_path / 'zh.srt')),
+        queue_tts=[{'text': '旧文案'}], signal=lambda **_kwargs: None,
+        _save_srt_target=lambda _rows, _path: None,
+    )
+
+    TransCreate._smart_orchestrate_queue(fake)
+
+    assert fake.queue_tts[0]['text'] == '工程内断点'
 
 
 def test_non_chinese_target_keeps_existing_queue(tmp_path):

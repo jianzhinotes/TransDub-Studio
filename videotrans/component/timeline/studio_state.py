@@ -88,6 +88,23 @@ class StudioState(QObject):
             self._dirty.discard(idx)
             self.dirtyChanged.emit(idx, False)
 
+    def set_quality_failure(self, idx: int, transcript: str, status='needs_review'):
+        item = self._items[idx]
+        item['lang_leak'] = str(transcript or '')[:200]
+        item['quality_status'] = str(status)
+        self.statusChanged.emit(idx)
+
+    def clear_quality_failure(self, idx: int):
+        item = self._items[idx]
+        item.pop('lang_leak', None)
+        item.pop('quality_status', None)
+        item.pop('quality_failures', None)
+        self.statusChanged.emit(idx)
+
+    def quality_failed_indices(self) -> list:
+        from videotrans.dub.quality_manifest import unresolved_queue_indices
+        return unresolved_queue_indices(self._items)
+
     def is_dirty(self, idx: int) -> bool:
         return idx in self._dirty
 

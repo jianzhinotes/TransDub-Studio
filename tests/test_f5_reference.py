@@ -139,6 +139,30 @@ class TestValidatorModel:
 
 
 class TestLowMemoryProfile:
+    def test_service_environment_overrides_app_huggingface_cache(self, tmp_path, monkeypatch):
+        script = tmp_path / "f5-service" / "start_service.sh"
+        script.parent.mkdir()
+        script.write_text("#!/bin/zsh\n")
+        monkeypatch.setenv("HF_HOME", "/app/asr-models")
+        monkeypatch.setenv("HF_HUB_CACHE", "/app/asr-models")
+
+        env = F5TTS._local_service_environment(script)
+
+        expected_hub = script.parent / "cache" / "huggingface" / "hub"
+        assert env["HF_HOME"] == str(script.parent / "cache" / "huggingface")
+        assert env["HF_HUB_CACHE"] == str(expected_hub)
+        assert env["HUGGINGFACE_HUB_CACHE"] == str(expected_hub)
+        assert env["CACHED_PATH_CACHE_ROOT"] == str(expected_hub)
+
+    def test_service_error_summary_names_vocos_cache_problem(self):
+        detail = F5TTS._summarize_local_service_error(
+            "Download Vocos charactr/vocos-mel-24khz\n"
+            "OfflineModeIsEnabled\nLocalEntryNotFoundError"
+        )
+
+        assert "Vocos" in detail
+        assert "缓存" in detail
+
     def test_16gb_apple_silicon_is_enabled(self, monkeypatch):
         import videotrans.tts._f5tts as f5mod
         monkeypatch.setattr(f5mod.platform, "system", lambda: "Darwin")
@@ -179,6 +203,7 @@ class TestLowMemoryProfile:
         t = _f5([])
         t.api_url = "http://127.0.0.1:7860"
         t._low_memory_profile = False
+        t._should_run_preflight = lambda: False
         t.is_test = True
         t.language = "zh-cn"
         t.signal = lambda **kwargs: events.append("signal")
@@ -196,12 +221,54 @@ class TestLowMemoryProfile:
             "start-False", "signal", "stop", "release", "start-True", "synthesize"
         ]
 
+    def test_incomplete_synthesis_never_starts_quality_validator(self, tmp_path, monkeypatch):
+        import videotrans.tts._f5tts as f5mod
+        ready = _voice(tmp_path / "ready.wav", 1.0, 110, 0.7, seed=50)
+        queue = [
+            {"text": "已生成", "filename": ready},
+            {"text": "未生成", "filename": str(tmp_path / "missing.wav")},
+        ]
+        t = _f5(queue)
+        t.api_url = "https://remote.example.test"
+        t.language = "zh-cn"
+        t.is_test = False
+        t._low_memory_profile = False
+        t._should_run_preflight = lambda: False
+        checked = []
+        t._verify_chinese_outputs = lambda: checked.append(True)
+        monkeypatch.setattr(f5mod.GradioBase, "_exec", lambda self: None)
+
+        with pytest.raises(DubbingSrtError, match="仍缺少 1 段"):
+            t._exec()
+
+        assert checked == []
+
+    def test_service_recovery_failure_opens_circuit_for_remaining_lines(self, monkeypatch):
+        import videotrans.tts._f5tts as f5mod
+        t = _f5([])
+        t.api_url = "http://127.0.0.1:7860"
+        t._service_circuit_error = ""
+        calls = []
+        monkeypatch.setattr(
+            f5mod.GradioBase, "_item_task",
+            lambda self, item, idx: calls.append(idx) or "MPS backend out of memory",
+        )
+        t._recover_local_service = lambda: False
+        t.signal = lambda **kwargs: None
+
+        first = t._item_task({"text": "一", "filename": "/tmp/a.wav"}, 0)
+        second = t._item_task({"text": "二", "filename": "/tmp/b.wav"}, 1)
+
+        assert "out of memory" in str(first)
+        assert second == first
+        assert calls == [0]
+
 
 class TestChineseLanguageGate:
     def test_batch_false_positives_do_not_trigger_redub(self, tmp_path):
         queue = [
             {
-                "text": f"这是第 {idx + 1} 句中文配音。",
+                "text": "这是逐文件复核后的中文配音。",
                 "filename": _voice(tmp_path / f"batch-{idx}.wav", 1.0, 110, 0.7,
                                    seed=10 + idx),
             }
@@ -272,9 +339,74 @@ class TestLongVideoPreflight:
             "/refs/speaker-0.wav", "/refs/speaker-1.wav"
         }
 
+    def test_preflight_always_includes_highest_compute_risk(self, tmp_path):
+        t = self._task(tmp_path, count=12)
+        danger = t.queue_tts[6]
+        danger.update({
+            "text": "这是一个必须在很短时间槽内说完的异常超长中文句子" * 8,
+            "ref_text": "Short source.",
+            "start_time_source": 0,
+            "end_time_source": 8000,
+            "start_time": 0,
+            "end_time": 1200,
+            "rate": "-50%",
+        })
+
+        assert 6 in t._preflight_indices(3)
+
     def test_repetition_detector(self):
         assert F5TTS._has_pathological_repetition("一种一种一种一种一种一种") is True
         assert F5TTS._has_pathological_repetition("这是一句正常且完整的中文配音") is False
+
+    def test_zero_tolerance_flags_any_unexpected_latin(self, monkeypatch):
+        from videotrans.configure.config import settings
+        t = self._task(Path('/tmp'), count=1)
+        monkeypatch.setitem(settings, 'f5tts_zero_unexpected_latin', True)
+
+        assert t._has_unexpected_english('好的，不错', 'Harder不错') is True
+        assert t._has_unexpected_english('SpaceX AI卫星', 'SpaceX AI卫星') is False
+
+    def test_content_gate_catches_extra_and_truncated_chinese(self):
+        t = self._task(Path('/tmp'), count=1)
+
+        extra = t._hard_quality_failures(
+            '是什么改变了，让我们觉得现在是时候开始',
+            '浩瀚无垠的是什么改变了让我们觉得现在是时候开始')
+        truncated = t._hard_quality_failures(
+            '这是一个需要完整读出来的中文长句内容', '这是中文')
+
+        assert 'unexpected_chinese_content' in extra
+        assert 'truncated_chinese_content' in truncated
+
+    def test_anchor_bank_matches_style_and_rotates_on_retry(self):
+        t = self._task(Path('/tmp'), count=1)
+        bank = [
+            t._anchor_entry('/a.wav', '这是普通陈述句。', 6000),
+            t._anchor_entry('/b.wav', '这是一个问题吗？', 6500),
+            t._anchor_entry('/c.wav', '真的太好了！', 6200),
+        ]
+        item = {'text': '我们现在应该怎么做？'}
+
+        first = t._choose_chinese_anchor(bank, item, retry_no=0)
+        second = t._choose_chinese_anchor(bank, item, retry_no=1)
+
+        assert first['wav'] == '/b.wav'
+        assert second['wav'] != first['wav']
+
+    def test_clean_preflight_becomes_chinese_anchor(self, tmp_path):
+        t = self._task(tmp_path, count=3)
+        for item in t.queue_tts:
+            item['cluster_ref'] = '/refs/speaker-a.wav'
+        _voice(Path(t.queue_tts[0]['filename']), 6.0, 110, 0.7, seed=91)
+        samples = [(0, t.queue_tts[0], {'filename': str(tmp_path / 'sample.wav')})]
+
+        count = t._bootstrap_chinese_anchors(
+            samples, {0: '这是已经通过核验的中文音色锚点'}, [])
+
+        assert count == 1
+        assert t.queue_tts[1]['chinese_anchor_ref'] == t.queue_tts[0]['filename']
+        assert t.queue_tts[1]['chinese_anchor_text'].endswith('。')
+        assert len(t.queue_tts[1]['chinese_anchor_bank']) == 1
 
     def test_passed_preflight_audio_is_reused_by_full_run(self, tmp_path, monkeypatch):
         t = self._task(tmp_path, count=2)
@@ -295,7 +427,7 @@ class TestLongVideoPreflight:
 
         assert all(Path(item["filename"]).is_file() for item in t.queue_tts)
 
-    def test_failed_preflight_stops_before_copying_outputs(self, tmp_path, monkeypatch):
+    def test_failed_preflight_is_preserved_for_local_repair(self, tmp_path, monkeypatch):
         t = self._task(tmp_path, count=2)
         t._item_task = lambda item, idx: (
             _voice(Path(item["filename"]), 1.0, 110, 0.7, seed=idx + 80) and None
@@ -307,10 +439,9 @@ class TestLongVideoPreflight:
             types.SimpleNamespace(WhisperModel=lambda *args, **kwargs: object()),
         )
 
-        with pytest.raises(DubbingSrtError, match="预飞质量核对未通过"):
-            t._run_preflight()
+        t._run_preflight()
 
-        assert not any(Path(item["filename"]).exists() for item in t.queue_tts)
+        assert all(Path(item["filename"]).exists() for item in t.queue_tts)
 
     def test_hidden_gradio_oom_restarts_and_retries_only_one_item(self, tmp_path, monkeypatch):
         import videotrans.tts._gradio as gradiomod
@@ -337,6 +468,66 @@ class TestLongVideoPreflight:
         assert calls == [3, 3]
         assert recovered == [True]
         assert Path(item["filename"]).is_file()
+
+    def test_resource_pressure_recycles_before_next_clip(self, monkeypatch):
+        from videotrans.dub.synthesis_supervisor import ResourceDecision
+        from videotrans.util.resource_governor import ResourceSnapshot
+
+        t = _f5([])
+        t.api_url = "http://127.0.0.1:7860"
+        t._resource_recycle_pending = False
+        t._service_circuit_error = ""
+        t._exit = lambda: False
+        t.signal = lambda **kwargs: None
+        events = []
+        decisions = iter([
+            ResourceDecision(
+                False, True, "本轮 Swap 增长 2048 MB",
+                ResourceSnapshot(memory_percent=84, available_mb=2200, swap_used_mb=4000),
+                2048,
+            ),
+            ResourceDecision(
+                True, False, "资源正常",
+                ResourceSnapshot(memory_percent=60, available_mb=6000, swap_used_mb=4000),
+                2048,
+            ),
+        ])
+
+        class FakeSupervisor:
+            def resource_decision(self):
+                return next(decisions)
+
+            def mark_recycle(self):
+                events.append("recycle")
+
+        t._synthesis_supervisor_obj = FakeSupervisor()
+        t._local_service_is_ready = lambda: True
+        t._stop_local_service = lambda: events.append("stop") or True
+        t._start_local_service = lambda recovery=False: events.append("start") or True
+        t._release_memory_pressure = lambda: events.append("release")
+        monkeypatch.setattr("videotrans.tts._f5tts.time.sleep", lambda _seconds: None)
+
+        assert t._wait_for_synthesis_resources(7) is True
+        assert events == ["stop", "recycle", "release", "start"]
+
+    def test_single_clip_sidecar_does_not_erase_other_failures(self, tmp_path):
+        first = {
+            "text": "第一个异常片段", "filename": str(tmp_path / "first.wav")}
+        second = {
+            "text": "另一个异常片段", "filename": str(tmp_path / "second.wav")}
+        sidecar = tmp_path / "lang_leak.json"
+        sidecar.write_text(
+            '{"second.wav": "existing failure"}', encoding="utf-8")
+        t = _f5([first])
+
+        t._write_leak_sidecar([(0, first, "new failure")])
+
+        import json
+        marks = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert marks == {
+            "first.wav": "new failure",
+            "second.wav": "existing failure",
+        }
 
     def test_resume_selects_asr_verified_chinese_anchor(self, tmp_path):
         good = _voice(tmp_path / "good-anchor.wav", 6.5, 110, 0.7, seed=91)
@@ -393,7 +584,7 @@ class TestLongVideoPreflight:
         assert queue[1]["chinese_anchor_ref"] == good
         assert queue[1]["chinese_anchor_text"].endswith("。")
 
-    def test_remaining_leak_raises_and_writes_marker(self, tmp_path, monkeypatch):
+    def test_remaining_leak_is_deferred_and_writes_marker(self, tmp_path, monkeypatch):
         wav = _voice(tmp_path / "failed.wav", 2.0, 110, 0.7, seed=22)
         item = {"text": "这是需要生成的中文。", "filename": wav, "role": "clone"}
         t = _f5([item])
@@ -415,8 +606,7 @@ class TestLongVideoPreflight:
         fake_fw = types.SimpleNamespace(WhisperModel=lambda *args, **kwargs: object())
         monkeypatch.setitem(sys.modules, "faster_whisper", fake_fw)
 
-        with pytest.raises(DubbingSrtError, match="质量门禁未通过"):
-            t._verify_chinese_outputs()
+        t._verify_chinese_outputs()
         assert (tmp_path / "lang_leak.json").is_file()
 
     def test_service_disconnect_recovers_only_failed_item_and_releases_validator(
@@ -474,13 +664,16 @@ class TestLongVideoPreflight:
         t._verify_chinese_outputs()
 
         assert calls == [0, 0]
-        assert recovered == [True]
+        # Candidate generation is staged: the first infrastructure failure
+        # leaves the original clip intact and the next retry round can proceed.
+        assert recovered == []
         assert len(validation_reads) == 2
         assert Path(item["filename"]).is_file()
         assert live_models == 0
 
-    def test_service_disconnect_is_not_reported_as_language_leak(self, tmp_path, monkeypatch):
+    def test_service_disconnect_preserves_original_and_defers_repair(self, tmp_path, monkeypatch):
         wav = _voice(tmp_path / "failed-service.wav", 2.0, 110, 0.7, seed=42)
+        original_audio = Path(wav).read_bytes()
         item = {"text": "这是需要重新生成的中文。", "filename": wav, "role": "clone"}
         t = _f5([item])
         t.uuid = "service-error-test"
@@ -496,9 +689,44 @@ class TestLongVideoPreflight:
         fake_fw = types.SimpleNamespace(WhisperModel=lambda *args, **kwargs: object())
         monkeypatch.setitem(sys.modules, "faster_whisper", fake_fw)
 
-        with pytest.raises(DubbingSrtError, match="本地服务在质量复核重配时失败") as error:
-            t._verify_chinese_outputs()
-        assert "质量门禁未通过" not in str(error.value)
+        t._verify_chinese_outputs()
+
+        assert Path(wav).read_bytes() == original_audio
+        assert (tmp_path / "lang_leak.json").is_file()
+        assert not list(tmp_path.glob(".*.quality-retry-*.wav"))
+
+    def test_critical_memory_defers_automatic_repair_without_starting_f5(
+            self, tmp_path):
+        wav = _voice(tmp_path / "pressure.wav", 2.0, 110, 0.7, seed=43)
+        original_audio = Path(wav).read_bytes()
+        item = {
+            "dub_unit_id": "pressure-unit",
+            "text": "这是需要稍后返工的中文。",
+            "filename": wav,
+            "role": "clone",
+        }
+        t = _f5([item])
+        t.uuid = "pressure-test"
+        t.language = "zh-cn"
+        t.is_test = False
+        t.use_cache = False
+        t.safe_ref_text = "English reference sentence."
+        t._low_memory_profile = True
+        t.signal = lambda **kwargs: None
+        t._validator_identity = lambda: ("faster-whisper-cpu", "large-v3-turbo")
+        t._transcribe_isolated_for_validation = (
+            lambda indices, backend=None: {indices[0]: "This is leaked English speech"}
+        )
+        t._assign_chinese_anchors = lambda failed, transcripts: 0
+        t._wait_for_f5_headroom = lambda: False
+        starts = []
+        t._start_local_service = lambda recovery=False: starts.append(recovery) or True
+
+        t._verify_chinese_outputs()
+
+        assert starts == []
+        assert Path(wav).read_bytes() == original_audio
+        assert (tmp_path / "lang_leak.json").is_file()
 
 
 class TestClusterRefs:
@@ -523,6 +751,8 @@ class TestClusterRefs:
         refs_a = {it.get("cluster_ref") for it in queue[:10] if it.get("cluster_ref")}
         refs_b = {it.get("cluster_ref") for it in queue[10:] if it.get("cluster_ref")}
         assert refs_a and refs_b and refs_a.isdisjoint(refs_b)
+        assert all(it.get('speaker_cluster_id') for it in queue)
+        assert all(1 <= len(it.get('cluster_ref_bank') or []) <= 3 for it in queue)
 
     def test_single_speaker_no_cluster_refs(self, tmp_path):
         queue = [{"role": "clone",
@@ -589,3 +819,38 @@ class TestRunUsesClusterRef:
             assert runs[3]["ref_text_input"] == "恢复用中文参考。"
         finally:
             f5mod.AudioSegment = orig_seg
+
+
+class TestSlotAwareSpeed:
+    def test_global_slow_rate_is_preserved_when_slot_has_room(self):
+        speed = F5TTS._slot_aware_speed(
+            requested_speed=0.5,
+            ref_text="A reasonably complete source sentence.",
+            gen_text="短句。",
+            ref_duration_ms=5000,
+            target_duration_ms=6000,
+            fit_to_slot=True,
+        )
+        assert speed == 0.5
+
+    def test_long_chinese_line_is_generated_near_slot_not_at_half_speed(self):
+        speed = F5TTS._slot_aware_speed(
+            requested_speed=0.5,
+            ref_text="of kardashov who thought about this and",
+            gen_text="卡尔达肖夫考虑过这个问题，这是一个很好的分类方式，你可以评估。",
+            ref_duration_ms=2120,
+            target_duration_ms=5600,
+            fit_to_slot=True,
+        )
+        assert 0.9 <= speed <= 1.3
+
+    def test_non_smart_flow_keeps_requested_speed(self):
+        speed = F5TTS._slot_aware_speed(
+            requested_speed=0.5,
+            ref_text="short",
+            gen_text="很长的一段中文文本。",
+            ref_duration_ms=5000,
+            target_duration_ms=1000,
+            fit_to_slot=False,
+        )
+        assert speed == 0.5

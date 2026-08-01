@@ -2,8 +2,10 @@
 输出目录旁，之后可反复打开工作台编辑、仅重跑 align+assembling 出新成品。
 
 无 Qt 依赖，可单测。工程内容：
-  project.json   v2 工程清单 + 任务 cfg 关键字段 + 成品/原视频路径
+  project.json   v3 工程清单 + 任务 cfg 关键字段 + 成品/原视频路径
   dub_project.json 联合规划数据（单元、候选、质量报告；第一阶段与 queue 同步）
+  run_state.json  各阶段开始/完成/失败/中断状态（任务开始即创建）
+  quality_manifest.json 逐段内容寻址质量检查点
   queue_tts.json 旧流水线兼容数据（filename 相对化为 dubb/xxx.wav）
   dubb/*.wav     逐行配音片段（align 从这些重新拼接对齐，不依赖预拼 target_wav）
   novoice.mp4    无声视频（align 变速 + assembling 合成用）
@@ -37,8 +39,9 @@ def _project_id(manifest: dict, *, source_video: str, target_language: str) -> s
 
 
 def _sync_dub_project(proj: Path, manifest: dict, queue: list) -> None:
-    """把兼容 queue 同步到 v2 状态文件，同时保留已有候选历史。"""
-    from videotrans.dub.legacy_adapter import project_from_queue
+    """把兼容 queue 同步到 v3 状态文件，同时保留已有候选历史。"""
+    from videotrans.dub.legacy_adapter import merge_quality_manifest, project_from_queue
+    from videotrans.dub.quality_manifest import MANIFEST_FILE
     from videotrans.dub.store import DubProjectStore
 
     store = DubProjectStore(proj)
@@ -57,11 +60,13 @@ def _sync_dub_project(proj: Path, manifest: dict, queue: list) -> None:
         target_language=manifest.get('target_language_code') or cfg.get('target_language_code') or '',
         existing=existing,
     )
+    quality = _read_json(proj / MANIFEST_FILE, {}) or {}
+    merge_quality_manifest(state, quality)
     store.save(state)
 
 
 def _upgrade_manifest(proj: Path, manifest: dict, queue: list) -> dict:
-    """把 v1/无版本工程原地升级到 v2；旧字段和 queue 文件全部保留。"""
+    """把旧版/无版本工程原地升级到 v3；旧字段和 queue 文件全部保留。"""
     from videotrans.dub.legacy_adapter import ensure_queue_unit_ids
     from videotrans.dub.schema import PROJECT_SCHEMA_VERSION
     from videotrans.dub.store import STATE_FILE, atomic_write_json
@@ -87,6 +92,11 @@ def project_dir_for(target_dir: str, noextname: str) -> str:
     return str(Path(target_dir) / f'{noextname}{PROJECT_EXT}')
 
 
+def checkpoint_dir_for(target_dir: str, noextname: str, name: str) -> str:
+    """Canonical checkpoint location inside the durable editable project."""
+    return str(Path(project_dir_for(target_dir, noextname)) / 'checkpoints' / name)
+
+
 def find_project(root_dir: str, video_stem: str) -> str:
     """在输出根目录下按视频名递归查找工程（工程实际在 {视频名}-{ext}/ 子文件夹内）。"""
     if not root_dir:
@@ -95,7 +105,11 @@ def find_project(root_dir: str, video_stem: str) -> str:
     if not root.is_dir():
         return None
     for p in root.rglob(f'*{PROJECT_EXT}'):
-        if p.is_dir() and p.stem == video_stem:
+        if (
+            p.is_dir() and p.stem == video_stem
+            and (p / _PROJECT_JSON).is_file()
+            and (p / _QUEUE_JSON).is_file()
+        ):
             return str(p)
     return None
 
@@ -137,7 +151,16 @@ def save_project(cfg, queue_tts, cache_folder: str) -> str:
 
     from videotrans.dub.legacy_adapter import ensure_queue_unit_ids
     from videotrans.dub.schema import PROJECT_SCHEMA_VERSION
+    from videotrans.dub.quality_manifest import MANIFEST_FILE
     from videotrans.dub.store import STATE_FILE, atomic_write_json
+
+    # Quality reports are written while synthesis is running, before a finished
+    # project exists.  Bring that checkpoint into the durable project before
+    # synchronising DubProject so a crash/reopen never loses passed clips.
+    quality_source = Path(cache_folder) / MANIFEST_FILE
+    if quality_source.is_file() and quality_source.resolve() != (proj / MANIFEST_FILE).resolve():
+        quality_payload = _read_json(quality_source, {}) or {}
+        atomic_write_json(proj / MANIFEST_FILE, quality_payload)
 
     source_video = getattr(cfg, 'name', None) or ''
     target_language = getattr(cfg, 'target_language_code', None) or ''

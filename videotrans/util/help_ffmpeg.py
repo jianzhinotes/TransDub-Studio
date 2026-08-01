@@ -30,7 +30,7 @@ def extract_concise_error(stderr_text: str) -> str:
     return " ".join(result)
 
 
-def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
+def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None, threads=None):
     """
     执行 ffmpeg 命令
     """
@@ -39,7 +39,8 @@ def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
 
     final_args = arg
 
-    cmd = ['ffmpeg', "-hide_banner", "-nostdin", "-ignore_unknown", '-threads', '0']
+    thread_count = '0' if threads is None else str(max(int(threads), 1))
+    cmd = ['ffmpeg', "-hide_banner", "-nostdin", "-ignore_unknown", '-threads', thread_count]
     if "-y" not in final_args:
         cmd.append("-y")
     cmd.extend(final_args)
@@ -464,7 +465,8 @@ def conver_to_16k(audio, target_audio):
         "pcm_s16le",
         Path(target_audio).as_posix()
     ]
-    return runffmpeg(cmd)
+    # Audio conversion is frequently launched in parallel; keep each job bounded.
+    return runffmpeg(cmd, threads=1)
 
 
 def create_concat_txt(filelist, concat_txt=None):
@@ -615,7 +617,8 @@ def cut_from_audio(*, ss, to, audio_file, out_file)->bool:
         "pcm_s16le",
         out_file
     ]
-    return runffmpeg(cmd)
+    # Hundreds of reference cuts must not each claim all CPU cores.
+    return runffmpeg(cmd, threads=1)
 
 
 def send_notification(title, message):

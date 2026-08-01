@@ -176,7 +176,7 @@ class HomePage(QWidget):
 
     def refresh_recent(self):
         self.recent_list.clear()
-        entries = recent_tasks.load()
+        entries = recent_tasks.reconcile_run_states()
         if not entries:
             item = QListWidgetItem(tr('flow_no_recent'))
             item.setFlags(Qt.ItemFlag.NoItemFlags)

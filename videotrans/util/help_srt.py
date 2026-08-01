@@ -351,7 +351,7 @@ def set_ass_font(srtfile: str) -> str:
 
     bottom_style = (
         f"Style: Bottom,"  # 固定名称 "Bottom"
-        f"{style.get('Fontname', 'Arial')},"
+        f"{style.get('Bottom_Fontname', style.get('Fontname', 'Arial'))},"
         f"{bottom_fontsize},"
         f"{bottom_color},"
         f"{bottom_secondarycolour},"

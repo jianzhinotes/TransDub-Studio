@@ -1,4 +1,4 @@
-"""TransDub v2 配音工程的数据契约。
+"""TransDub v3 配音工程的数据契约。
 
 这些类型刻意不依赖 Qt、TTS 或媒体处理库，便于在任务线程、编辑器、CLI 和
 测试中复用。JSON 反序列化会忽略未知字段，允许后续版本向前扩展。
@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
-PROJECT_SCHEMA_VERSION = 2
+PROJECT_SCHEMA_VERSION = 3
 
 
 class StaleReason(str, Enum):
@@ -101,6 +101,8 @@ class AudioCandidate(JsonModel):
     path: str = ""
     backend: str = "legacy"
     duration_ms: Optional[int] = None
+    content_hash: str = ""
+    generation_signature: str = ""
     settings: Dict[str, Any] = field(default_factory=dict)
     created_at: int = field(default_factory=_now)
 
@@ -118,6 +120,12 @@ class QualityReport(JsonModel):
     hard_failures: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     metrics: Dict[str, Any] = field(default_factory=dict)
+    audio_hash: str = ""
+    expected_text_hash: str = ""
+    validator_backend: str = ""
+    validator_model: str = ""
+    rules_version: str = ""
+    transcript: str = ""
     created_at: int = field(default_factory=_now)
 
     @classmethod

@@ -50,6 +50,8 @@ def studio_env(tmp_path):
             'role': 'roleA', 'rate': '+0%', 'volume': '+0%', 'pitch': '+0Hz',
             'tts_type': 0, 'filename': str(wav), 'dubbing_s': 1.0,
         })
+    queue[1]['lang_leak'] = 'unexpected English'
+    queue[1]['quality_status'] = 'needs_review'
     (tmp_path / 'queue_tts.json').write_text(json.dumps(queue, ensure_ascii=False),
                                              encoding='utf-8')
     return {'video': str(video), 'cache': str(tmp_path)}
@@ -68,15 +70,31 @@ class TestStudioSmoke:
         for _ in range(30):
             qapp.processEvents()
 
-        # 卡片已建
+        # 默认是傻瓜模式：视频和主操作可见，500+ 卡片/波形延迟创建。
+        assert not dlg._advanced_mode
+        assert dlg.cards.isHidden()
+        assert dlg.timeline.isHidden()
+        assert dlg.cards.card(0) is None
+        dlg.advanced_toggle_btn.setChecked(True)
+        for _ in range(30):
+            qapp.processEvents()
+
+        # 展开高级编辑后才建卡。
         assert dlg.cards.card(0) is not None
         assert dlg.cards.card(2) is not None
         assert dlg.cards.card(0).text_edit.toPlainText() == 'line 0'
+        assert '1' in dlg.quality_status.text()
+        assert dlg.retry_failed_btn.isVisible()
+        dlg.quality_filter_btn.setChecked(True)
+        qapp.processEvents()
+        assert not dlg.cards.card(0).isVisible()
+        assert dlg.cards.card(1).isVisible()
+        dlg.quality_filter_btn.setChecked(False)
         # 联合编排必须由用户显式触发；打开工作台不会自动调用 API 或启动规划线程
         assert dlg.joint_btn.menu() is None
         assert dlg._joint_worker is None
         assert inspect.signature(
-            DubbingStudioDialog.__init__).parameters['auto_plan'].default is True
+            DubbingStudioDialog.__init__).parameters['auto_plan'].default is False
 
         # 离线规划在线程中完成，结果窗可打开；原 StudioState 不被规划预览改写
         monkeypatch.setattr(JointPlanPreviewDialog, 'exec', lambda self: 0)
@@ -92,6 +110,18 @@ class TestStudioSmoke:
         assert 'rules' in dlg.joint_status.text()
         assert os.path.exists(os.path.join(studio_env['cache'],
                                            'joint-preview.tdproj', 'dub_project.json'))
+
+        # 单句试听使用视频主时钟，不再单独播放 WAV。
+        dlg._prep_worker.wait(15000)
+        for _ in range(10):
+            qapp.processEvents()
+        dlg._continuous_preview_ready = False
+        dlg._play_single_line(1)
+        for _ in range(10):
+            qapp.processEvents()
+        assert dlg.player.dub_offset() == 2000
+        assert dlg.dubbed_radio.isChecked()
+        dlg.player.pause()
 
         # 截图非空
         png = tmp_path / 'studio.png'

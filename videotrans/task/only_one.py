@@ -41,8 +41,78 @@ class Worker(QThread):
         # 从停止队列中移出，以便重新开始
         app_cfg.rm_uuid(self.uuid)
         trk=None
+        run_state = None
+        performance = None
+        run_finished = False
         try:
             trk = TransCreate(cfg=TaskCfgVTT(**self.cfg | self.file))
+            from videotrans.dub.run_state import RunStateStore
+            from videotrans.task.project import project_dir_for
+            run_state = RunStateStore(project_dir_for(trk.cfg.target_dir, trk.cfg.noextname))
+            run_state.begin_run(self.uuid)
+            from videotrans.dub.performance_report import PerformanceReporter
+            performance = PerformanceReporter(
+                project_dir_for(trk.cfg.target_dir, trk.cfg.noextname))
+            performance.start(self.uuid, {
+                'source_language': trk.cfg.source_language_code,
+                'target_language': trk.cfg.target_language_code,
+                'tts_type': getattr(trk.cfg, 'tts_type', None),
+                'recogn_type': getattr(trk.cfg, 'recogn_type', None),
+                'recogn_model': getattr(trk.cfg, 'model_name', ''),
+                'smart_orchestration': bool(
+                    getattr(trk.cfg, 'smart_orchestration', False)),
+            })
+
+            def run_stage(name, callback):
+                run_state.start_stage(name)
+                performance.start_stage(name)
+                try:
+                    result = callback()
+                except BaseException as error:
+                    run_state.fail_stage(name, error)
+                    performance.finish_stage(name, status='failed', error=error)
+                    raise
+                if self._exit():
+                    run_state.finish_stage(name, status='interrupted')
+                    performance.finish_stage(name, status='interrupted')
+                else:
+                    metadata = {}
+                    if name == 'dubbing':
+                        metadata['segments_total'] = len(trk.queue_tts)
+                        try:
+                            import soundfile as sf
+                            metadata['audio_duration_s'] = round(sum(
+                                sf.info(item['filename']).duration
+                                for item in trk.queue_tts
+                                if item.get('filename') and Path(item['filename']).is_file()
+                            ), 3)
+                        except Exception:
+                            pass
+                        try:
+                            from videotrans.dub.performance_report import TTS_RUN_STATS_FILE
+                            stats_file = Path(trk.cfg.cache_folder) / TTS_RUN_STATS_FILE
+                            tts_stats = json.loads(stats_file.read_text(encoding='utf-8'))
+                            metadata.update({
+                                'tts_cache_hits': int(tts_stats.get('cache_hits') or 0),
+                                'tts_succeeded': int(tts_stats.get('succeeded') or 0),
+                                'tts_failed': int(tts_stats.get('failed') or 0),
+                            })
+                        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                            pass
+                        quality_file = Path(trk.cfg.cache_folder) / 'quality_manifest.json'
+                        try:
+                            quality = json.loads(quality_file.read_text(encoding='utf-8'))
+                            entries = (quality or {}).get('entries') or {}
+                            metadata['quality_passed'] = sum(
+                                1 for entry in entries.values() if entry.get('passed'))
+                            metadata['quality_failed'] = sum(
+                                1 for entry in entries.values() if not entry.get('passed'))
+                        except (OSError, json.JSONDecodeError, TypeError):
+                            pass
+                    run_state.complete_stage(name, metadata)
+                    performance.finish_stage(name, metadata=metadata)
+                return result
+
             manual_proof = (
                 not trk.cfg.smart_orchestration
                 and float(settings.get('countdown_sec', 0)) > 0)
@@ -52,11 +122,11 @@ class Worker(QThread):
             app_cfg.onlyone_target_sub = trk.cfg.target_sub
             if self._exit(): return
             app_cfg.set_countdown(0)
-            trk.prepare()
+            run_stage('prepare', trk.prepare)
             if self._exit(): return
-            trk.recogn()
+            run_stage('recognize', trk.recogn)
             if self._exit(): return
-            trk.diariz()
+            run_stage('diarize', trk.diariz)
             if self._exit(): return
             self._post(text=Path(trk.cfg.source_sub).read_text(encoding='utf-8'), type='replace_subtitle')
 
@@ -72,10 +142,11 @@ class Worker(QThread):
 
             if trk.should_trans:
                 app_cfg.onlyone_trans = True
-                if vail_file(trk.cfg.target_sub):
-                    self._post(text="已存在翻译文件，跳过")
-                else:
-                    trk.trans()
+                # TransCreate owns translation-cache validation.  A target SRT
+                # may be the resegmented dubbing output rather than a reusable
+                # source-aligned translation, so file existence alone is never
+                # sufficient evidence for skipping this stage.
+                run_stage('translate', trk.trans)
 
             if self._exit(): return
 
@@ -94,9 +165,13 @@ class Worker(QThread):
                         app_cfg.set_countdown(app_cfg.task_countdown - 1)
 
                 if self._exit(): return
-                trk.dubbing()
+                run_stage('dubbing', trk.dubbing)
 
-                if not trk.ignore_align and manual_proof:
+                from videotrans.dub.quality_manifest import unresolved_queue_indices
+                quality_failed = unresolved_queue_indices(trk.queue_tts)
+                needs_dubbing_proof = (
+                    not trk.ignore_align and (manual_proof or bool(quality_failed)))
+                if needs_dubbing_proof:
                     for it in trk.queue_tts:
                         if self._exit(): return
                         # 当前配音时长,0=不存在配音文件
@@ -108,6 +183,14 @@ class Worker(QThread):
                         json.dumps(trk.queue_tts, ensure_ascii=False), encoding='utf-8')
 
                     app_cfg.set_countdown(86400)
+                    if quality_failed:
+                        run_state.start_stage(
+                            'quality_review', {'failed_segments': len(quality_failed)})
+                        performance.start_stage(
+                            'quality_review', {'failed_segments': len(quality_failed)})
+                        self._post(
+                            text=(f"质量核对已隔离 {len(quality_failed)} 个异常片段；"
+                                  "成功片段均已保留，请只返工红色标记片段。"))
                     # 等待修改配音结果或重新配音
                     # 追加视频路径与原声 wav，供时间轴预览使用（旧字段顺序保持兼容）
                     self._post(
@@ -131,6 +214,19 @@ class Worker(QThread):
                             logger.warning('queue_tts.json 为空或格式异常，保留内存中的原列表')
                     except Exception as e:
                         logger.warning(f'重载 queue_tts.json 失败，保留原列表: {e}')
+                    if quality_failed:
+                        unresolved = unresolved_queue_indices(trk.queue_tts)
+                        if unresolved:
+                            error = f'仍有 {len(unresolved)} 个质量异常片段未处理'
+                            run_state.fail_stage('quality_review', error)
+                            performance.finish_stage(
+                                'quality_review', status='failed', error=error)
+                            raise DubbingSrtError(error)
+                        run_state.complete_stage(
+                            'quality_review', {'repaired_segments': len(quality_failed)})
+                        performance.finish_stage(
+                            'quality_review',
+                            metadata={'repaired_segments': len(quality_failed)})
 
             # 保存可重开编辑工程（此刻逐行配音尚未被 align 变速，是原始未变速版本），
             # 供任务完成后从最近任务反复打开工作台编辑、仅重跑对齐+合成
@@ -142,10 +238,10 @@ class Worker(QThread):
                     logger.warning(f'保存编辑工程失败，跳过: {e}')
 
             if self._exit(): return
-            trk.align()
+            run_stage('align', trk.align)
 
             if self._exit(): return
-            trk.recogn2pass()
+            run_stage('recognize_second_pass', trk.recogn2pass)
             if trk.should_recogn2 and manual_proof:
                 app_cfg.set_countdown(86400)
                 # 等待修改二次识别出的字幕
@@ -157,10 +253,13 @@ class Worker(QThread):
                     app_cfg.set_countdown(app_cfg.task_countdown - 1)
 
             if self._exit(): return
-            trk.assembling()
+            run_stage('assemble', trk.assembling)
 
             if self._exit(): return
             trk.task_done()
+            run_state.finish_run('completed')
+            performance.finish('completed')
+            run_finished = True
             self._post(text="", type='end')
         except Exception as e:
             from videotrans.configure.excepts import get_msg_from_except
@@ -169,8 +268,17 @@ class Worker(QThread):
             msg=f"{except_msg}\n{traceback.format_exc()}\n"
             if trk:
                 msg+=f'cfg={trk.cfg}'
+            if run_state:
+                run_state.finish_run('failed', except_msg)
+                if performance:
+                    performance.finish('failed', except_msg)
+                run_finished = True
             self._post(text=msg, type='error')
         finally:
+            if run_state and not run_finished:
+                run_state.finish_run('interrupted')
+                if performance:
+                    performance.finish('interrupted')
             app_cfg.release_project_task(self.uuid)
 
     def _post(self, text='', type='logs'):

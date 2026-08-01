@@ -12,9 +12,8 @@ UV="$HOME/.local/bin/uv"
 mkdir -p "$ROOT"
 
 if [[ -x "$RUNTIME/.venv/bin/python" ]]; then
-    [[ -x "$UV" ]] || UV="$(command -v uv || echo uv)"
     cd "$RUNTIME"
-    exec "$UV" run python sp.py
+    exec "$RUNTIME/.venv/bin/python" sp.py
 fi
 
 # First run: bootstrap in a visible Terminal, then launch from there.

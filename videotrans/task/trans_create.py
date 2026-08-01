@@ -66,6 +66,7 @@ class TransCreate(BaseTask):
 
     def __post_init__(self):
         super().__post_init__()
+        self._dubbing_checkpoint_lock = threading.RLock()
         self.cost_duration=time.time()
         if not self.cfg.cache_folder:
             self.cfg.cache_folder = f"{config.TEMP_DIR}/{self.uuid}"
@@ -587,6 +588,126 @@ class TransCreate(BaseTask):
         logger.debug(f'[说话人分离阶段结束耗时]:{time.time()-_st}s')
 
     # 翻译字幕文件
+    @staticmethod
+    def _subtitle_fingerprint(rows: list) -> str:
+        payload = [{
+            "start": int(item.get("start_time", 0) or 0),
+            "end": int(item.get("end_time", 0) or 0),
+            "text": str(item.get("text") or "").strip(),
+        } for item in rows]
+        return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+    @staticmethod
+    def _translation_is_source_aligned(source_rows: list, target_rows: list) -> bool:
+        if not source_rows or len(source_rows) != len(target_rows):
+            return False
+        timelines_match = all(
+            int(source.get("start_time", 0) or 0) == int(target.get("start_time", 0) or 0)
+            and int(source.get("end_time", 0) or 0) == int(target.get("end_time", 0) or 0)
+            for source, target in zip(source_rows, target_rows)
+        )
+        # Whole-context translators may intentionally fold a tiny trailing
+        # fragment into the previous subtitle and leave that fragment's row
+        # blank.  The row and timeline remain valuable mapping information.
+        return timelines_match and any(
+            str(target.get("text") or "").strip() for target in target_rows)
+
+    @staticmethod
+    def _translation_semantic_issues(source_rows: list, target_rows: list) -> list:
+        if len(source_rows) != len(target_rows):
+            return [{
+                "line": "?", "failures": ["count_mismatch"],
+                "source": f"{len(source_rows)} segments",
+                "target": f"{len(target_rows)} segments",
+            }]
+        from videotrans.dub.semantic_guard import audit_translation_queue
+        return audit_translation_queue([{
+            "line": target.get("line", index + 1),
+            "ref_text": source.get("text", ""),
+            "text": target.get("text", ""),
+        } for index, (source, target) in enumerate(zip(source_rows, target_rows))])
+
+    @staticmethod
+    def _raise_translation_semantic_issues(issues: list) -> None:
+        if not issues:
+            return
+        examples = "；".join(
+            f"第{issue['line']}段 {','.join(issue['failures'])}："
+            f"{issue['source'][:45]} → {issue['target'][:45]}"
+            for issue in issues[:4])
+        raise DubbingSrtError(
+            f"翻译语义预检未通过：发现 {len(issues)} 段数字或单位与原文不一致。{examples}")
+
+    @staticmethod
+    def _group_source_aligned_subtitles(target_rows: list, source_rows: list) -> list:
+        """Fold blank translated continuation rows into a voiced neighbour.
+
+        Translation remains stored one-to-one with the source.  Only the TTS
+        queue is compacted, and each voiced row receives the complete source
+        text/time range that its translated wording covers.
+        """
+        groups = []
+        leading = []
+        for index, target in enumerate(target_rows):
+            source = source_rows[index]
+            if not str(target.get("text") or "").strip():
+                if groups:
+                    groups[-1][1].append(source)
+                else:
+                    leading.append(source)
+                continue
+            refs = [*leading, source]
+            leading = []
+            groups.append([copy.deepcopy(target), refs])
+        if leading and groups:
+            groups[-1][1].extend(leading)
+        return groups
+
+    def _translation_checkpoint_dir(self) -> Path:
+        from videotrans.task.project import checkpoint_dir_for
+        return Path(checkpoint_dir_for(
+            self.cfg.target_dir, self.cfg.noextname, "translation"))
+
+    def _save_translation_checkpoint(self, source_rows: list, target_rows: list) -> None:
+        if not self._translation_is_source_aligned(source_rows, target_rows):
+            raise DubbingSrtError("翻译缓存无法与原文逐段对齐，已停止以防止配音错位")
+        self._raise_translation_semantic_issues(
+            self._translation_semantic_issues(source_rows, target_rows))
+        from videotrans.dub.store import atomic_write_json
+        root = self._translation_checkpoint_dir()
+        rows = [dict(item.items()) if hasattr(item, "items") else dict(item) for item in target_rows]
+        atomic_write_json(root / "source_aligned.json", rows)
+        atomic_write_json(root / "manifest.json", {
+            "schema_version": 1,
+            "source_fingerprint": self._subtitle_fingerprint(source_rows),
+            "target_fingerprint": self._subtitle_fingerprint(target_rows),
+            "source_count": len(source_rows),
+            "target_count": len(target_rows),
+            "created_at": int(time.time()),
+        })
+
+    def _load_translation_checkpoint(self, source_rows: list) -> list | None:
+        root = self._translation_checkpoint_dir()
+        try:
+            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            rows = json.loads((root / "source_aligned.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            return None
+        if (
+            not isinstance(rows, list)
+            or manifest.get("schema_version") != 1
+            or manifest.get("source_fingerprint") != self._subtitle_fingerprint(source_rows)
+            or int(manifest.get("source_count", -1)) != len(source_rows)
+            or not self._translation_is_source_aligned(source_rows, rows)
+            or manifest.get("target_fingerprint") != self._subtitle_fingerprint(rows)
+        ):
+            return None
+        issues = self._translation_semantic_issues(source_rows, rows)
+        if issues:
+            logger.warning("翻译断点语义对齐失效，将从批次缓存自动修复: %s", issues[:3])
+            return None
+        return rows
+
     def trans(self) -> None:
         _st=time.time()
         if self._exit() or not self.should_trans: return
@@ -594,15 +715,37 @@ class TransCreate(BaseTask):
         self.precent += 3
         self.signal(text=tr('starttrans'))
 
-        # 如果存在目标语言字幕，无需继续翻译，前台直接使用该字幕替换
-        if vail_file(self.cfg.target_sub):
-            self.signal(
-                text=Path(self.cfg.target_sub).read_text(encoding="utf-8", errors="ignore"),
-                type='replace_subtitle'
-            )
-            return
-
         rawsrt = get_subtitle_from_srt(self.cfg.source_sub, is_file=True)
+
+        # Smart orchestration writes a resegmented final subtitle.  It is an
+        # output artifact, not a reusable one-to-one translation cache.
+        if vail_file(self.cfg.target_sub):
+            if self.cfg.smart_orchestration:
+                checkpoint = self._load_translation_checkpoint(rawsrt)
+                if checkpoint:
+                    self._save_srt_target(checkpoint, self.cfg.target_sub)
+                    self.signal(text=tr('Resuming from source-aligned translation'))
+                    return
+                existing = get_subtitle_from_srt(self.cfg.target_sub)
+                if (
+                    self._translation_is_source_aligned(rawsrt, existing)
+                    and not self._translation_semantic_issues(rawsrt, existing)
+                ):
+                    self._save_translation_checkpoint(rawsrt, existing)
+                    self.signal(
+                        text=Path(self.cfg.target_sub).read_text(encoding="utf-8", errors="ignore"),
+                        type='replace_subtitle')
+                    return
+                logger.warning(
+                    "现有目标字幕不是原文逐段翻译缓存（source=%s, target=%s），将重新翻译",
+                    len(rawsrt), len(existing))
+                self.signal(text=tr('Existing dubbed subtitle is not a translation cache; retranslating'))
+            else:
+                self.signal(
+                    text=Path(self.cfg.target_sub).read_text(encoding="utf-8", errors="ignore"),
+                    type='replace_subtitle')
+                return
+
         self.signal(text=tr('kaishitiquhefanyi'))
 
         target_srt = run_trans(
@@ -610,12 +753,17 @@ class TransCreate(BaseTask):
             text_list=copy.deepcopy(rawsrt),
             uuid=self.uuid,
             source_code=self.cfg.source_language_code,
-            target_code=self.cfg.target_language_code
+            target_code=self.cfg.target_language_code,
+            cache_dir=str(self._translation_checkpoint_dir() / "batches"),
         )
         if self._exit():  return
 
         # 一一核对每条字幕,翻译可能导致每条字幕开头结尾出现3个 . 符号，配音后和无需配音时，需清理
         target_srt = self.check_target_sub(rawsrt, target_srt)
+        self._raise_translation_semantic_issues(
+            self._translation_semantic_issues(rawsrt, target_srt))
+        if self.cfg.smart_orchestration:
+            self._save_translation_checkpoint(rawsrt, target_srt)
         if not self.should_dubbing:
             for it in target_srt:
                 it['text']=it['text'].strip('...')
@@ -921,6 +1069,149 @@ class TransCreate(BaseTask):
             logger.exception(f'人声背景声分离失败，静默跳过 {e}', exc_info=True)
 
     # 配音预处理，去掉无效字符，整理开始时间
+    def _dubbing_checkpoint_key(self, item: dict) -> str:
+        pipeline = ""
+        if int(self.cfg.tts_type or 0) == 8:
+            try:
+                from videotrans.tts._f5tts import F5TTS
+                pipeline = F5TTS.PIPELINE_VERSION
+            except Exception:
+                pipeline = "f5"
+        payload = {
+            "pipeline": pipeline,
+            "language": self.cfg.target_language_code,
+            "tts_type": self.cfg.tts_type,
+            "text": item.get("text", ""),
+            "role": item.get("role", ""),
+            "rate": item.get("rate", ""),
+            "volume": item.get("volume", ""),
+            "pitch": item.get("pitch", ""),
+            "ref_text": item.get("ref_text", ""),
+            "source_start": item.get("start_time_source", ""),
+            "source_end": item.get("end_time_source", ""),
+            "nfe": settings.get("f5tts_nfe", 32),
+            "seed": settings.get("f5tts_seed", 42),
+        }
+        return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+    def _dubbing_checkpoint_dir(self) -> Path:
+        from videotrans.task.project import checkpoint_dir_for
+        return Path(checkpoint_dir_for(
+            self.cfg.target_dir, self.cfg.noextname, "dubbing"))
+
+    def _restore_dubbing_checkpoint(self) -> int:
+        if self.cfg.clear_cache:
+            return 0
+        root = self._dubbing_checkpoint_dir()
+        restored = 0
+        for item in self.queue_tts:
+            target = Path(item.get("filename") or "")
+            if not item.get("text", "").strip() or vail_file(target):
+                continue
+            cached = root / "audio" / f"{self._dubbing_checkpoint_key(item)}.wav"
+            if not vail_file(cached):
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(cached, target)
+                restored += 1
+            except OSError as error:
+                logger.warning("恢复项目配音断点失败，跳过 %s: %s", target, error)
+        if restored:
+            self.signal(text=f"已从项目断点恢复 {restored} 个配音片段")
+        return restored
+
+    def _save_dubbing_checkpoint(self) -> int:
+        from videotrans.dub.store import atomic_write_json
+
+        root = self._dubbing_checkpoint_dir()
+        audio_dir = root / "audio"
+        entries = {}
+        saved = 0
+        diagnostics_source = None
+        for index, item in enumerate(self.queue_tts):
+            source = Path(item.get("filename") or "")
+            if not item.get("text", "").strip() or not vail_file(source):
+                continue
+            key = self._dubbing_checkpoint_key(item)
+            target = audio_dir / f"{key}.wav"
+            try:
+                audio_dir.mkdir(parents=True, exist_ok=True)
+                if not vail_file(target):
+                    shutil.copy2(source, target)
+                entries[str(item.get("dub_unit_id") or index)] = {
+                    "key": key,
+                    "audio": f"audio/{key}.wav",
+                    "text_hash": get_md5(str(item.get("text") or "")),
+                }
+                saved += 1
+                diagnostics_source = diagnostics_source or source
+            except OSError as error:
+                logger.warning("保存项目配音断点失败，跳过 %s: %s", source, error)
+        if entries:
+            atomic_write_json(root / "manifest.json", {
+                "schema_version": 1,
+                "pipeline": "generation-candidates-not-quality-passes",
+                "updated_at": int(time.time()),
+                "entries": entries,
+            })
+            self._copy_synthesis_supervisor_diagnostics(root, diagnostics_source)
+        return saved
+
+    @staticmethod
+    def _copy_synthesis_supervisor_diagnostics(root: Path, source: Path | None = None) -> None:
+        if source is None:
+            return
+        sidecar = source.parent / "synthesis_supervisor.json"
+        if not sidecar.is_file():
+            return
+        try:
+            shutil.copy2(sidecar, root / "supervisor.json")
+        except OSError as error:
+            logger.debug("保存合成监督器断点诊断失败，忽略: %s", error)
+
+    def _save_dubbing_checkpoint_item(self, item: dict, index: int) -> None:
+        """Atomically preserve one generated candidate as soon as it exists."""
+        from videotrans.dub.store import atomic_write_json
+
+        source = Path(item.get("filename") or "")
+        if not item.get("text", "").strip() or not vail_file(source):
+            return
+        lock = getattr(self, "_dubbing_checkpoint_lock", None)
+        if lock is None:
+            lock = self._dubbing_checkpoint_lock = threading.RLock()
+        with lock:
+            root = self._dubbing_checkpoint_dir()
+            audio_dir = root / "audio"
+            key = self._dubbing_checkpoint_key(item)
+            target = audio_dir / f"{key}.wav"
+            audio_dir.mkdir(parents=True, exist_ok=True)
+            if not vail_file(target):
+                shutil.copy2(source, target)
+
+            manifest_path = root / "manifest.json"
+            manifest = {
+                "schema_version": 1,
+                "pipeline": "generation-candidates-not-quality-passes",
+                "entries": {},
+            }
+            if manifest_path.is_file():
+                try:
+                    loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        manifest.update(loaded)
+                except (OSError, json.JSONDecodeError):
+                    pass
+            entries = manifest.setdefault("entries", {})
+            entries[str(item.get("dub_unit_id") or index)] = {
+                "key": key,
+                "audio": f"audio/{key}.wav",
+                "text_hash": get_md5(str(item.get("text") or "")),
+            }
+            manifest["updated_at"] = int(time.time())
+            atomic_write_json(manifest_path, manifest)
+            self._copy_synthesis_supervisor_diagnostics(root, source)
+
     def _tts(self) -> None:
         if not self.should_dubbing:
             self.signal(text='Skip tts')
@@ -930,6 +1221,10 @@ class TransCreate(BaseTask):
         source_subs = get_subtitle_from_srt(self.cfg.source_sub)
         if len(subs) < 1:
             raise DubbingSrtError(f"SRT file error:{self.cfg.target_sub}")
+        if self.cfg.smart_orchestration and not self._translation_is_source_aligned(source_subs, subs):
+            raise DubbingSrtError(
+                f"配音预检失败：英文 {len(source_subs)} 段、规范译文 {len(subs)} 段，"
+                "缺少可靠源句映射。请重新执行翻译阶段。")
         try:
             rate = int(str(self.cfg.voice_rate).replace('%', ''))
         except (ValueError,TypeError):
@@ -942,10 +1237,19 @@ class TransCreate(BaseTask):
         voice_role = self.cfg.voice_role
         force_clone = str(voice_role).strip().lower() == 'clone' and self.cfg.tts_type in SUPPORT_CLONE
 
-        # 取出每一条字幕，行号\n开始时间 --> 结束时间\n内容
-        for i, it in enumerate(subs):
-            if it['end_time'] < it['start_time'] or not it['text'].strip():
+        grouped_subs = TransCreate._group_source_aligned_subtitles(subs, source_subs)
+        # 取出每一条可发声字幕；翻译器合并进去的空白尾行已纳入 refs。
+        for i, (it, refs) in enumerate(grouped_subs):
+            if it['end_time'] < it['start_time'] or not refs:
                 continue
+            source_start = min(int(ref['start_time']) for ref in refs)
+            source_end = max(int(ref['end_time']) for ref in refs)
+            # The translated text covers every folded source fragment, so its
+            # initial TTS slot must cover that same range before smart planning.
+            it['start_time'] = min(int(it['start_time']), source_start)
+            it['end_time'] = max(int(it['end_time']), source_end)
+            it['startraw'] = ms_to_time_string(ms=it['start_time'])
+            it['endraw'] = ms_to_time_string(ms=it['end_time'])
             # 判断是否存在单独设置的行角色，如果不存在则使用全局
             voice = 'clone' if force_clone else line_roles.get(f'{it["line"]}', voice_role)
 
@@ -958,11 +1262,9 @@ class TransCreate(BaseTask):
                 "end_time": it['end_time'],
                 "startraw": it['startraw'],
                 "endraw": it['endraw'],
-                "ref_text": source_subs[i]['text'] if source_subs and i < len(source_subs) else '',
-                "start_time_source": source_subs[i]['start_time'] if source_subs and i < len(source_subs) else it[
-                    'start_time'],
-                "end_time_source": source_subs[i]['end_time'] if source_subs and i < len(source_subs) else it[
-                    'end_time'],
+                "ref_text": " ".join(str(ref.get('text') or '').strip() for ref in refs).strip(),
+                "start_time_source": source_start,
+                "end_time_source": source_end,
                 "role": voice,
                 "rate": rate,
                 "volume": self.cfg.volume,
@@ -972,12 +1274,15 @@ class TransCreate(BaseTask):
             }
             # 如果是 clone 角色， 需要截取对应片段
             if str(voice).strip().lower() == 'clone' and self.cfg.tts_type in SUPPORT_CLONE:
-                tmp_dict['ref_wav'] = f"{self.cfg.cache_folder}/clone-{i}.wav"
+                tmp_dict['ref_wav'] = (
+                    f"{self.cfg.cache_folder}/clone-{i}-"
+                    f"{tmp_dict['start_time_source']}-{tmp_dict['end_time_source']}.wav"
+                )
                 tmp_dict['ref_language'] = self.cfg.detect_language[:2]
             queue_tts.append(tmp_dict)
 
         self.queue_tts = copy.deepcopy(queue_tts)
-        # v2 工程使用稳定单元 ID；旧流水线会忽略这些附加字段，生成行为不变。
+        # v3 工程使用稳定单元 ID；旧流水线会忽略这些附加字段，生成行为不变。
         from videotrans.dub.legacy_adapter import ensure_queue_unit_ids, make_project_id
         ensure_queue_unit_ids(
             self.queue_tts,
@@ -987,12 +1292,25 @@ class TransCreate(BaseTask):
         if self.cfg.smart_orchestration:
             self._smart_orchestrate_queue()
 
+        # Smart long-video orchestration already owns the final timeline fit.
+        # Tell capable TTS backends to synthesize near that slot instead of
+        # blindly applying a global slow rate and undoing it during alignment.
+        fit_to_slot = bool(self.cfg.smart_orchestration and self.cfg.voice_autorate)
+        for item in self.queue_tts:
+            item["fit_to_slot"] = fit_to_slot
+            item["target_duration_ms"] = max(
+                int(item.get("end_time") or 0) - int(item.get("start_time") or 0),
+                0,
+            )
+
         if not self.queue_tts or len(self.queue_tts) < 1:
             raise RuntimeError(f'字幕长度为0，无法继续配音')
 
         # 如果存在有 ref_wav 即需要clone，存在参考音频的
         if len([it.get("ref_wav") for it in self.queue_tts if it.get("ref_wav")]) > 0:
             self._create_ref_from_vocal()
+
+        self._restore_dubbing_checkpoint()
 
         # 调用配音渠道；"重新处理"(clear_cache)时不从跨运行配音缓存恢复
         leak_file = Path(f'{self.cfg.cache_folder}/lang_leak.json')
@@ -1004,9 +1322,12 @@ class TransCreate(BaseTask):
                 uuid=self.uuid,
                 tts_type=self.cfg.tts_type,
                 is_cuda=self.cfg.is_cuda,
-                use_cache=not self.cfg.clear_cache
+                use_cache=not self.cfg.clear_cache,
+                on_item_done=self._save_dubbing_checkpoint_item,
             )
         finally:
+            # 即使服务/门禁抛错，也先保留已经生成的候选，跨进程重试不重做。
+            self._save_dubbing_checkpoint()
             # 严格门禁抛错时也把标记合并回工作台；先删旧 sidecar，避免历史误报。
             self._merge_lang_leak_marks()
         # 为每条字幕保留原始配音片段
@@ -1029,12 +1350,24 @@ class TransCreate(BaseTask):
         if not str(self.cfg.target_language_code or '').lower().startswith('zh'):
             self.signal(text=tr('Smart orchestration currently keeps non-Chinese text unchanged'))
             return
-        checkpoint_dir = Path(self.cfg.target_dir) / '.smart-plan'
+        from videotrans.task.project import checkpoint_dir_for
+        checkpoint_dir = Path(checkpoint_dir_for(
+            self.cfg.target_dir, self.cfg.noextname, 'smart-plan'))
         checkpoint_queue = checkpoint_dir / 'smart_queue.json'
-        if not self.cfg.clear_cache and checkpoint_queue.is_file():
+        checkpoint_manifest = checkpoint_dir / 'manifest.json'
+        input_fingerprint = TransCreate._smart_input_fingerprint(self, self.queue_tts)
+        # v1.1 以前写在输出目录根部；只读兼容并在成功载入后迁入工程。
+        legacy_checkpoint = Path(self.cfg.target_dir) / '.smart-plan' / 'smart_queue.json'
+        resume_queue = checkpoint_queue
+        if not resume_queue.is_file() and legacy_checkpoint.is_file():
+            resume_queue = legacy_checkpoint
+        if not self.cfg.clear_cache and resume_queue.is_file():
             try:
-                cached = json.loads(checkpoint_queue.read_text(encoding='utf-8'))
+                cached = json.loads(resume_queue.read_text(encoding='utf-8'))
                 if isinstance(cached, list) and cached:
+                    if not TransCreate._smart_checkpoint_matches(
+                            self, cached, input_fingerprint, checkpoint_manifest):
+                        raise ValueError('saved smart queue does not match source-aligned translation')
                     from videotrans.dub.llm_candidates import has_obvious_english_leak
                     leaked = [item for item in cached
                               if has_obvious_english_leak(item.get('text'))]
@@ -1050,6 +1383,11 @@ class TransCreate(BaseTask):
                             item['ref_wav'] = str(
                                 Path(self.cfg.cache_folder) / Path(item['ref_wav']).name)
                     self.queue_tts = cached
+                    if resume_queue != checkpoint_queue:
+                        from videotrans.dub.store import atomic_write_json
+                        atomic_write_json(checkpoint_queue, cached)
+                    TransCreate._write_smart_manifest(
+                        self, checkpoint_manifest, input_fingerprint, cached)
                     self._save_srt_target(self.queue_tts, self.cfg.target_sub)
                     self.signal(text=tr('Resuming from saved smart orchestration'))
                     return
@@ -1085,11 +1423,13 @@ class TransCreate(BaseTask):
                     for item in leaked[:5])
                 raise DubbingSrtError(
                     f'智能编排译文门禁未通过：仍有 {len(leaked)} 段普通英文未翻译。{examples}')
+            TransCreate._assert_smart_mapping(self, planned)
+            TransCreate._assert_translation_semantics(self, planned)
             self.queue_tts = planned
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
-            checkpoint_queue.write_text(
-                json.dumps(self.queue_tts, ensure_ascii=False, indent=2),
-                encoding='utf-8')
+            from videotrans.dub.store import atomic_write_json
+            atomic_write_json(checkpoint_queue, self.queue_tts)
+            TransCreate._write_smart_manifest(
+                self, checkpoint_manifest, input_fingerprint, self.queue_tts)
             self._save_srt_target(self.queue_tts, self.cfg.target_sub)
             self.signal(text=tr('Smart orchestration complete'))
         except DubbingSrtError:
@@ -1099,20 +1439,99 @@ class TransCreate(BaseTask):
             logger.exception(f'智能编排失败，保留现有译文继续配音: {error}', exc_info=True)
             self.signal(text=tr('Smart orchestration used the local fallback'))
 
+    def _smart_input_fingerprint(self, queue: list) -> str:
+        payload = [{
+            "id": str(item.get("dub_unit_id") or ""),
+            "source_start": int(item.get("start_time_source", 0) or 0),
+            "source_end": int(item.get("end_time_source", 0) or 0),
+            "source": str(item.get("ref_text") or ""),
+            "target": str(item.get("text") or ""),
+        } for item in queue]
+        return get_md5(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+    def _assert_smart_mapping(self, queue: list) -> None:
+        expected = [str(item.get("dub_unit_id") or "") for item in self.queue_tts]
+        if not expected or not all(expected):
+            return
+        actual = []
+        for item in queue:
+            ids = item.get("source_unit_ids")
+            if not isinstance(ids, list) or not ids:
+                raise DubbingSrtError("智能编排映射缺失：部分中文段没有 source_unit_ids")
+            actual.extend(str(value) for value in ids)
+        if actual != expected:
+            missing = len(set(expected) - set(actual))
+            duplicate = len(actual) - len(set(actual))
+            raise DubbingSrtError(
+                f"智能编排映射不完整：原文 {len(expected)} 段、映射 {len(actual)} 段、"
+                f"缺失 {missing}、重复 {max(duplicate, 0)}。已停止配音以防止中英文错位。")
+
+    def _assert_translation_semantics(self, queue: list) -> None:
+        from videotrans.dub.semantic_guard import audit_translation_queue
+        issues = audit_translation_queue(queue)
+        if not issues:
+            return
+        examples = "；".join(
+            f"第{issue['line']}段 {','.join(issue['failures'])}："
+            f"{issue['source'][:45]} → {issue['target'][:45]}"
+            for issue in issues[:4])
+        raise DubbingSrtError(
+            f"翻译语义预检未通过：发现 {len(issues)} 段数字或单位与原文不一致。{examples}")
+
+    def _smart_checkpoint_matches(self, cached: list, input_fingerprint: str, manifest_path: Path) -> bool:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            manifest = {}
+        if manifest and (
+            manifest.get("schema_version") != 2
+            or manifest.get("input_fingerprint") != input_fingerprint
+        ):
+            return False
+        try:
+            TransCreate._assert_smart_mapping(self, cached)
+            TransCreate._assert_translation_semantics(self, cached)
+        except DubbingSrtError:
+            return False
+        return True
+
+    def _write_smart_manifest(self, path: Path, input_fingerprint: str, queue: list) -> None:
+        from videotrans.dub.store import atomic_write_json
+        atomic_write_json(path, {
+            "schema_version": 2,
+            "input_fingerprint": input_fingerprint,
+            "output_fingerprint": TransCreate._smart_input_fingerprint(self, queue),
+            "source_unit_count": sum(len(item.get("source_unit_ids") or []) for item in queue),
+            "segment_count": len(queue),
+            "created_at": int(time.time()),
+        })
+
     # 多线程实现裁剪参考音频
     def _merge_lang_leak_marks(self):
         """把 F5 泄漏检查写的 sidecar 标记按 filename 合并回本队列。"""
         try:
             leak_file = Path(f'{self.cfg.cache_folder}/lang_leak.json')
-            if not leak_file.is_file():
-                return
-            marks = json.loads(leak_file.read_text(encoding='utf-8'))
-            if not isinstance(marks, dict):
-                return
+            marks = {}
+            if leak_file.is_file():
+                loaded = json.loads(leak_file.read_text(encoding='utf-8'))
+                marks = loaded if isinstance(loaded, dict) else {}
             for it in self.queue_tts:
                 m = marks.get(Path(it.get('filename') or '').name)
                 if m:
                     it['lang_leak'] = m
+            # v3 清单还包含机器可读的处置状态；sidecar 继续兼容旧队列。
+            from videotrans.dub.quality_manifest import QualityManifest, unit_key
+            manifest = QualityManifest(self.cfg.cache_folder)
+            for index, it in enumerate(self.queue_tts):
+                entry = manifest.entries.get(unit_key(it, index))
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get('passed'):
+                    it.pop('quality_status', None)
+                else:
+                    it['quality_status'] = (
+                        entry.get('disposition') or 'needs_review')
+                    it['quality_failures'] = list(entry.get('hard_failures') or [])
         except Exception as e:
             logger.warning(f'合并配音泄漏标记失败,忽略: {e}')
 
@@ -1123,30 +1542,33 @@ class TransCreate(BaseTask):
             # 人声背景声分离 出来的人声音频，44.1k，如果有降噪，则为 16000 
             vocal=self.clone_ref
         else:
-            # 无则从原始视频中提取44.1k音频作为参考音频
+            # 无则一次性提取 16k PCM；后续所有参考片段复用，避免反复重采样。
             try:
-                tmpfile = self.cfg.cache_folder + "/clone_ref_44100.wav"
-                runffmpeg([
-                    "-y",
-                    "-i",
-                    self.cfg.name,
-                    "-vn",
-                    "-ac",
-                    "1",
-                    "-ar",
-                    "44100",
-                    "-c:a",
-                    "pcm_s16le",
-                    tmpfile
-                ])
+                tmpfile = self.cfg.cache_folder + "/clone_ref_16000.wav"
+                if not vail_file(tmpfile):
+                    runffmpeg([
+                        "-y",
+                        "-i",
+                        self.cfg.name,
+                        "-vn",
+                        "-ac",
+                        "1",
+                        "-ar",
+                        "16000",
+                        "-c:a",
+                        "pcm_s16le",
+                        tmpfile
+                    ], threads=1)
                 vocal=tmpfile
             except Exception as e:
-                logger.exception(f'克隆语音前分离出 44.1k 的原始音频失败',exc_info=True)
+                logger.exception(f'克隆语音前提取 16k 原始音频失败',exc_info=True)
             
         logger.debug(f'语音克隆模式下，所用参考音频为:{vocal}')
         # 裁切对应片段为参考音频
         def _cutaudio_from_vocal(it):
             try:
+                if vail_file(it.get('ref_wav')):
+                    return
                 # 智能编排会重写目标时间轴 startraw/endraw。克隆参考必须
                 # 始终从原视频的 source 时间轴裁剪，否则音频与 ref_text
                 # 错配，F5 会把英文参考直接复制进中文成品。
@@ -1161,19 +1583,31 @@ class TransCreate(BaseTask):
                 logger.debug(
                     f"按源时间轴裁剪参考音频：{source_startraw}->{source_endraw}\n当前{it=}"
                 )
-                cut_from_audio(
-                    audio_file=vocal,
-                    ss=source_startraw,
-                    to=source_endraw,
-                    out_file=it['ref_wav']
-                )
+                try:
+                    from videotrans.dub.reference_audio import slice_reference_audio
+                    slice_reference_audio(
+                        vocal, source_start, source_end, it['ref_wav'], sample_rate=16000)
+                except Exception as direct_error:
+                    # libsndfile cannot seek every container/codec.  FFmpeg is
+                    # slower to launch per clip but remains the compatibility path.
+                    logger.warning(
+                        f'直接裁切参考音频失败，回退 FFmpeg: {direct_error}')
+                    cut_from_audio(
+                        audio_file=vocal,
+                        ss=source_startraw,
+                        to=source_endraw,
+                        out_file=it['ref_wav']
+                    )
             except Exception as e:
                 logger.exception(f'裁切参考音频失败:{it=},{e}', exc_info=True)
 
         all_task = []
-        with ThreadPoolExecutor(max_workers=min(8, len(self.queue_tts), os.cpu_count())) as pool:
+        from videotrans.util.resource_governor import runtime_limits
+        limits = runtime_limits(mode=settings.get("resource_mode", "auto"))
+        with ThreadPoolExecutor(
+                max_workers=max(1, min(limits.reference_workers, len(self.queue_tts)))) as pool:
             for item in self.queue_tts:
-                if item.get('ref_wav'):
+                if item.get('ref_wav') and not vail_file(item.get('ref_wav')):
                     all_task.append(pool.submit(_cutaudio_from_vocal, item))
             if len(all_task) > 0:
                 _ = [i.result() for i in all_task]

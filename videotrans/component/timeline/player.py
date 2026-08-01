@@ -35,6 +35,10 @@ class PreviewPlayer(QObject):
 
         self._has_dub = False
         self._mode = AUDIO_ORIGINAL
+        # A whole-track preview starts at video 0.  A single-line preview can
+        # instead start at an arbitrary video timestamp while the audio file
+        # itself still starts at 0.
+        self._dub_offset_ms = 0
         self._poster_pending = False   # 待渲染首帧海报
         self._postering = False        # 正在跑首帧渲染，期间不对外冒播放状态
 
@@ -61,12 +65,13 @@ class PreviewPlayer(QObject):
         # 加载后暂停态不渲染首帧（黑屏），标记待渲染海报，媒体就绪后顶出首帧
         self._poster_pending = True
 
-    def set_dub_source(self, dub_wav_path: str):
+    def set_dub_source(self, dub_wav_path: str, offset_ms: int = 0):
         # 波形/预览 wav 后台生成完成后再挂载
         pos = self.video_player.position()
+        self._dub_offset_ms = max(int(offset_ms or 0), 0)
         self.dub_player.setSource(QUrl.fromLocalFile(dub_wav_path))
         self._has_dub = True
-        self.dub_player.setPosition(pos)
+        self.dub_player.setPosition(self._dub_position(pos))
         if self.is_playing():
             self.dub_player.play()
         self.set_audio_mode(self._mode)
@@ -78,7 +83,7 @@ class PreviewPlayer(QObject):
     def play(self):
         self.video_player.play()
         if self._has_dub:
-            self.dub_player.setPosition(self.video_player.position())
+            self.dub_player.setPosition(self._dub_position(self.video_player.position()))
             self.dub_player.play()
         self._drift_timer.start()
 
@@ -105,7 +110,7 @@ class PreviewPlayer(QObject):
             self.pause()
         self.video_player.setPosition(ms)
         if self._has_dub:
-            self.dub_player.setPosition(ms)
+            self.dub_player.setPosition(self._dub_position(ms))
         if was_playing:
             self.play()
 
@@ -125,13 +130,20 @@ class PreviewPlayer(QObject):
     def audio_mode(self) -> str:
         return self._mode
 
+    def dub_offset(self) -> int:
+        return self._dub_offset_ms
+
+    def _dub_position(self, video_position_ms: int) -> int:
+        return max(int(video_position_ms) - self._dub_offset_ms, 0)
+
     # ---- 内部 ----
     def _correct_drift(self):
         if not self._has_dub or not self.is_playing():
             return
-        drift = abs(self.dub_player.position() - self.video_player.position())
+        expected = self._dub_position(self.video_player.position())
+        drift = abs(self.dub_player.position() - expected)
         if drift > _DRIFT_THRESHOLD_MS:
-            self.dub_player.setPosition(self.video_player.position())
+            self.dub_player.setPosition(expected)
 
     def _on_playback_state(self, st):
         # 首帧海报渲染期间的 play/pause 属内部动作，不对外冒播放状态（避免按钮闪烁）

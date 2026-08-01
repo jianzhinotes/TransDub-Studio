@@ -2,10 +2,14 @@
 
 SOURCE_APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 INSTALLED_ROOT="$HOME/Library/Application Support/pyVideoTrans"
+DEV_ROOT_FILE="$HOME/Library/Application Support/TransDub Studio/dev-root"
 # A copied .app cannot infer the adjacent development checkout.  Prefer the
-# explicit/local development root on this machine, then the in-tree bundle,
-# and only then the self-contained installed runtime.
+# explicit/local development root on this machine, then the per-user pointer,
+# then the in-tree bundle, and only then the self-contained installed runtime.
 DEV_APP_DIR="${TRANSDUB_DEV_ROOT:-}"
+if [[ -z "$DEV_APP_DIR" && -s "$DEV_ROOT_FILE" ]]; then
+    IFS= read -r DEV_APP_DIR < "$DEV_ROOT_FILE"
+fi
 if [[ -n "$DEV_APP_DIR" && -f "$DEV_APP_DIR/sp.py" && -x "$DEV_APP_DIR/.venv/bin/python" ]]; then
     APP_DIR="$DEV_APP_DIR"
 elif [[ -f "$SOURCE_APP_DIR/sp.py" && -x "$SOURCE_APP_DIR/.venv/bin/python" ]]; then
@@ -15,13 +19,23 @@ else
 fi
 PYTHON="$APP_DIR/.venv/bin/python"
 MAIN="$APP_DIR/sp.py"
-F5_STOP="$INSTALLED_ROOT/f5-tts-service/停止F5-TTS.command"
+if [[ "$APP_DIR" == "$INSTALLED_ROOT/runtime" ]]; then
+    F5_ROOT="$INSTALLED_ROOT/f5-tts-service"
+else
+    F5_ROOT="$(cd "$APP_DIR/.." && pwd)/f5-tts-service"
+fi
+F5_STOP="$F5_ROOT/停止F5-TTS.command"
 LOCK_DIR="/tmp/com.transdub.studio.local.lock"
 PID_FILE="$LOCK_DIR/python.pid"
 LOG_DIR="$APP_DIR/logs"
 LAUNCH_LOG="$LOG_DIR/macos-launcher.log"
+OWNS_LOCK=0
 
 mkdir -p "$LOG_DIR"
+{
+    echo "$(date '+%Y-%m-%d %H:%M:%S') runtime=$APP_DIR"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') f5_root=$F5_ROOT"
+} >>"$LAUNCH_LOG"
 
 show_error() {
     /usr/bin/osascript -e \
@@ -41,14 +55,27 @@ end run
 APPLESCRIPT
 }
 
+release_lock() {
+    [[ "$OWNS_LOCK" -eq 1 ]] || return 0
+    # Never let an obsolete launcher remove a newer instance's lock.
+    if [[ -s "$PID_FILE" ]]; then
+        local recorded_pid
+        recorded_pid="$(cat "$PID_FILE" 2>/dev/null)"
+        [[ "$recorded_pid" == "$$" ]] || return 0
+    fi
+    rm -f "$PID_FILE"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    OWNS_LOCK=0
+}
+
 cleanup_lock() {
+    [[ "$OWNS_LOCK" -eq 1 ]] || return 0
     # F5 is started lazily by the dubbing task.  Do not leave its Metal model
     # resident after the app exits.
     if [[ -x "$F5_STOP" ]]; then
         "$F5_STOP" >>"$LAUNCH_LOG" 2>&1 || true
     fi
-    rm -f "$PID_FILE"
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    release_lock
 }
 
 if [[ ! -x "$PYTHON" || ! -f "$MAIN" ]]; then
@@ -64,28 +91,28 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
             exit 0
         fi
     fi
-    cleanup_lock
+    # The recorded process is gone.  This is a stale lock from an unclean
+    # shutdown; cleanup_lock intentionally only removes locks we own.
+    rm -f "$PID_FILE"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
     if ! mkdir "$LOCK_DIR" 2>/dev/null; then
         show_error "无法创建单实例锁。"
         exit 1
     fi
 fi
+OWNS_LOCK=1
+echo "$$" >"$PID_FILE"
 
-trap cleanup_lock EXIT INT TERM HUP
+trap cleanup_lock EXIT
 
 cd "$APP_DIR"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export LANG="${LANG:-zh_CN.UTF-8}"
 export PYVIDEOTRANS_LANG="zh"
+export TRANSDUB_PID_FILE="$PID_FILE"
+export TRANSDUB_F5_STOP="$F5_STOP"
+export TRANSDUB_RUNTIME_ROOT="$APP_DIR"
 
-"$PYTHON" "$MAIN" --lang zh >>"$LAUNCH_LOG" 2>&1 &
-APP_PID=$!
-echo "$APP_PID" >"$PID_FILE"
-wait "$APP_PID"
-STATUS=$?
-
-if [[ $STATUS -ne 0 ]]; then
-    show_error "程序异常退出，错误代码：$STATUS"
-fi
-
-exit $STATUS
+# Keep the launcher and GUI on the same PID.  macOS quit/terminate signals now
+# reach Python directly instead of killing a shell and orphaning the GUI.
+exec "$PYTHON" "$MAIN" --lang zh >>"$LAUNCH_LOG" 2>&1

@@ -1,3 +1,4 @@
+import copy
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,7 @@ class BaseTrans(BaseCon):
     target_code: str = ""
     # 对于AI渠道，这是目标语言的自然语言表达，其他渠道等于 target_code
     target_language_name: str = ""
+    cache_dir: Optional[str] = None
 
     # 翻译API 地址
     api_url: str = field(default="", init=False)
@@ -44,7 +46,8 @@ class BaseTrans(BaseCon):
 
     def __post_init__(self):
         super().__post_init__()
-        Path(TEMP_ROOT + f'/translate_cache').mkdir(parents=True, exist_ok=True)
+        self.cache_dir = str(self.cache_dir or (Path(TEMP_ROOT) / 'translate_cache'))
+        Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         self.aisendsrt = settings.get('aisendsrt', False) and self.translate_type in translator.AI_TRANS_CHANNELS
         if self.aisendsrt:
             self.trans_thread = int(settings.get('aitrans_thread', 20)) if not settings.get('aitrans_context') else len(self.text_list)
@@ -134,18 +137,9 @@ class BaseTrans(BaseCon):
         for i, it in enumerate(split_source_text):
             if self._exit(): return
             self.signal(text=tr('starttrans') + f' {i} ')
-            # 组成合法的srt格式字符串
-            srt_str = "\n\n".join(
-                [f"{srt_dict['line']}\n{srt_dict['time']}\n{srt_dict['text'].strip()}" for srt_dict in it])
-            result = self._get_cache(srt_str)
-            if not result:
-                result = self._item_task(srt_str)
-                if not result.strip():
-                    raise TranslateSrtError(tr("Translate result is empty")+f'\n{self.api_url}')
-                self._set_cache(it, result)
-
-            self.signal(text=result, type='subtitle')
-            raws_list.extend(get_subtitle_from_srt(result, is_file=False))
+            translated = self._translate_srt_batch(it)
+            self.signal(text=self._srt_batch_text(translated), type='subtitle')
+            raws_list.extend(translated)
             time.sleep(self.wait_sec)
 
         _empty_line = 0
@@ -157,14 +151,111 @@ class BaseTrans(BaseCon):
         logger.debug(f'原始字幕行数：{len(self.text_list)}, 翻译后行数:{len(raws_list)}')
         return raws_list
 
+    @staticmethod
+    def _srt_batch_text(rows: List[SrtItem]) -> str:
+        return "\n\n".join(
+            f"{item['line']}\n{item['time']}\n{str(item.get('text') or '').strip()}"
+            for item in rows)
+
+    @staticmethod
+    def _validate_srt_batch(source_rows: List[SrtItem], result: str):
+        """Validate and bind an LLM response to the immutable source rows.
+
+        A syntactically valid SRT can still be dangerous: models sometimes
+        delete one short fragment and shift every later translation onto the
+        preceding timestamp.  Accepting that response poisons both the cache
+        and all downstream dubbing.  Structural and high-confidence semantic
+        checks therefore happen before a batch is cached.
+        """
+        parsed = get_subtitle_from_srt(result, is_file=False)
+        if len(parsed) != len(source_rows):
+            return None, f'count {len(parsed)}/{len(source_rows)}'
+        if any(not str(item.get('text') or '').strip() for item in parsed):
+            return None, 'empty subtitle block'
+
+        exact_timestamps = sum(
+            str(source.get('time') or '') == str(target.get('time') or '')
+            for source, target in zip(source_rows, parsed)
+        )
+        minimum = 0 if len(source_rows) == 1 else max(1, int(len(source_rows) * 0.8))
+        if exact_timestamps < minimum:
+            return None, f'timeline {exact_timestamps}/{len(source_rows)}'
+
+        from videotrans.dub.semantic_guard import audit_translation_pair
+        semantic_failures = []
+        for index, (source, target) in enumerate(zip(source_rows, parsed)):
+            failures = audit_translation_pair(source.get('text', ''), target.get('text', ''))
+            if failures:
+                semantic_failures.append(f"{index + 1}:{','.join(failures)}")
+        if semantic_failures:
+            return None, 'semantic ' + ';'.join(semantic_failures[:3])
+
+        aligned = copy.deepcopy(source_rows)
+        for source, target in zip(aligned, parsed):
+            source['text'] = str(target.get('text') or '').strip()
+        return aligned, ''
+
+    def _translate_srt_batch(self, source_rows: List[SrtItem]) -> List[SrtItem]:
+        """Translate one SRT batch, recursively shrinking malformed batches."""
+        from videotrans.configure.excepts import TranslateSrtError
+
+        srt_str = self._srt_batch_text(source_rows)
+        cached = self._get_cache(srt_str)
+        if not cached:
+            # Older builds used the list as the cache key.  Read it once, but
+            # only migrate it after the same validation as a fresh response.
+            cached = self._get_cache(source_rows)
+        if cached:
+            aligned, reason = self._validate_srt_batch(source_rows, cached)
+            if aligned is not None:
+                self._set_cache(srt_str, self._srt_batch_text(aligned))
+                return aligned
+            logger.warning('拒绝无效翻译缓存（%s 行）: %s', len(source_rows), reason)
+
+        result = self._item_task(srt_str)
+        if not result or not result.strip():
+            raise TranslateSrtError(tr("Translate result is empty") + f'\n{self.api_url}')
+        aligned, reason = self._validate_srt_batch(source_rows, result)
+        if aligned is not None:
+            self._set_cache(srt_str, self._srt_batch_text(aligned))
+            return aligned
+
+        if len(source_rows) > 1:
+            midpoint = len(source_rows) // 2
+            logger.warning(
+                '翻译批次未通过对齐检查（%s 行，%s），自动拆分为 %s+%s 行重译',
+                len(source_rows), reason, midpoint, len(source_rows) - midpoint)
+            aligned = (
+                self._translate_srt_batch(source_rows[:midpoint])
+                + self._translate_srt_batch(source_rows[midpoint:])
+            )
+            # Replace a poisoned parent cache with a validated, source-aligned
+            # synthesis so later retries can resume without any API request.
+            self._set_cache(srt_str, self._srt_batch_text(aligned))
+            return aligned
+
+        # A singleton cannot be split further.  Give transient model
+        # formatting one clean retry before returning an actionable failure.
+        retry_result = self._item_task(srt_str)
+        aligned, retry_reason = self._validate_srt_batch(source_rows, retry_result or '')
+        if aligned is not None:
+            self._set_cache(srt_str, self._srt_batch_text(aligned))
+            return aligned
+        raise TranslateSrtError(
+            f'第 {source_rows[0].get("line", "?")} 段翻译两次无法与原文对齐：'
+            f'{reason}; {retry_reason}')
+
     def _set_cache(self, it, res_str):
         if not res_str.strip(): return
-        file_cache = TEMP_ROOT + f'/translate_cache/{self._get_key(it)}.txt'
+        cache_dir = Path(self.cache_dir or (Path(TEMP_ROOT) / 'translate_cache'))
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        file_cache = cache_dir / f'{self._get_key(it)}.txt'
         Path(file_cache).write_text(res_str, encoding='utf-8')
 
     def _get_cache(self, it) -> Union[str,None]:
         if self.is_test: return
-        file_cache = TEMP_ROOT + f'/translate_cache/{self._get_key(it)}.txt'
+        cache_dir = Path(self.cache_dir or (Path(TEMP_ROOT) / 'translate_cache'))
+        file_cache = cache_dir / f'{self._get_key(it)}.txt'
         if Path(file_cache).exists():
             logger.debug(f'本次跳过翻译，使用缓存')
             return Path(file_cache).read_text(encoding='utf-8')

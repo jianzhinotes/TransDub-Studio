@@ -163,7 +163,8 @@ def clone_tips(tts_type, role: str = 'No', recogn_type=9):
 
 
 # 统一调用 tts渠道入口，通过 tts_type 调用对应渠道
-def run(*, queue_tts=None, language=None, uuid=None, play=False, is_test=False, tts_type=0, is_cuda=False, use_cache=True) -> None:
+def run(*, queue_tts=None, language=None, uuid=None, play=False, is_test=False,
+        tts_type=0, is_cuda=False, use_cache=True, on_item_done=None) -> None:
     # 需要并行的数量3
     if len(queue_tts) < 1 or app_cfg.exit_soft or (uuid and uuid in app_cfg.stoped_uuid_set): return
 
@@ -175,7 +176,8 @@ def run(*, queue_tts=None, language=None, uuid=None, play=False, is_test=False, 
         "is_test": is_test,
         "tts_type": tts_type,
         "is_cuda": is_cuda,
-        "use_cache": use_cache
+        "use_cache": use_cache,
+        "on_item_done": on_item_done,
     }
 
     _cls: Union[Type[BaseTTS], None] = get_class(tts_type, "tts", _ID_NAME_DICT)

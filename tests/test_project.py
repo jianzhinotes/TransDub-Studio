@@ -7,6 +7,8 @@ from videotrans.task.project import (
 )
 from videotrans.dub.schema import PROJECT_SCHEMA_VERSION, TextCandidate
 from videotrans.dub.store import DubProjectStore
+from videotrans.dub.legacy_adapter import ensure_queue_unit_ids, make_project_id
+from videotrans.dub.quality_manifest import QualityManifest
 
 
 @dataclasses.dataclass
@@ -81,6 +83,36 @@ class TestSaveLoadProject:
         proj = save_project(_make_cfg(str(out), str(cache)), queue, str(cache))
         _, loaded = load_project(proj)
         assert loaded[0]['filename'] == ''   # 缺文件清空
+
+    def test_quality_manifest_is_merged_into_dub_project(self, tmp_path, monkeypatch):
+        import videotrans.dub.quality_manifest as quality
+
+        monkeypatch.setattr(quality, 'GLOBAL_QUALITY_DIR', tmp_path / 'quality-global')
+        cache = tmp_path / 'cache'; cache.mkdir()
+        out = tmp_path / 'out'; out.mkdir()
+        _touch(cache / 'dubb-0.wav', b'checked-audio')
+        queue = [{
+            'line': 1, 'start_time': 0, 'end_time': 1000,
+            'text': '已核验中文', 'ref_text': 'Checked source.',
+            'filename': str(cache / 'dubb-0.wav'),
+        }]
+        ensure_queue_unit_ids(queue, make_project_id('/src/demo.mp4', 'zh-cn'))
+        QualityManifest(cache).record(
+            queue[0],
+            validator_backend='faster-whisper-cpu',
+            validator_model='large-v3-turbo',
+            passed=True,
+            transcript='已核验中文',
+        )
+
+        proj = save_project(_make_cfg(str(out), str(cache)), queue, str(cache))
+        unit = DubProjectStore(proj).load().units[0]
+
+        assert len(unit.quality_reports) == 1
+        assert unit.quality_reports[0].passed is True
+        assert unit.quality_reports[0].validator_model == 'large-v3-turbo'
+        assert unit.quality_reports[0].audio_candidate_id == unit.selected_audio_candidate_id
+        assert unit.audio_candidates[0].content_hash == unit.quality_reports[0].audio_hash
 
     def test_project_paths(self, tmp_path):
         p = project_paths(str(tmp_path / 'x.tdproj'))

@@ -72,7 +72,7 @@ class ConfigPage(QWidget):
         top.addWidget(self.outdir_btn)
         layout.addLayout(top)
 
-        # 默认只展示用户必须理解的一个选择；模型和工程参数全部折叠。
+        # 默认只展示用户必须理解的两个选择；模型和工程参数全部折叠。
         quick_panel = self._panel()
         quick = QVBoxLayout(quick_panel)
         quick.setContentsMargins(20, 20, 20, 20)
@@ -84,6 +84,14 @@ class ConfigPage(QWidget):
         self.quick_summary.setWordWrap(True)
         self.quick_summary.setStyleSheet(f'color:{tokens.TEXT_SECONDARY};')
         quick.addWidget(self.quick_summary)
+        delivery_row = QHBoxLayout()
+        delivery_row.addWidget(QLabel(tr('flow_delivery_label')))
+        self.delivery_box = QComboBox()
+        self.delivery_box.addItem(tr('flow_delivery_dubbed'), 'dubbed')
+        self.delivery_box.addItem(tr('flow_delivery_bilingual'), 'bilingual')
+        self.delivery_box.setToolTip(tr('flow_delivery_bilingual_tip'))
+        delivery_row.addWidget(self.delivery_box, stretch=1)
+        quick.addLayout(delivery_row)
         target_row = QHBoxLayout()
         target_row.addWidget(QLabel(tr('Target lang')))
         self.target_lang = QComboBox()
@@ -181,6 +189,7 @@ class ConfigPage(QWidget):
         self.recogn_card.channel_changed.connect(lambda _id: self._reload_models())
         self.target_lang.currentTextChanged.connect(lambda _t: self._reload_voices())
         self.source_lang.currentTextChanged.connect(lambda _t: self._check_langs())
+        self.delivery_box.currentIndexChanged.connect(lambda _i: self._update_delivery_mode())
 
         # 状态点轮询（winform 保存 Key 后 1s 内变绿）
         self._status_timer = QTimer(self)
@@ -217,8 +226,12 @@ class ConfigPage(QWidget):
         self.files_label.setText(tr('flow_files_count').replace('{0}', str(len(self.files))))
         self.files_label.setToolTip('\n'.join(self.files))
         name = Path(self.files[0]).name if self.files else ''
-        self.quick_summary.setText(
-            tr('flow_smart_file_summary').replace('{0}', name))
+        if self._is_bilingual_delivery():
+            self.quick_summary.setText(
+                tr('flow_bilingual_file_summary').replace('{0}', name))
+        else:
+            self.quick_summary.setText(
+                tr('flow_smart_file_summary').replace('{0}', name))
 
     def set_workers_ready(self, ready: bool):
         self._workers_ready = ready
@@ -250,6 +263,27 @@ class ConfigPage(QWidget):
 
         self._reload_models()
         self._reload_voices()
+        self._update_delivery_mode()
+
+    def _is_bilingual_delivery(self) -> bool:
+        return self.delivery_box.currentData() == 'bilingual'
+
+    def _update_delivery_mode(self):
+        """将“只做双语字幕”变成明确的成片模式，而非隐含的 No 音色。"""
+        bilingual = self._is_bilingual_delivery()
+        self.tts_card.setVisible(not bilingual)
+        self.auto_align.setVisible(not bilingual)
+        self.keep_bgm.setVisible(not bilingual)
+        if bilingual:
+            self.quick_summary.setText(tr('flow_bilingual_summary'))
+            self.start_btn.setText('✨ ' + tr('flow_bilingual_start'))
+        else:
+            self.start_btn.setText('✨ ' + tr('flow_smart_start'))
+            # load() 会用文件名补全这段摘要；切换回来时保留未选择文件的说明。
+            if not self.files:
+                self.quick_summary.setText(tr('flow_smart_ready_summary'))
+        self._check_langs()
+        self._update_start_enabled()
 
     # ---- 次级下拉 ----
     def _reload_models(self):
@@ -301,9 +335,11 @@ class ConfigPage(QWidget):
             langcode=src, recogn_type=self.recogn_card.current_channel_id(),
             model_name=self.recogn_card.current_secondary() or '')
         self.recogn_card.set_warning('' if warn is True else str(warn))
-        if tgt and tgt != '-':
+        if tgt and tgt != '-' and not self._is_bilingual_delivery():
             warn2 = tts.is_allow_lang(langcode=tgt, tts_type=self.tts_card.current_channel_id())
             self.tts_card.set_warning('' if warn2 is True else str(warn2))
+        else:
+            self.tts_card.set_warning('')
 
     # ---- 状态与开始门控 ----
     def _refresh_all_status(self):
@@ -315,7 +351,10 @@ class ConfigPage(QWidget):
         reasons = []
         if not self._workers_ready:
             reasons.append(tr('flow_waiting_workers'))
-        for c in (self.recogn_card, self.trans_card, self.tts_card):
+        cards = (self.recogn_card, self.trans_card)
+        if not self._is_bilingual_delivery():
+            cards += (self.tts_card,)
+        for c in cards:
             if not c.is_ready():
                 reasons.append(tr('flow_need_key') + ': ' + c.provider().name)
         self.start_hint.setText('；'.join(reasons))
@@ -352,24 +391,36 @@ class ConfigPage(QWidget):
         if model:
             main.model_name.setCurrentText(model)
 
-        tts_id = self.tts_card.current_channel_id()
-        main.tts_type.setCurrentIndex(tts_id)
-        wa.tts_type_change(tts_id)
-        voice = self.tts_card.current_secondary() or 'No'
-        main.voice_role.setCurrentText(voice)
-        # 最尖锐的坑：音色不在重建后的列表 → 静默停在 'No' → set_mode 会切成提取模式
-        if voice != 'No' and main.voice_role.currentText() != voice:
-            QMessageBox.warning(self, tr('flow_start'),
-                                tr('flow_voice_missing').replace('{0}', voice))
-            self._reload_voices()
-            return False
+        if self._is_bilingual_delivery():
+            # 3 = 双语硬字幕；No + 双字幕仍是标准视频模式，保留原声并跳过全部 TTS。
+            if main.voice_role.findText('No') < 0:
+                main.voice_role.addItem('No')
+            main.voice_role.setCurrentText('No')
+            main.subtitle_type.setCurrentIndex(3)
+            # 1 = 原文在上、译文在下，适合中英文访谈的阅读顺序。
+            main.output_srt.setCurrentIndex(1)
+            main.voice_autorate.setChecked(False)
+            main.is_separate.setChecked(False)
+            main.embed_bgm.setChecked(False)
+        else:
+            tts_id = self.tts_card.current_channel_id()
+            main.tts_type.setCurrentIndex(tts_id)
+            wa.tts_type_change(tts_id)
+            voice = self.tts_card.current_secondary() or 'No'
+            main.voice_role.setCurrentText(voice)
+            # 最尖锐的坑：音色不在重建后的列表 → 静默停在 'No' → set_mode 会切成提取模式
+            if voice != 'No' and main.voice_role.currentText() != voice:
+                QMessageBox.warning(self, tr('flow_start'),
+                                    tr('flow_voice_missing').replace('{0}', voice))
+                self._reload_voices()
+                return False
 
-        main.subtitle_type.setCurrentIndex(self.subtitle_box.currentIndex())
-        main.voice_autorate.setChecked(self.auto_align.isChecked())
+            main.subtitle_type.setCurrentIndex(self.subtitle_box.currentIndex())
+            main.voice_autorate.setChecked(self.auto_align.isChecked())
+            main.is_separate.setChecked(self.keep_bgm.isChecked())
+            if self.keep_bgm.isChecked():
+                main.embed_bgm.setChecked(True)
         main.clear_cache.setChecked(self.fresh_run.isChecked())
-        main.is_separate.setChecked(self.keep_bgm.isChecked())
-        if self.keep_bgm.isChecked():
-            main.embed_bgm.setChecked(True)
         main.app_mode = 'biaozhun'
         return True
 
@@ -383,8 +434,11 @@ class ConfigPage(QWidget):
 
         from pathlib import Path as _P
         from videotrans.task.project import project_dir_for
-        target_dir = self.flow.main.target_dir or ''
+        # 任务实际输出在这个根目录的“视频名-后缀”子目录中；即使用户未手选
+        # 输出目录，也持久化默认的 _video_out 根目录，供最近任务恢复和定位。
+        selected_root = self.flow.main.target_dir or ''
         for f in self.files:
+            target_dir = selected_root or (_P(f).parent / '_video_out').as_posix()
             recent_tasks.append({
                 'video_path': f,
                 'target_dir': target_dir,

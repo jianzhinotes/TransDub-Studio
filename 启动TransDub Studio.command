@@ -4,6 +4,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 F5_STOP="/Users/jinxing/Documents/codex/f5-tts-service/停止F5-TTS.command"
 LOCK_DIR="/tmp/com.transdub.studio.local.lock"
 PID_FILE="$LOCK_DIR/python.pid"
+OWNS_LOCK=0
 cd "$PROJECT_DIR"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -21,12 +22,24 @@ end run
 APPLESCRIPT
 }
 
-cleanup_lock() {
-    if [[ -x "$F5_STOP" ]]; then
-        "$F5_STOP" >/dev/null 2>&1 || true
+release_lock() {
+    [[ "$OWNS_LOCK" -eq 1 ]] || return 0
+    if [[ -s "$PID_FILE" ]]; then
+        local recorded_pid
+        recorded_pid="$(cat "$PID_FILE" 2>/dev/null)"
+        [[ "$recorded_pid" == "$$" ]] || return 0
     fi
     rm -f "$PID_FILE"
     rmdir "$LOCK_DIR" 2>/dev/null || true
+    OWNS_LOCK=0
+}
+
+cleanup_lock() {
+    [[ "$OWNS_LOCK" -eq 1 ]] || return 0
+    if [[ -x "$F5_STOP" ]]; then
+        "$F5_STOP" >/dev/null 2>&1 || true
+    fi
+    release_lock
 }
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -38,29 +51,21 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
             exit 0
         fi
     fi
-
-    cleanup_lock
+    # Recover a stale lock left by an unclean shutdown.  cleanup_lock only
+    # removes locks owned by this process, so stale cleanup is explicit here.
+    rm -f "$PID_FILE"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
     if ! mkdir "$LOCK_DIR" 2>/dev/null; then
         echo "无法创建单实例锁：$LOCK_DIR"
         exit 1
     fi
 fi
+OWNS_LOCK=1
+echo "$$" >"$PID_FILE"
 
-trap cleanup_lock EXIT INT TERM HUP
+trap cleanup_lock EXIT
 
 export PYVIDEOTRANS_LANG="zh"
-"$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/sp.py" --lang zh &
-APP_PID=$!
-echo "$APP_PID" >"$PID_FILE"
-wait "$APP_PID"
-STATUS=$?
-
-if [[ $STATUS -ne 0 ]]; then
-    echo
-    echo "TransDub Studio 启动失败，错误代码：$STATUS"
-    echo "请保留此窗口并查看上方错误信息。"
-    echo
-    read -k 1 "?按任意键关闭窗口..."
-fi
-
-exit $STATUS
+export TRANSDUB_PID_FILE="$PID_FILE"
+export TRANSDUB_F5_STOP="$F5_STOP"
+exec "$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/sp.py" --lang zh

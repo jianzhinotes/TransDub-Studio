@@ -3,6 +3,14 @@ from videotrans.configure.config import ROOT_DIR, logger, settings
 from pathlib import Path
 
 
+def _separation_threads() -> int:
+    """Cap CPU separation concurrency using current machine pressure."""
+    from videotrans.util.resource_governor import runtime_limits
+    configured = max(int(settings.get('noise_separate_nums', 4) or 4), 1)
+    limits = runtime_limits(mode=settings.get("resource_mode", "auto"))
+    return min(configured, limits.separation_threads)
+
+
 # 1. 分离背景声和人声 https://k2-fsa.github.io/sherpa/onnx/source-separation/models.html#uvr
 # 仅使用cpu，不使用gpu
 def vocal_bgm(*, input_file, vocal_file, instr_file, logs_file=None, is_cuda=False, uvr_models="UVR-MDX-NET-Inst_HQ_4"):
@@ -32,7 +40,7 @@ def vocal_bgm(*, input_file, vocal_file, instr_file, logs_file=None, is_cuda=Fal
                 uvr=sherpa_onnx.OfflineSourceSeparationUvrModelConfig(
                     model=model,
                 ),
-                num_threads=int(settings.get('noise_separate_nums', 4)),
+                num_threads=_separation_threads(),
                 debug=False,
                 provider="cpu",
             )
@@ -98,7 +106,7 @@ def vocal_bgm_spleeter(*, input_file, vocal_file, instr_file, logs_file=None):
                     vocals=vocals,
                     accompaniment=accompaniment,
                 ),
-                num_threads=int(settings.get('noise_separate_nums', 4)),
+                num_threads=_separation_threads(),
                 debug=False,
                 provider="cpu",
             )
@@ -177,7 +185,7 @@ def remove_noise(*, input_file, output_file, is_cuda=False, logs_file=None, devi
                 dpdfnet=sherpa_onnx.OfflineSpeechDenoiserDpdfNetModelConfig(
                     model=f"{ROOT_DIR}/models/onnx/dpdfnet4.onnx",
                 ),
-                num_threads=int(settings.get('noise_separate_nums', 4)),
+                num_threads=_separation_threads(),
                 debug=False,
                 provider="cpu",
             )

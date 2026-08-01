@@ -232,6 +232,10 @@ class WinAction(WinActionBase):
 
     # 核对tts选择是否正确
     def check_tts(self):
+        # “无配音”仍可输出带字幕的视频，不应因未配置的 TTS 渠道被拦截。
+        # 例如简洁模式的中英文双语字幕成片会明确设置 voice_role=No。
+        if self.main.voice_role.currentText() in ['No', '', ' ']:
+            return True
         if tts.is_input_api(tts_type=self.main.tts_type.currentIndex()) is not True:
             return False
         # 如果没有选择目标语言，但是选择了配音角色，无法配音
@@ -488,6 +492,7 @@ class WinAction(WinActionBase):
         self.main.startbtn.setDisabled(False)
         self.retry_queue_mp4 = []
         self.uuid_queue_mp4 = {}
+        self.uuid_output_dirs = {}
         self.main.retrybtn.setVisible(False)
         self.create_btns()
 
@@ -561,6 +566,9 @@ class WinAction(WinActionBase):
                     'only_out_mp4') else target_dir,
                 name=obj['name'],
                 uuid=obj['uuid'])
+            # uuid_queue_mp4 保留输出根目录给“重试”重新创建 InputFile；
+            # Flow UI 则使用这个视频专属子目录打开成品。
+            self.uuid_output_dirs[obj['uuid']] = Path(obj['target_dir']).as_posix()
             self.uuid_queue_mp4[obj['uuid']] = (obj['name'], target_dir)
         self.main.show_tips.setText('')
         # 单个视频处理模式

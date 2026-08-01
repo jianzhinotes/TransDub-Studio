@@ -38,4 +38,4 @@ echo "==> Installing dependencies (this is the long part)..."
 "$UV" sync
 
 echo "==> Launching TransDub Studio..."
-exec "$UV" run python sp.py
+exec "$RUNTIME/.venv/bin/python" sp.py

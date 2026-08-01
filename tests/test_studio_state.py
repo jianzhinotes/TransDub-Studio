@@ -73,3 +73,15 @@ class TestStudioState:
         data = json.loads(open(path, encoding='utf-8').read())
         assert data[0]['text'] == 'edited'
         assert st.items is q  # 始终同一引用
+
+    def test_quality_failures_remain_until_verified_redub(self):
+        queue = _queue()
+        queue[1]['lang_leak'] = 'unexpected English'
+        queue[1]['quality_status'] = 'needs_review'
+        st = StudioState(queue, 5000)
+
+        assert st.quality_failed_indices() == [1]
+        st.set_quality_failure(0, 'repetition', status='needs_reference')
+        assert st.quality_failed_indices() == [0, 1]
+        st.clear_quality_failure(1)
+        assert st.quality_failed_indices() == [0]

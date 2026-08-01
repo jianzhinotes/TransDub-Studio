@@ -45,13 +45,18 @@ class LegacyTTSBackend(DubbingBackend):
         line = item.get("line", index + 1)
         target = target_dir / f"clone-{line}-{start_ms}-{end_ms}.wav"
         if not target.is_file() or target.stat().st_size == 0:
-            from videotrans.util.help_ffmpeg import runffmpeg
-            runffmpeg([
-                "-ss", f"{start_ms / 1000:.3f}",
-                "-t", f"{(end_ms - start_ms) / 1000:.3f}",
-                "-i", str(source), "-vn", "-ac", "1", "-ar", "24000",
-                "-c:a", "pcm_s16le", str(target),
-            ])
+            try:
+                from videotrans.dub.reference_audio import slice_reference_audio
+                slice_reference_audio(
+                    source, start_ms, end_ms, target, sample_rate=16000)
+            except Exception:
+                from videotrans.util.help_ffmpeg import runffmpeg
+                runffmpeg([
+                    "-ss", f"{start_ms / 1000:.3f}",
+                    "-t", f"{(end_ms - start_ms) / 1000:.3f}",
+                    "-i", str(source), "-vn", "-ac", "1", "-ar", "16000",
+                    "-c:a", "pcm_s16le", str(target),
+                ], threads=1)
         item["ref_wav"] = str(target)
 
     def capabilities(self):

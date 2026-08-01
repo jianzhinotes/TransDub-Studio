@@ -22,6 +22,15 @@ _STATUS_COLOR = {
     STATUS_OK: '#66ff66',
 }
 
+_QUALITY_FAILURE_TEXT = {
+    'unexpected_english': 'Unexpected Latin or English speech',
+    'pathological_repetition': 'Pathological repeated speech',
+    'missing_chinese_content': 'Chinese content is missing',
+    'unexpected_chinese_content': 'Extra Chinese content may have leaked from another clip',
+    'truncated_chinese_content': 'Chinese content appears truncated',
+    'chinese_content_mismatch': 'Spoken Chinese does not match the subtitle',
+}
+
 
 class _CommitOnFocusOutEdit(QPlainTextEdit):
     """失焦且内容变化时才提交，避免每击键一次信号风暴。"""
@@ -72,7 +81,7 @@ class SpeakerCard(QFrame):
         self.time_label.mousePressEvent = self._on_head_click
         head.addWidget(self.time_label)
         head.addStretch(1)
-        self.leak_badge = QLabel('⚠ ' + tr('Suspected original audio'))
+        self.leak_badge = QLabel('⚠ ' + tr('Quality check failed'))
         self.leak_badge.setStyleSheet(
             'color:#fff;background:#c9463d;border-radius:3px;padding:1px 6px;')
         self.leak_badge.setVisible(False)
@@ -166,10 +175,15 @@ class SpeakerCard(QFrame):
         self.status_label.setText(msg)
         self.status_label.setStyleSheet(f'color:{_STATUS_COLOR[kind]};')
         leak = str(item.get('lang_leak') or '')
-        self.leak_badge.setVisible(bool(leak))
-        if leak:
+        quality_status = str(item.get('quality_status') or '')
+        self.leak_badge.setVisible(bool(leak or quality_status.startswith('needs_')))
+        if leak or quality_status:
+            failures = '；'.join(
+                tr(_QUALITY_FAILURE_TEXT.get(code, code))
+                for code in (item.get('quality_failures') or []))
             self.leak_badge.setToolTip(
-                tr('Auto-check heard unexpected speech in this line') + f':\n{leak}')
+                tr('Auto-check heard unexpected speech in this line')
+                + f':\n{leak or failures or quality_status}')
         self.dirty_badge.setVisible(self._state.is_dirty(self.idx))
         self.text_edit.sync_text(str(item.get('text') or ''))
 
@@ -179,12 +193,14 @@ class SpeakerCardList(QScrollArea):
     redubRequested = Signal(int)
     seekRequested = Signal(int)
 
-    def __init__(self, state, roles, parent=None):
+    def __init__(self, state, roles, parent=None, defer_build: bool = False):
         super().__init__(parent)
         self._state = state
         self._roles = roles
         self._cards = {}
         self._active = -1
+        self._quality_filter = False
+        self._build_started = False
 
         self.setWidgetResizable(True)
         container = QWidget()
@@ -203,6 +219,13 @@ class SpeakerCardList(QScrollArea):
         # 分批建卡，避免长任务卡死打开。定时器带 receiver 上下文：
         # 本控件销毁后未触发的批次自动取消，不会摸到已删对象（工作台中途退出时曾崩溃）
         self._next_idx = 0
+        if not defer_build:
+            self.start_building()
+
+    def start_building(self):
+        if self._build_started:
+            return
+        self._build_started = True
         QTimer.singleShot(0, self, self._build_batch)
 
     def _build_batch(self):
@@ -218,6 +241,8 @@ class SpeakerCardList(QScrollArea):
             card.seekRequested.connect(self.seekRequested)
             self._layout.insertWidget(self._layout.count() - 1, card)
             self._cards[idx] = card
+            if self._quality_filter:
+                card.setVisible(idx in self._state.quality_failed_indices())
         self._next_idx = end
         if end < len(self._state.items):
             QTimer.singleShot(0, self, self._build_batch)
@@ -229,6 +254,14 @@ class SpeakerCardList(QScrollArea):
         card = self._cards.get(idx)
         if card:
             card.refresh()
+            if self._quality_filter:
+                card.setVisible(idx in self._state.quality_failed_indices())
+
+    def set_quality_filter(self, enabled: bool):
+        self._quality_filter = bool(enabled)
+        failed = set(self._state.quality_failed_indices())
+        for idx, card in self._cards.items():
+            card.setVisible(not self._quality_filter or idx in failed)
 
     def scroll_to(self, idx: int):
         card = self._cards.get(idx)

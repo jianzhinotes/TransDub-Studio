@@ -825,7 +825,8 @@ def run(*, translate_type=0,
         is_test=False,
         source_code=None,
         target_code=None,
-        uuid=None) -> Union[List, str, None]:
+        uuid=None,
+        cache_dir=None) -> Union[List, str, None]:
     translate_type = int(translate_type)
     # ai渠道下，target_language_name 是语言名称
     # 其他渠道下是语言代码
@@ -843,6 +844,8 @@ def run(*, translate_type=0,
         "is_test": is_test,
         "translate_type": translate_type
     }
+    if cache_dir:
+        kwargs["cache_dir"] = cache_dir
 
     # 未设置代理并且检测google失败，则使用微软翻译
     if translate_type == GOOGLE_INDEX:

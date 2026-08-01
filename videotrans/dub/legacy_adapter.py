@@ -1,4 +1,4 @@
-"""旧 queue_tts 与 DubProject v2 之间的无损兼容层。"""
+"""旧 queue_tts 与 DubProject v3 之间的无损兼容层。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from .schema import (
     AudioCandidate,
     DubProject,
     DubUnit,
+    QualityReport,
     SpeakerTrack,
+    StaleReason,
     TextCandidate,
 )
 
@@ -122,7 +124,7 @@ def project_from_queue(
         target_language: str,
         existing: Optional[DubProject] = None,
 ) -> DubProject:
-    """从旧队列创建或同步 v2 项目，同时保留未来规划器写入的候选历史。"""
+    """从旧队列创建或同步 v3 项目，同时保留规划器写入的候选历史。"""
     incoming = queue_to_units(queue, project_id)
     previous = {unit.id: unit for unit in (existing.units if existing else [])}
     merged = []
@@ -166,8 +168,43 @@ def project_from_queue(
     return project
 
 
+def merge_quality_manifest(project: DubProject, manifest: dict) -> DubProject:
+    """Attach persisted per-clip validation results to their DubProject units."""
+    entries = (manifest or {}).get("entries") if isinstance(manifest, dict) else None
+    if not isinstance(entries, dict):
+        return project
+    by_unit = {unit.id: unit for unit in project.units}
+    for key, payload in entries.items():
+        if not isinstance(payload, dict):
+            continue
+        unit = by_unit.get(str(payload.get("unit_id") or key))
+        if unit is None:
+            continue
+        report_payload = dict(payload)
+        report_payload.setdefault("audio_candidate_id", unit.selected_audio_candidate_id)
+        report = QualityReport.from_dict(report_payload)
+        reports = {old.id: old for old in unit.quality_reports}
+        reports[report.id] = report
+        unit.quality_reports = list(reports.values())
+        if report.audio_hash and report.audio_candidate_id:
+            candidate = next(
+                (audio for audio in unit.audio_candidates
+                 if audio.id == report.audio_candidate_id), None
+            )
+            if candidate is not None:
+                candidate.content_hash = report.audio_hash
+        if report.passed:
+            unit.stale_reasons = [
+                reason for reason in unit.stale_reasons
+                if reason != StaleReason.QUALITY_FAILED.value
+            ]
+        elif StaleReason.QUALITY_FAILED.value not in unit.stale_reasons:
+            unit.stale_reasons.append(StaleReason.QUALITY_FAILED.value)
+    return project
+
+
 def units_to_queue(units: Iterable[DubUnit]) -> list:
-    """把 v2 单元还原为旧队列；用于旧 align/render 兼容路径。"""
+    """把 v3 单元还原为旧队列；用于旧 align/render 兼容路径。"""
     queue = []
     for unit in units:
         item = copy.deepcopy(unit.legacy_payload)
@@ -240,11 +277,18 @@ def plan_to_queue(project: DubProject, plan) -> list:
         ).hexdigest()[:16]
         item["filename"] = str(old_output.parent / f"smart-{index}-{digest}.wav")
         if item.get("role") == "clone" or item.get("ref_wav"):
-            item["ref_wav"] = str(old_output.parent / f"clone-smart-{index}.wav")
+            item["ref_wav"] = str(
+                old_output.parent
+                / f"clone-smart-{index}-{item['start_time_source']}-{item['end_time_source']}.wav"
+            )
         rows.append(item)
 
     # Limited preview plans must not silently drop the untouched tail.
     rows.extend(units_to_queue(unit for unit in project.units if unit.id not in covered))
     for index, item in enumerate(rows):
         item["line"] = index + 1
+        # Every materialized row must say exactly which immutable source units
+        # it covers.  This makes many-to-one segmentation resumable without
+        # ever falling back to positional source/target pairing.
+        item.setdefault("source_unit_ids", [item["dub_unit_id"]])
     return rows

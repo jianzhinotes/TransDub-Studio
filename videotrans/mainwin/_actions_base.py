@@ -44,6 +44,8 @@ class WinActionBase:
     retry_queue_mp4: List[InputFile] = field(default_factory=list, init=False)
     # 保存原始的 uuid:mp4 信息，用于出错重试
     uuid_queue_mp4: Dict = field(default_factory=dict, init=False)
+    # 实际成品目录：与上面的重试输入目录分开保存，避免界面把父目录误当成成品目录。
+    uuid_output_dirs: Dict = field(default_factory=dict, init=False)
     # Flow UI 消息镜像回调：update_data 收到的每条消息（含 only_one uito 通道）都会转发
     flow_observer: Optional[Any] = field(default=None, init=False)
     # 仅由 Flow UI 的一键入口开启；经典高级模式保持原有人工校对行为。
