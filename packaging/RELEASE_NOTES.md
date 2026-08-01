@@ -1,42 +1,45 @@
-## TransDub Studio v1.1.0 — Smart long-video dubbing orchestration
+## TransDub Studio v1.1.1 — More natural, speaker-stable Chinese dubbing
 
-This release turns TransDub Studio into an open-source, local-first Chinese video dubbing and
-bilingual-subtitle studio. Create either a Chinese-dubbed version or an original-audio video with
-English-above-Chinese bilingual subtitles. ASR, translation/LLM and TTS models remain replaceable backends.
+This maintenance release improves the full local Chinese-dubbing path for real long-form interviews.
+It keeps ASR, translation/LLM and TTS as replaceable backends, while making their handoff more
+consistent, recoverable and easier to verify.
 
 ### Highlights
 
-- One-click default workflow covering recognition, whole-context translation, semantic
-  re-segmentation, target-duration planning, dubbing, quality checks, alignment and rendering.
-- Resumable smart-plan checkpoints and cache-safe segment recovery for interrupted long videos.
-- F5-TTS source-timeline reference extraction, speaker-aware references and ASR-verified Chinese
-  resume anchors to reduce copied English and speaker swaps.
-- High-risk preflight samples plus batch and per-clip language gates, with local repair of only the
-  affected segments.
-- Apple Silicon low-memory lifecycle management and automatic local F5 service recovery.
-- A responsive Dubbing Studio for long videos, with deferred waveform work, smart-plan inspection
-  and explicit A/B candidate synthesis.
-- Versioned `.tdproj` v3 project state, candidate history and quality reports.
-- A first-class original-audio bilingual-subtitle route that skips TTS entirely, renders a readable
-  Bilibili-oriented hard-subtitle preset, and keeps the source soundtrack intact.
-- Output-folder and recent-task recovery now point directly to each finished video.
 
-## TransDub Studio v1.1.0 — 中文长视频智能配音编排
+- **Speaker identity contract.** Each reliable voice cluster keeps a verified reference bank;
+  generated clips are checked against the intended speaker so a plausible but wrong voice does not
+  silently pass.
+- **Chinese-first F5-TTS route.** Stable Chinese conditioning anchors preserve a speaker's identity
+  across lines. Source-language rhythm is now optional prosody guidance instead of a continual
+  phonetic driver, which reduces English leakage in Chinese output.
+- **Safer semantic handoff.** Clause-aware segmentation, normalized numbers/units and stronger
+  translation alignment keep technical statements and short continuation phrases together before
+  synthesis.
+- **Focused repair, not reruns.** Preflight checks, atomic per-clip verification checkpoints and a
+  repair queue preserve good work while isolating mixed-language, truncated or mismatched clips.
+- **Dialogue-first finishing.** Background music/effects are ducked only during dialogue, with
+  clipping-safe gain and a diagnostic mix report.
+- **Better resource behavior.** Apple Silicon and local F5 service lifecycle controls reduce peak
+  memory pressure and make long jobs resume more predictably after interruption.
+- **Product demo.** The README now includes an inline 50-second, sound-on AI Chinese-dubbing demo,
+  with a separate full-screen player.
 
-这一版将 TransDub Studio 明确升级为开源、本地优先的中文视频配音与双语字幕工作台：可生成中文配音版，
-也可保留原声、生成英文在上中文在下的双语字幕版；语音识别、翻译/LLM 和 TTS 模型都只是可替换后端。
+## TransDub Studio v1.1.1 — 更自然、音色更稳定的中文配音
+
+这一补丁版聚焦真实长访谈的本地中文配音链路。识别、翻译/LLM、TTS 仍是可替换后端，
+但它们之间的衔接、恢复和验收更加稳定、可追溯。
 
 ### 主要更新
 
-- 默认一键完成识别、全文翻译、语义重分段、目标时长编排、配音、质检、对齐和合成。
-- 智能编排断点与安全缓存恢复，长视频中断后不再从头生成。
-- F5-TTS 按原始时间轴裁剪参考、按说话人选参考，并使用 ASR 验收过的中文成品恢复缺失片段，减少夹杂英文和人物音色互换。
-- 生成前高风险预飞、批量加逐段语言门禁，只对问题片段进行局部返工。
-- Apple Silicon 低内存错峰加载与 F5 本地服务自动恢复。
-- 长视频配音工作台延迟加载重型波形，支持智能方案检查和显式 A/B 配音对比。
-- `.tdproj` v3 工程状态、候选历史和质量报告。
-- 新增一级成片类型「保留原声 + 中英文双语字幕」：完全跳过 TTS，使用适合 B 站长访谈的双语硬字幕样式。
-- 输出目录和最近任务恢复会直接定位每个视频的真实成品目录。
+
+- **说话人身份契约。** 每个可靠声纹簇保留已核验的参考库；生成音频会与目标说话人交叉检查，避免“听着通顺、人物却错了”的片段混入成片。
+- **中文优先 F5-TTS。** 用稳定的中文音色锚点保持同一人物跨句一致；原声只作为可选韵律参考，不再持续驱动中文音素，显著减少英文夹杂。
+- **更稳的语义交接。** 句法续句合并、数字/单位标准化和翻译对齐校验，让技术表述与短尾句在合成前保持完整。
+- **局部返工而非整片重跑。** 预飞、逐段原子质检断点与返工队列会保留已通过结果，只隔离中英混杂、截断或内容不符的片段。
+- **对白优先混音。** 对话出现时才压低音乐/环境声，并加入削波保护和可诊断的混音报告。
+- **更好的资源表现。** Apple Silicon 与本地 F5 服务的生命周期控制降低峰值内存压力，也让中断后的长任务更可靠地恢复。
+- **产品演示。** README 现已内嵌 50 秒有声 AI 中文配音演示，同时保留全屏播放器。
 
 ---
 
