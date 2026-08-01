@@ -803,6 +803,30 @@ def test_legacy_tts_backend_preserves_joint_prosody_contract(tmp_path, monkeypat
     assert 'performance' in queued['prosody_plan']
 
 
+def test_planner_request_uses_exact_merged_source_reference(tmp_path):
+    queue = [
+        _row(1, '第一句。', 1000, 2200, ref='First fragment.'),
+        _row(2, '第二句。', 2200, 4200, ref='Second fragment.'),
+    ]
+    project = _project(queue)
+    planner = JointDubPlanner()
+    plan = planner.optimize(project, limit=None)
+    segment = plan.segments[0]
+    candidate = next(
+        value for value in segment.text_candidates
+        if value.id == segment.selected_text_candidate_id)
+    unit_map = {unit.id: unit for unit in project.units}
+
+    request = planner._request(
+        project, segment, candidate, 1, tmp_path, unit_map)
+
+    assert request.legacy_payload['ref_text'] == segment.source_text
+    assert request.legacy_payload['start_time_source'] == segment.start_ms
+    assert request.legacy_payload['end_time_source'] == segment.end_ms
+    assert request.legacy_payload['ref_wav'] == ''
+    assert request.legacy_payload['speaker_id'] == segment.speaker_id
+
+
 def test_legacy_tts_backend_repairs_expired_clone_reference(tmp_path, monkeypatch):
     source = tmp_path / 'source.wav'
     with wave.open(str(source), 'wb') as output:

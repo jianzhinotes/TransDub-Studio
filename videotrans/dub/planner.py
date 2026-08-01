@@ -192,6 +192,17 @@ class JointDubPlanner:
 
     def _request(self, project, segment, candidate, attempt, candidate_dir, unit_map):
         payload = copy.deepcopy(unit_map[segment.unit_ids[0]].legacy_payload)
+        # A planned segment may merge several legacy subtitle rows.  Reusing the
+        # first row's reference text/range pairs a long Chinese candidate with a
+        # short, mismatched English clip and can copy its tail.  Bind cloning to
+        # the exact immutable source span owned by the planned segment.
+        payload.update({
+            "ref_text": segment.source_text,
+            "ref_wav": "",
+            "start_time_source": segment.start_ms,
+            "end_time_source": segment.end_ms,
+            "speaker_id": segment.speaker_id,
+        })
         output = self._output_path(candidate_dir, segment, candidate, attempt)
         request_id = f"{segment.id}|{candidate.id}|{attempt}"
         return SynthesisRequest(
