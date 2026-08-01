@@ -187,3 +187,10 @@ def test_voice_reload_does_not_replace_recent_user_selection(qapp):
     assert page.tts_card.current_secondary() == 'zh-CN-test-voice'
     page.deleteLater()
     qapp.processEvents()
+
+
+def test_dubbed_delivery_never_defaults_to_no_voice(qapp):
+    from videotrans.flowui.config_page import ConfigPage
+
+    assert ConfigPage._preferred_dubbing_voice(['No', 'clone', 'reference.wav']) == 'clone'
+    assert ConfigPage._preferred_dubbing_voice(['No', 'zh-CN-XiaoxiaoNeural']) == 'zh-CN-XiaoxiaoNeural'

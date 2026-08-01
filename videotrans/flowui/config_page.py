@@ -338,9 +338,25 @@ class ConfigPage(QWidget):
                 or request_serial != self._voice_request_serial):
             return
         selected = self.tts_card.current_secondary()
-        preferred = selected if selected in roles else params.get('voice_role')
+        preferred = selected if selected in roles and selected not in ('No', '', ' ') else None
+        if not preferred:
+            preferred = self._preferred_dubbing_voice(roles)
         self.tts_card.set_secondary_items(roles, preferred)
         self._check_langs()
+
+    @staticmethod
+    def _preferred_dubbing_voice(roles):
+        """Choose a safe *dubbing* default, never the legacy No sentinel."""
+        roles = [str(role) for role in (roles or [])]
+        saved = params.get('voice_role')
+        if saved in roles and saved not in ('No', '', ' '):
+            return saved
+        # F5-style local backends expose clone alongside reference voices.
+        # For interview dubbing it is the best no-setup default: the source
+        # speaker becomes the reference instead of an unrelated stock voice.
+        if 'clone' in roles:
+            return 'clone'
+        return next((role for role in roles if role not in ('No', '', ' ')), 'No')
 
     def _check_langs(self):
         from videotrans import recognition, tts
