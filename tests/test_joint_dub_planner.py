@@ -827,6 +827,28 @@ def test_planner_request_uses_exact_merged_source_reference(tmp_path):
     assert request.legacy_payload['speaker_id'] == segment.speaker_id
 
 
+def test_planner_localizes_chinese_spoken_terms_without_changing_display_text(
+        tmp_path):
+    project = _project([
+        _row(1, 'SpaceX 使用 V3 卫星。', 0, 2600,
+             ref='SpaceX uses V3 satellites.'),
+    ])
+    planner = JointDubPlanner()
+    plan = planner.optimize(project, limit=None)
+    segment = plan.segments[0]
+    candidate = next(
+        value for value in segment.text_candidates
+        if value.id == segment.selected_text_candidate_id)
+    request = planner._request(
+        project, segment, candidate, 1, tmp_path,
+        {unit.id: unit for unit in project.units},
+    )
+
+    assert 'SpaceX' in request.settings['display_text']
+    assert 'V3' in request.settings['display_text']
+    assert request.text == '太空探索公司使用第三代卫星。'
+
+
 def test_legacy_tts_backend_repairs_expired_clone_reference(tmp_path, monkeypatch):
     source = tmp_path / 'source.wav'
     with wave.open(str(source), 'wb') as output:

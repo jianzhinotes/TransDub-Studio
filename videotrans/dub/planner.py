@@ -205,11 +205,16 @@ class JointDubPlanner:
         })
         output = self._output_path(candidate_dir, segment, candidate, attempt)
         request_id = f"{segment.id}|{candidate.id}|{attempt}"
+        spoken_text = candidate.text
+        target_language = str(project.target_language or "").lower()
+        if target_language.startswith("zh") or "中文" in target_language:
+            from .llm_candidates import localize_chinese_spoken_terms
+            spoken_text = localize_chinese_spoken_terms(spoken_text)
         return SynthesisRequest(
             id=request_id,
             segment_id=segment.id,
             text_candidate_id=candidate.id,
-            text=candidate.text,
+            text=spoken_text,
             output_path=str(output),
             language=project.target_language,
             speaker_id=segment.speaker_id,
@@ -221,6 +226,7 @@ class JointDubPlanner:
                     "reference_mode", REFERENCE_MODE_HYBRID),
                 "target_duration_ms": max(segment.end_ms - segment.start_ms, 1),
                 "fit_to_slot": True,
+                "display_text": candidate.text,
             },
         )
 
