@@ -560,14 +560,12 @@ class TransCreate(BaseTask):
                 from videotrans.process.prepare_audio import built_speakers as _run_speakers
                 del kw['is_cuda']
                 if auto_identity and not self.cfg.enable_diariz:
-                    # Unlimited clustering badly over-splits long interviews
-                    # when the same person changes pace or emotion.  Three is
-                    # a practical default for host/guest/co-host; users who
-                    # enable diarization explicitly still control the limit.
-                    kw['num_speakers'] = max(
-                        2,
-                        int(settings.get("smart_dubbing_max_speakers", 3) or 3),
-                    )
+                    # Smart mode has no user-specified speaker count.  Do not
+                    # inherit the old fixed “3 speakers” default: it turns a
+                    # single presenter with a few noisy cuts into fake people.
+                    # The contract layer below collapses only transient labels
+                    # while retaining substantial genuinely distinct speakers.
+                    kw['num_speakers'] = -1
                 else:
                     kw['num_speakers'] = (
                         -1 if self.max_speakers < 1 else self.max_speakers

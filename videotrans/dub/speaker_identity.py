@@ -15,8 +15,13 @@ from pathlib import Path
 from typing import Iterable
 
 
-CONTRACT_VERSION = "speaker-identity-v1"
+CONTRACT_VERSION = "speaker-identity-v2"
 CONTRACT_FILE = "speaker_identity_contract.json"
+# A label with only a few seconds of material in a long clip is commonly a
+# diarization boundary/noise false positive.  It cannot supply a reliable
+# clone reference and should not stop an otherwise single-speaker project.
+_TRANSIENT_SPEAKER_MAX_MS = 8_000
+_TRANSIENT_SPEAKER_MAX_SHARE = 0.05
 
 
 def _row_key(item: dict, index: int) -> str:
@@ -192,6 +197,45 @@ def _select_anchors(
     return anchors
 
 
+def _collapse_transient_explicit_speakers(
+        rows: list[dict], assignments: dict[int, str]
+) -> tuple[dict[int, str], list[str]]:
+    """Merge clearly transient diarization labels into the dominant speaker.
+
+    This only applies when every non-dominant label is both short in absolute
+    time and under five percent of clone speech.  A real interviewer/co-host
+    with meaningful speaking time remains a separate identity contract.
+    """
+    durations = {}
+    for index, speaker_id in assignments.items():
+        item = rows[index]
+        start_ms = int(item.get(
+            "start_time_source", item.get("start_time", 0)) or 0)
+        end_ms = int(item.get(
+            "end_time_source", item.get("end_time", 0)) or 0)
+        durations[speaker_id] = durations.get(speaker_id, 0) + max(end_ms - start_ms, 0)
+    if len(durations) <= 1:
+        return assignments, []
+    total_ms = sum(durations.values())
+    if total_ms <= 0:
+        return assignments, []
+    dominant = max(durations, key=durations.get)
+    transient = [
+        speaker_id for speaker_id, duration_ms in durations.items()
+        if speaker_id != dominant
+        and duration_ms <= _TRANSIENT_SPEAKER_MAX_MS
+        and duration_ms / total_ms <= _TRANSIENT_SPEAKER_MAX_SHARE
+    ]
+    # Never collapse a mix of a transient artifact plus a substantial second
+    # person.  This guard protects genuine interviews.
+    if not transient or len(transient) != len(durations) - 1:
+        return assignments, []
+    return {
+        index: (dominant if speaker_id in transient else speaker_id)
+        for index, speaker_id in assignments.items()
+    }, transient
+
+
 def _apply_contract(rows: list[dict], payload: dict) -> None:
     assignments = payload.get("assignments") or {}
     speakers = payload.get("speakers") or {}
@@ -302,6 +346,13 @@ def prepare_speaker_contract(
             fallback_id = next(iter(explicit.values()), "spk0")
             for index in clone_indices:
                 assignments.setdefault(index, fallback_id)
+
+    assignments, collapsed = _collapse_transient_explicit_speakers(rows, assignments)
+    if collapsed:
+        method = f"{method}_transient_collapsed"
+        unresolved_reason = (
+            "merged transient diarization labels into the dominant speaker: "
+            + ", ".join(collapsed))
 
     anchors = _select_anchors(rows, assignments, references)
     durations = {}

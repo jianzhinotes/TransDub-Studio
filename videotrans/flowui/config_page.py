@@ -465,6 +465,11 @@ class ConfigPage(QWidget):
                 # 在缓存中存在 instrument 轨时意外参与最终混音。
                 main.embed_bgm.setChecked(False)
         main.clear_cache.setChecked(self.fresh_run.isChecked())
+        # 简洁智能页没有暴露“指定说话人数”。绝不能继承经典页某次
+        # 手工设定的 2/3 人限制，否则单人视频会被强行拆成多个身份。
+        # clone 模式仍会按需要走自动身份识别，但不再携带陈旧的硬限制。
+        main.enable_diariz.setChecked(False)
+        main.nums_diariz.setCurrentIndex(0)
         main.app_mode = 'biaozhun'
         return True
 

@@ -75,6 +75,25 @@ def test_explicit_diarization_is_authoritative(tmp_path, monkeypatch):
     assert {row["speaker_id"] for row in rows[2:]} == {"host"}
 
 
+def test_tiny_explicit_diarization_artifacts_merge_into_single_presenter(tmp_path):
+    source = _source(tmp_path / "source.wav")
+    rows = _rows()
+    for row in rows:
+        row["speaker_id"] = "presenter"
+    # A 1.5-second false-positive label amid 30 seconds of the presenter must
+    # not fail clone preflight for lack of its own reference anchor.
+    rows[-1]["speaker_id"] = "noise"
+    rows[-1]["start_time"] = rows[-1]["start_time_source"] = 30_000
+    rows[-1]["end_time"] = rows[-1]["end_time_source"] = 31_500
+
+    report = prepare_speaker_contract(
+        rows, source_audio=source, work_dir=tmp_path / "contract")
+
+    assert report["status"] == "ready"
+    assert report["method"] == "explicit_transient_collapsed"
+    assert set(row["speaker_id"] for row in rows) == {"presenter"}
+
+
 def test_user_or_curated_identity_anchor_is_not_replaced(tmp_path):
     source = _source(tmp_path / "source.wav")
     curated = _source(tmp_path / "curated-musk.wav", seconds=8)
