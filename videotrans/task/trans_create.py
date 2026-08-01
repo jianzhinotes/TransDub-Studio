@@ -1768,17 +1768,25 @@ class TransCreate(BaseTask):
                     out=self.cfg.cache_folder + "/bgm_file_extend.wav")
                 self.cfg.background_music = self.cfg.cache_folder + "/bgm_file_extend.wav"
 
-            # 背景音频和配音合并
-            cmd = ['-y',
-                   '-i', os.path.basename(self.cfg.target_wav),
-                   '-i', self.cfg.background_music,
-                   '-filter_complex', "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2",
-                   '-ac', '2',
-                   '-c:a', 'pcm_s16le',
-                   "lastend.wav"
-                   ]
-            runffmpeg(cmd, cmd_dir=self.cfg.cache_folder)
-            self.cfg.target_wav = self.cfg.cache_folder + f"/lastend.wav"
+            # 手动音乐必须比对白低，并随对白动态压低。旧逻辑直接以 1.0
+            # 裸混音，会让配音变小、音乐盖住人声且叠加峰值削波。
+            from videotrans.dub.audio_mastering import mix_dialogue_background
+            output = self.cfg.cache_folder + "/lastend.wav"
+            report = mix_dialogue_background(
+                runffmpeg,
+                dialogue=self.cfg.target_wav,
+                background=self.cfg.background_music,
+                output=output,
+                cmd_dir=self.cfg.cache_folder,
+                background_volume=settings.get("dubbing_music_volume", 0.24),
+                threshold=settings.get("dubbing_duck_threshold", 0.025),
+                ratio=settings.get("dubbing_duck_ratio", 8.0),
+                limiter=settings.get("dubbing_mix_limiter", 0.891),
+                enable_ducking=str(settings.get(
+                    "dubbing_dialogue_ducking", True)).lower() != "false",
+            )
+            self._record_audio_mix("manual_music", report)
+            self.cfg.target_wav = output
         except Exception as e:
             logger.exception(f'添加背景音乐失败,静默跳过 {e}', exc_info=True)
 
@@ -1811,17 +1819,54 @@ class TransCreate(BaseTask):
                                                   vtime)
                 instrument_file = self.cfg.cache_folder + f"/instrument-concat.wav"
 
-            tmp_out_wav = Path(self.cfg.cache_folder + f'/{time.time()}-1.wav').as_posix()
-            tmp_volume = Path(self.cfg.cache_folder + f'/{time.time()}.wav').as_posix()
-            # 背景音量降低
-            self.convert_to_wav(instrument_file, tmp_volume, ["-filter:a", f"volume={self.cfg.backaudio_volume}"])
-            runffmpeg(['-y', '-i', os.path.basename(self.cfg.target_wav), '-i', os.path.basename(tmp_volume),
-                             '-filter_complex',
-                             "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2", '-ac', '2', "-b:a", "128k",
-                             '-c:a', 'pcm_s16le', os.path.basename(tmp_out_wav)], cmd_dir=self.cfg.cache_folder)
+            tmp_out_wav = Path(
+                self.cfg.cache_folder + f'/{time.time()}-1.wav').as_posix()
+            from videotrans.dub.audio_mastering import mix_dialogue_background
+            report = mix_dialogue_background(
+                runffmpeg,
+                dialogue=self.cfg.target_wav,
+                background=instrument_file,
+                output=tmp_out_wav,
+                cmd_dir=self.cfg.cache_folder,
+                background_volume=self.cfg.backaudio_volume,
+                threshold=settings.get("dubbing_duck_threshold", 0.025),
+                ratio=settings.get("dubbing_duck_ratio", 8.0),
+                limiter=settings.get("dubbing_mix_limiter", 0.891),
+                enable_ducking=str(settings.get(
+                    "dubbing_dialogue_ducking", True)).lower() != "false",
+            )
+            self._record_audio_mix("separated_background", report)
             shutil.copy2(tmp_out_wav, self.cfg.target_wav)
         except Exception as e:
             logger.exception(f'重新嵌入分离的背景音失败 {e}', exc_info=True)
+
+    def _record_audio_mix(self, stage: str, report: dict) -> None:
+        """Persist mastering decisions so noisy outputs are diagnosable."""
+        try:
+            from videotrans.dub.audio_mastering import MIX_POLICY_VERSION
+            from videotrans.dub.store import atomic_write_json
+
+            reports = list(getattr(self, "_audio_mix_reports", []) or [])
+            reports.append({"stage": str(stage), **dict(report or {})})
+            self._audio_mix_reports = reports
+            payload = {"policy_version": MIX_POLICY_VERSION, "stages": reports}
+            destinations = [
+                Path(self.cfg.cache_folder) / "audio_mix_report.json",
+                Path(self.cfg.target_dir) / "audio_mix_report.json",
+            ]
+            try:
+                from videotrans.task.project import project_dir_for
+                destinations.append(
+                    Path(project_dir_for(
+                        self.cfg.target_dir, self.cfg.noextname))
+                    / "audio_mix_report.json"
+                )
+            except Exception:
+                pass
+            for destination in destinations:
+                atomic_write_json(destination, payload)
+        except Exception as error:
+            logger.debug("保存智能混音报告失败，忽略: %s", error)
 
     # 处理所需字幕
     def _process_subtitles(self) -> Union[tuple[str, str], None]:

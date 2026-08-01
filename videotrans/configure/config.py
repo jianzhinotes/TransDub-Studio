@@ -422,6 +422,13 @@ class AppSettings:
             # 智能编排允许原始合成比时间槽最多长 15%，随后由高质量对齐收口。
             "f5tts_max_slot_ratio": 1.15,
             "f5tts_max_backend_speed": 1.3,
+            # 成片默认采用对白侧链压低背景，并在 -1 dBFS 左右限制峰值。
+            # 手动音乐比已分离的原片音乐更容易盖住对白，因此使用更低默认值。
+            "dubbing_dialogue_ducking": True,
+            "dubbing_music_volume": 0.24,
+            "dubbing_duck_threshold": 0.025,
+            "dubbing_duck_ratio": 8.0,
+            "dubbing_mix_limiter": 0.891,
             "Faster_Whisper_XXL": "",
             "Whisper_cpp": "",
             "Whisper_cpp_models": Whisper_cpp_models,

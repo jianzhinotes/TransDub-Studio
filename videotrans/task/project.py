@@ -6,6 +6,7 @@
   dub_project.json 联合规划数据（单元、候选、质量报告；第一阶段与 queue 同步）
   run_state.json  各阶段开始/完成/失败/中断状态（任务开始即创建）
   quality_manifest.json 逐段内容寻址质量检查点
+  audio_mix_report.json 对白优先混音策略、回退和峰值保护报告（成片后写入）
   queue_tts.json 旧流水线兼容数据（filename 相对化为 dubb/xxx.wav）
   dubb/*.wav     逐行配音片段（align 从这些重新拼接对齐，不依赖预拼 target_wav）
   novoice.mp4    无声视频（align 变速 + assembling 合成用）
