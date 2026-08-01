@@ -565,6 +565,7 @@ class F5TTS(GradioBase):
                 # buffers or MLX Metal allocations.
                 self._stop_local_service()
             self._verify_chinese_outputs()
+            self._verify_speaker_identity_outputs()
         finally:
             if serialize_validator:
                 self._stop_local_service()
@@ -573,6 +574,48 @@ class F5TTS(GradioBase):
     def _latin_words(text: str) -> List[str]:
         from videotrans.dub.chinese_quality import latin_words
         return latin_words(text)
+
+    def _verify_speaker_identity_outputs(self) -> None:
+        if str(settings.get("f5tts_speaker_identity_gate", True)).lower() == "false":
+            return
+        from videotrans.dub.store import atomic_write_json
+        from videotrans.dub.voice_identity import verify_voice_identity
+
+        report = verify_voice_identity(
+            self.queue_tts,
+            min_similarity=float(settings.get(
+                "f5tts_speaker_similarity_min", 0.30) or 0.30),
+            cross_speaker_margin=float(settings.get(
+                "f5tts_cross_speaker_margin", 0.08) or 0.08),
+        )
+        first_output = next(
+            (item.get("filename") for item in self.queue_tts
+             if item.get("filename")),
+            "",
+        )
+        if first_output:
+            atomic_write_json(
+                Path(first_output).parent / "voice_identity.json", report
+            )
+        if report.get("status") == "unavailable":
+            logger.warning("F5-TTS 音色身份门禁不可用: %s", report.get("reason"))
+            return
+        failures = report.get("failures") or {}
+        if not failures:
+            if report.get("status") == "passed":
+                self.signal(text="F5-TTS 说话人音色一致性检查通过")
+            return
+        for item in self.queue_tts:
+            failure = failures.get(Path(str(item.get("filename") or "")).name)
+            if failure:
+                item["voice_identity_failure"] = failure
+                item["quality_status"] = "needs_review"
+        message = (
+            f"F5-TTS 音色身份门禁发现 {len(failures)} 段可能串用其他说话人音色；"
+            "已保留音频并标记为局部返工，不会误当成合格成品。"
+        )
+        logger.error(message)
+        self.signal(text=message)
 
     def _has_unexpected_english(self, expected: str, transcript: str) -> bool:
         from videotrans.dub.chinese_quality import has_unexpected_english
@@ -1125,8 +1168,9 @@ class F5TTS(GradioBase):
             self.signal(text="F5-TTS 预飞合成完成，正在回读内容与重复度")
             model = self._new_validator()
             sample_transcripts = {}
+            validation_started = time.monotonic()
             try:
-                for idx, original, sample in samples:
+                for position, (idx, original, sample) in enumerate(samples, 1):
                     transcript = self._transcribe_one_for_validation(model, sample["filename"])
                     sample_transcripts[idx] = transcript
                     cjk_count = len(re.findall(r"[\u4e00-\u9fff]", transcript))
@@ -1136,6 +1180,10 @@ class F5TTS(GradioBase):
                         or self._has_pathological_repetition(transcript)
                     ):
                         failures.append((idx, transcript))
+                    self.signal(text=self._eta_text(
+                        "F5-TTS 预飞回读", position, len(samples),
+                        time.monotonic() - validation_started,
+                    ))
             finally:
                 model = None
                 gc.collect()

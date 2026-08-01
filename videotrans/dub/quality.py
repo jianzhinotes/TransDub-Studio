@@ -14,6 +14,9 @@ def evaluate_audio(segment, artifact, profile):
     leak = artifact.metadata.get("language_leak")
     if leak:
         failures.append("language_leak")
+    identity_failure = artifact.metadata.get("voice_identity_failure")
+    if identity_failure:
+        failures.append("speaker_identity_mismatch")
     if ratio > profile.max_stretch:
         failures.append("duration_overflow")
     elif ratio > profile.preferred_stretch:
@@ -29,5 +32,9 @@ def evaluate_audio(segment, artifact, profile):
             "window_ms": window_ms,
             "audio_duration_ms": artifact.duration_ms,
             "stretch_ratio": round(ratio, 4),
+            "speaker_similarity": (
+                identity_failure.get("similarity")
+                if isinstance(identity_failure, dict) else None
+            ),
         },
     )

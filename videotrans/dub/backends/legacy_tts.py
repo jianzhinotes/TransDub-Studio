@@ -121,6 +121,17 @@ class LegacyTTSBackend(DubbingBackend):
             except (OSError, json.JSONDecodeError):
                 leak_marks = {}
 
+        identity_failures = {}
+        identity_sidecar = sidecar.with_name("voice_identity.json")
+        if identity_sidecar.is_file():
+            try:
+                identity_report = json.loads(
+                    identity_sidecar.read_text(encoding="utf-8")
+                )
+                identity_failures = identity_report.get("failures") or {}
+            except (OSError, json.JSONDecodeError, AttributeError):
+                identity_failures = {}
+
         from pydub import AudioSegment
         artifacts = []
         for request in requests:
@@ -132,6 +143,9 @@ class LegacyTTSBackend(DubbingBackend):
                 path=str(path),
                 duration_ms=len(AudioSegment.from_file(path)),
                 backend=self.name,
-                metadata={"language_leak": leak_marks.get(path.name)},
+                metadata={
+                    "language_leak": leak_marks.get(path.name),
+                    "voice_identity_failure": identity_failures.get(path.name),
+                },
             ))
         return artifacts
