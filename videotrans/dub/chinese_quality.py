@@ -127,6 +127,20 @@ def _semantic_text(text: str) -> str:
         text,
     )
 
+    def mixed_unit_replacement(match: re.Match) -> str:
+        number = float(match.group(1).replace(",", ""))
+        multiplier = {"万": 10_000, "亿": 100_000_000}[match.group(2)]
+        return stash_number(_canonical_number(number * multiplier))
+
+    # ASR commonly writes spoken 一百万 as 100万 (and 一点五亿 as 1.5亿).
+    # Normalize the mixed notation before the generic Arabic/Chinese passes,
+    # otherwise it becomes two unrelated numeric tokens: 100 + 10000.
+    text = re.sub(
+        r"(\d[\d,]*(?:\.\d+)?)\s*([万亿])",
+        mixed_unit_replacement,
+        text,
+    )
+
     def chinese_replacement(match: re.Match) -> str:
         value = _chinese_number_value(match.group(0))
         return stash_number(value) if value is not None else match.group(0)

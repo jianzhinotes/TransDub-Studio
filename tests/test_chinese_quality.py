@@ -23,3 +23,17 @@ def test_changed_number_is_a_hard_failure():
     failures = hard_quality_failures("每平方米一千四百瓦", "每平方米250瓦")
 
     assert "numeric_content_mismatch" in failures
+
+
+def test_mixed_arabic_chinese_large_number_matches_spoken_form():
+    expected = "每年一百万吨左右"
+    transcript = "每年100万吨左右"
+
+    assert hard_quality_failures(expected, transcript) == []
+    assert chinese_similarity(expected, transcript) == 1.0
+
+
+def test_mixed_large_number_change_is_still_rejected():
+    failures = hard_quality_failures("每年一百万吨", "每年120万吨")
+
+    assert "numeric_content_mismatch" in failures

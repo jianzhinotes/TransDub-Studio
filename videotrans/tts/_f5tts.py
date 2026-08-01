@@ -41,7 +41,7 @@ class F5TTS(GradioBase):
     MASS_GATE_FAILURE_RATIO=0.10
     MASS_GATE_MIN_FAILURES=10
     PIPELINE_VERSION="quality-v9-speaker-identity-contract"
-    QUALITY_RULES_VERSION="zh-content-v4-number-equivalence"
+    QUALITY_RULES_VERSION="zh-content-v5-mixed-number-equivalence"
     VALIDATOR_BACKEND="faster-whisper-cpu"
     VALIDATOR_MODEL="large-v3-turbo"
     SERVICE_ERROR_MARKERS = (
