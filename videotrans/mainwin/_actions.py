@@ -752,6 +752,9 @@ class WinAction(WinActionBase):
             video_path = parts[2] if len(parts) > 2 and parts[2] else None
             source_wav = parts[3] if len(parts) > 3 and parts[3] else None
             source_language = parts[4] if len(parts) > 4 and parts[4] else None
+            translate_type = parts[5] if len(parts) > 5 and parts[5] else None
+            target_code = parts[6] if len(parts) > 6 and parts[6] else language
+            source_sub = parts[7] if len(parts) > 7 and parts[7] else None
             if video_path:
                 # Dubbing Studio：卡片+可编辑时间轴，等待用户确认后继续
                 from videotrans.component.timeline import DubbingStudioDialog
@@ -761,6 +764,9 @@ class WinAction(WinActionBase):
                     video_path=video_path,
                     source_wav=source_wav,
                     source_language=source_language,
+                    translate_type=(int(translate_type) if translate_type is not None else None),
+                    source_code=source_language, target_code=target_code,
+                    source_sub=source_sub,
                     parent=self.main
                 )
             else:

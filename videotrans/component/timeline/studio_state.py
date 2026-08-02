@@ -11,6 +11,7 @@ from videotrans.component.timeline import edit_logic
 
 class StudioState(QObject):
     textChanged = Signal(int)
+    sourceChanged = Signal(int)
     roleChanged = Signal(int)
     timesChanged = Signal(int)
     statusChanged = Signal(int)        # dubbing_s 或槽位时长变化
@@ -21,6 +22,7 @@ class StudioState(QObject):
         self._items = queue_tts
         self.duration_ms = max(int(duration_ms), 1)
         self._dirty = set()
+        self._source_dirty = set()
         self._stale_reasons = {
             idx: set(str(reason) for reason in (item.get('stale_reasons') or []))
             for idx, item in enumerate(queue_tts)
@@ -40,6 +42,23 @@ class StudioState(QObject):
         self._items[idx]['text'] = text
         self.textChanged.emit(idx)
         self._mark_dirty(idx, StaleReason.TRANSLATION_CHANGED.value)
+
+    def set_source_text(self, idx: int, text: str):
+        item = self._items[idx]
+        text = str(text or '').strip()
+        if str(item.get('ref_text') or '') == text:
+            return
+        item['ref_text'] = text
+        self._source_dirty.add(idx)
+        self.sourceChanged.emit(idx)
+
+    def source_dirty_indices(self) -> set:
+        return set(self._source_dirty)
+
+    def clear_source_dirty(self, idx: int):
+        if idx in self._source_dirty:
+            self._source_dirty.discard(idx)
+            self.sourceChanged.emit(idx)
 
     def set_role(self, idx: int, role: str):
         if self._items[idx].get('role') == role:

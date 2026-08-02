@@ -150,7 +150,8 @@ class Worker(QThread):
                         self._post(
                             text=(f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}'
                                   f'<|>{trk.cfg.name}<|>{trk.cfg.source_wav}'
-                                  f'<|>{trk.cfg.source_language_code}'),
+                                  f'<|>{trk.cfg.source_language_code}<|>{trk.cfg.translate_type}'
+                                  f'<|>{trk.cfg.target_language_code}<|>{trk.cfg.source_sub}'),
                             type='edit_dubbing')
                         self._post(tr('The subtitle editing interface is rendering'))
                         while app_cfg.task_countdown > 0:
@@ -256,7 +257,8 @@ class Worker(QThread):
                     self._post(
                         text=(f"{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}"
                               f"<|>{trk.cfg.name}<|>{trk.cfg.source_wav}"
-                              f"<|>{trk.cfg.source_language_code}"),
+                              f"<|>{trk.cfg.source_language_code}<|>{trk.cfg.translate_type}"
+                              f"<|>{trk.cfg.target_language_code}<|>{trk.cfg.source_sub}"),
                         type='edit_dubbing')
                     self._post(text=tr('The subtitle editing interface is rendering'))
                     while app_cfg.task_countdown > 0:

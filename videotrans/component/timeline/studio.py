@@ -76,7 +76,8 @@ class DubbingStudioDialog(QDialog):
 
     def __init__(self, parent=None, language=None, cache_folder=None,
                  video_path=None, source_wav=None, project_dir=None, embedded=False,
-                 source_language=None, auto_plan=False):
+                 source_language=None, auto_plan=False, translate_type=None,
+                 source_code=None, target_code=None, source_sub=None):
         super().__init__(parent)
         self.project_dir = project_dir
         self._project_mode = bool(project_dir)
@@ -98,6 +99,12 @@ class DubbingStudioDialog(QDialog):
             language = project.get('target_language_code') or language
             source_language = ((project.get('cfg') or {}).get('source_language_code')
                                or source_language)
+            translate_type = ((project.get('cfg') or {}).get('translate_type')
+                              if translate_type is None else translate_type)
+            source_code = ((project.get('cfg') or {}).get('source_language_code')
+                           or source_code or source_language)
+            target_code = ((project.get('cfg') or {}).get('target_language_code')
+                           or target_code or language)
             cache_folder = project_dir
             video_path = project.get('source_video') or video_path
             source_wav = str(Path(project_dir) / 'source.wav')
@@ -110,6 +117,10 @@ class DubbingStudioDialog(QDialog):
                     logger.warning(f'加载 queue_tts.json 失败: {e}')
         self.language = language
         self.source_language = source_language or 'auto'
+        self.source_code = source_code or self.source_language
+        self.target_code = target_code or language or 'zh-cn'
+        self.translate_type = translate_type
+        self.source_sub = source_sub or ''
         self.cache_folder = cache_folder
         self.video_path = video_path or ''
         self.project_manifest = project_manifest
@@ -330,6 +341,7 @@ class DubbingStudioDialog(QDialog):
         self.redub_queue.finished.connect(self._on_redub_finished)
 
         self.state.timesChanged.connect(self._on_state_times_changed)
+        self.state.sourceChanged.connect(self._on_source_changed)
         self._refresh_quality_summary()
 
         # 去抖重建定时器
@@ -461,6 +473,39 @@ class DubbingStudioDialog(QDialog):
         self.cards.scroll_to(idx)
 
     # ---- 编辑 ----
+    def _on_source_changed(self, _idx: int):
+        self._invalidate_continuous_preview()
+
+    def _retranslate_changed_sources(self) -> list:
+        """Translate edited source rows before any audio is allowed to continue."""
+        indices = sorted(self.state.source_dirty_indices())
+        if not indices:
+            return []
+        if self.translate_type is None:
+            raise RuntimeError('未找到翻译渠道，无法重译修改后的英文原文。')
+        from videotrans import translator
+        for idx in indices:
+            item = self.state.items[idx]
+            source = str(item.get('ref_text') or '').strip()
+            if not source:
+                raise RuntimeError(f'第 {item.get("line", idx + 1)} 段原文不能为空。')
+            result = translator.run(
+                translate_type=self.translate_type,
+                text_list=[{
+                    'text': source, 'line': item.get('line', idx + 1),
+                    'time': item.get('time', ''),
+                }],
+                source_code=self.source_code,
+                target_code=self.target_code,
+                is_test=True,
+            )
+            translated = str(result[0].get('text') if result else '').strip()
+            if not translated:
+                raise RuntimeError(f'第 {item.get("line", idx + 1)} 段重译结果为空。')
+            self.state.set_text(idx, translated)
+            self.state.clear_source_dirty(idx)
+        return indices
+
     def _on_times_edited(self, idx: int, start_ms: int, end_ms: int):
         self.state.set_times(idx, start_ms, end_ms)
         self.timeline.subtitle_track.set_items(self.state.items)
@@ -911,6 +956,23 @@ class DubbingStudioDialog(QDialog):
 
     # ---- 退出路径 ----
     def _continue_synthesis(self):
+        source_dirty = self.state.source_dirty_indices()
+        if source_dirty:
+            try:
+                changed = self._retranslate_changed_sources()
+            except Exception as error:
+                logger.exception('修改原文后的自动重译失败: %s', error, exc_info=True)
+                QMessageBox.warning(
+                    self, tr('Dubbing Studio'),
+                    f'原文已修改，但自动重译失败：{error}\n请检查翻译渠道后重试。')
+                return
+            for idx in changed:
+                self._on_redub_requested(idx)
+            QMessageBox.information(
+                self, tr('Dubbing Studio'),
+                f'已重译 {len(changed)} 段原文，并自动加入重配队列。\n'
+                '等待重配完成后，再点击“继续合成”。')
+            return
         quality_failed = self.state.quality_failed_indices()
         if quality_failed:
             QMessageBox.warning(

@@ -12,10 +12,10 @@ from videotrans.component.timeline.studio_state import StudioState
 
 def _queue():
     return [
-        {'text': 'a', 'role': 'r1', 'start_time': 0, 'end_time': 1000,
+        {'text': 'a', 'ref_text': 'source a', 'role': 'r1', 'start_time': 0, 'end_time': 1000,
          'start_time_source': 0, 'end_time_source': 1000,
          'startraw': '00:00:00,000', 'endraw': '00:00:01,000', 'dubbing_s': 1.0},
-        {'text': 'b', 'role': 'r1', 'start_time': 2000, 'end_time': 3000,
+        {'text': 'b', 'ref_text': 'source b', 'role': 'r1', 'start_time': 2000, 'end_time': 3000,
          'start_time_source': 2000, 'end_time_source': 3000,
          'startraw': '00:00:02,000', 'endraw': '00:00:03,000', 'dubbing_s': 0.5},
     ]
@@ -42,6 +42,21 @@ class TestStudioState:
         st.set_role(1, 'r2')
         assert st.items[1]['role'] == 'r2'
         assert st.dirty_indices() == {1}
+
+    def test_source_edit_is_separate_and_requires_retranslation(self):
+        st = StudioState(_queue(), 5000)
+        got = []
+        st.sourceChanged.connect(got.append)
+
+        st.set_source_text(0, 'corrected source')
+
+        assert st.items[0]['ref_text'] == 'corrected source'
+        assert got == [0]
+        assert st.source_dirty_indices() == {0}
+        assert not st.is_dirty(0)
+        st.clear_source_dirty(0)
+        assert got == [0, 0]
+        assert not st.source_dirty_indices()
 
     def test_set_times_syncs_fields_no_dirty(self):
         st = StudioState(_queue(), 5000)

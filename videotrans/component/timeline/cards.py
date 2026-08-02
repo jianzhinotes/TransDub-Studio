@@ -95,14 +95,15 @@ class SpeakerCard(QFrame):
         head.addWidget(self.status_label)
         layout.addLayout(head)
 
-        # 主体：原文（只读、暗色） | 译文（可编辑）
+        # 主体：原文（可编辑，修改后会重译） | 译文（可编辑）
         body = QHBoxLayout()
-        ref = QLabel(str(item.get('ref_text') or ''))
-        ref.setWordWrap(True)
-        ref.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        ref.setStyleSheet('color:#9AA7B4;')
-        ref.setToolTip(tr('Source text'))
-        body.addWidget(ref, stretch=1)
+        self.ref_edit = _CommitOnFocusOutEdit(
+            str(item.get('ref_text') or ''),
+            lambda t: self._state.set_source_text(self.idx, t))
+        self.ref_edit.setStyleSheet('color:#9AA7B4;')
+        self.ref_edit.setToolTip('原文英文（修改后点击继续，会自动重译并重配）')
+        self.ref_edit.setPlaceholderText('原文英文')
+        body.addWidget(self.ref_edit, stretch=1)
         self.text_edit = _CommitOnFocusOutEdit(
             str(item.get('text') or ''),
             lambda t: self._state.set_text(self.idx, t))
@@ -192,7 +193,13 @@ class SpeakerCard(QFrame):
                 tr('Auto-check heard unexpected speech in this line')
                 + f':\n{leak or failures or quality_status}')
         self.dirty_badge.setVisible(self._state.is_dirty(self.idx))
+        if self.idx in self._state.source_dirty_indices():
+            self.dirty_badge.setText('原文待重译')
+            self.dirty_badge.setVisible(True)
+        else:
+            self.dirty_badge.setText(tr('Needs re-dub'))
         self.text_edit.sync_text(str(item.get('text') or ''))
+        self.ref_edit.sync_text(str(item.get('ref_text') or ''))
 
 
 class SpeakerCardList(QScrollArea):
@@ -218,7 +225,7 @@ class SpeakerCardList(QScrollArea):
         self.setWidget(container)
 
         # 订阅 state：任何行级变更刷新对应卡
-        for sig in (state.textChanged, state.roleChanged,
+        for sig in (state.textChanged, state.sourceChanged, state.roleChanged,
                     state.timesChanged, state.statusChanged):
             sig.connect(self._refresh_card)
         state.dirtyChanged.connect(lambda idx, _d: self._refresh_card(idx))
