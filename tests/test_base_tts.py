@@ -91,6 +91,20 @@ class TestBaseTTSGetters:
         btts.pitch = "abc"
         assert btts.get_pitch() == 1.0
 
+    def test_clone_role_recovers_to_validated_reference_when_line_ref_is_missing(self, tmp_path):
+        reference = tmp_path / 'speaker.wav'
+        reference.write_bytes(b'wav-placeholder')
+        btts = BaseTTS(queue_tts=[{
+            'text': '你好', 'role': 'clone', 'ref_text': 'hello',
+        }])
+        btts.safe_ref_wav = str(reference)
+        btts.safe_ref_text = 'hello there'
+
+        ref_wav, ref_text = btts.get_ref_wav(btts.queue_tts[0])
+
+        assert ref_wav == str(reference)
+        assert ref_text == 'hello'
+
 
 class TestBaseTTSInitFields:
     def test_default_values(self):

@@ -451,11 +451,31 @@ class BaseTTS(BaseCon):
 
     # 返回参考音频和参考文本
     def get_ref_wav(self, item) -> Tuple[str, str]:
-        role = item['role']
+        role = str(item.get('role') or '')
         ref_wav, ref_text = None, None
         if role == 'clone':
-            ref_wav = item.get('ref_wav', '')
-            ref_text = item.get('ref_text').strip()
+            ref_text = str(item.get('ref_text') or '').strip()
+            # A resumed/redubbed queue can retain ``role=clone`` while its
+            # transient per-line reference path has disappeared.  Prefer the
+            # immutable speaker reference before declaring the role missing.
+            candidates = (
+                item.get('ref_wav'),
+                item.get('cluster_ref'),
+                item.get('speaker_identity_ref'),
+            )
+            ref_wav = next(
+                (str(path) for path in candidates if path and Path(str(path)).exists()),
+                None,
+            )
+            identity_required = bool(item.get('speaker_identity_required'))
+            if not ref_wav and not identity_required:
+                safe_ref = getattr(self, 'safe_ref_wav', None)
+                if safe_ref and Path(str(safe_ref)).exists():
+                    ref_wav = str(safe_ref)
+                    ref_text = ref_text or str(getattr(self, 'safe_ref_text', '') or '')
+                    logger.warning(
+                        'clone 行缺少逐句参考音频，已回退到已验收主参考: line=%s',
+                        item.get('line', '?'))
         elif role in self.roledict:
             if not isinstance(self.roledict[role],dict):
                 return ref_wav,ref_text
@@ -463,5 +483,9 @@ class BaseTTS(BaseCon):
             ref_wav = ROOT_DIR + f"/f5-tts/{role}"
 
         if not ref_wav or not Path(ref_wav).exists():
+            if role == 'clone':
+                raise RuntimeError(
+                    'clone 角色缺少可用参考音频；请重新执行识别/说话人音色预检，'
+                    '或先生成一段可用的中文音色锚点。')
             raise RuntimeError(tr('The role {} does not exist', role))
         return ref_wav, ref_text
