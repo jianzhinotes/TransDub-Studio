@@ -1,4 +1,5 @@
 # 执行单个视频翻译任务时 暂停等待
+import hashlib
 import json
 import time
 import traceback
@@ -16,6 +17,22 @@ from videotrans.util.tools import vail_file
 from videotrans.configure.excepts import DubbingTextReviewRequired
 
 
+def is_translated_subtitle_only(trk) -> bool:
+    """Return true for a translated video that deliberately has no TTS."""
+    return bool(
+        getattr(trk, 'should_trans', False)
+        and not getattr(trk, 'should_dubbing', False)
+        and getattr(trk, 'should_hebing', False)
+    )
+
+
+def _subtitle_signature(path: str) -> str:
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return ''
+
+
 def should_pause_for_subtitle_proof(trk) -> bool:
     """Whether a translated, non-dubbed video needs the subtitle editor.
 
@@ -25,9 +42,7 @@ def should_pause_for_subtitle_proof(trk) -> bool:
     before the final video was rendered.
     """
     return bool(
-        getattr(trk, 'should_trans', False)
-        and not getattr(trk, 'should_dubbing', False)
-        and getattr(trk, 'should_hebing', False)
+        is_translated_subtitle_only(trk)
         and getattr(getattr(trk, 'cfg', None), 'target_sub', '')
         and Path(trk.cfg.target_sub).is_file()
     )
@@ -194,6 +209,7 @@ class Worker(QThread):
             manual_proof = (
                 not trk.cfg.smart_orchestration
                 and float(settings.get('countdown_sec', 0)) > 0)
+            subtitle_only_translation = is_translated_subtitle_only(trk)
             # 原始语言字幕文件
             app_cfg.onlyone_source_sub = trk.cfg.source_sub
             # 目标语言字幕文件
@@ -208,7 +224,12 @@ class Worker(QThread):
             if self._exit(): return
             self._post(text=Path(trk.cfg.source_sub).read_text(encoding='utf-8'), type='replace_subtitle')
 
-            if manual_proof:
+            if manual_proof or subtitle_only_translation:
+                # A source edit invalidates the previous target translation;
+                # remember the exact file so an unchanged source can still
+                # resume its translation checkpoint without extra work.
+                source_before = (_subtitle_signature(trk.cfg.source_sub)
+                                 if subtitle_only_translation else '')
                 app_cfg.set_countdown(86400)
                 # 等待修改识别出的字幕
                 self._post(text=trk.cfg.source_sub, type='edit_subtitle_source')
@@ -217,6 +238,12 @@ class Worker(QThread):
                     time.sleep(1)
                     app_cfg.set_countdown(app_cfg.task_countdown - 1)
                     if self._exit(): return
+                if (subtitle_only_translation
+                        and _subtitle_signature(trk.cfg.source_sub) != source_before):
+                    # ``trans()`` otherwise may accept an old target SRT with
+                    # the same row/timeline shape.  Removing it forces a new
+                    # translation against the edited English text.
+                    Path(trk.cfg.target_sub).unlink(missing_ok=True)
 
             if trk.should_trans:
                 app_cfg.onlyone_trans = True

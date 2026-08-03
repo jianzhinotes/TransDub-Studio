@@ -4,7 +4,8 @@ from videotrans.mainwin._actions import WinAction
 
 
 def test_translated_subtitle_only_job_opens_proof(tmp_path):
-    from videotrans.task.only_one import should_pause_for_subtitle_proof
+    from videotrans.task.only_one import (
+        is_translated_subtitle_only, should_pause_for_subtitle_proof)
 
     target = tmp_path / 'zh.srt'
     target.write_text('1\n00:00:00,000 --> 00:00:01,000\n你好\n', encoding='utf-8')
@@ -14,19 +15,23 @@ def test_translated_subtitle_only_job_opens_proof(tmp_path):
         should_hebing=True,
         cfg=SimpleNamespace(target_sub=str(target)),
     )
+    assert is_translated_subtitle_only(trk) is True
     assert should_pause_for_subtitle_proof(trk) is True
 
 
 def test_dubbed_or_untranslated_job_skips_subtitle_only_proof(tmp_path):
-    from videotrans.task.only_one import should_pause_for_subtitle_proof
+    from videotrans.task.only_one import (
+        is_translated_subtitle_only, should_pause_for_subtitle_proof)
 
     target = tmp_path / 'zh.srt'
     target.write_text('1\n00:00:00,000 --> 00:00:01,000\n你好\n', encoding='utf-8')
     base = dict(should_hebing=True, cfg=SimpleNamespace(target_sub=str(target)))
-    assert should_pause_for_subtitle_proof(SimpleNamespace(
-        should_trans=True, should_dubbing=True, **base)) is False
-    assert should_pause_for_subtitle_proof(SimpleNamespace(
-        should_trans=False, should_dubbing=False, **base)) is False
+    dubbed = SimpleNamespace(should_trans=True, should_dubbing=True, **base)
+    untranslated = SimpleNamespace(should_trans=False, should_dubbing=False, **base)
+    assert is_translated_subtitle_only(dubbed) is False
+    assert is_translated_subtitle_only(untranslated) is False
+    assert should_pause_for_subtitle_proof(dubbed) is False
+    assert should_pause_for_subtitle_proof(untranslated) is False
 
 
 def test_no_voice_skips_tts_provider_validation(monkeypatch):
