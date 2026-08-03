@@ -742,7 +742,7 @@ class WinAction(WinActionBase):
         # 这里不再弹窗；经典模式继续走下面的弹窗
         if getattr(app_cfg, 'flow_inline_edit', False) and d['type'] in (
                 'edit_dubbing', 'edit_subtitle_source', 'edit_recogn2_subtitle',
-                'edit_subtitle_target'):
+                'edit_subtitle_target', 'edit_subtitle_bilingual'):
             return
 
         if d['type'] == 'edit_dubbing':
@@ -824,6 +824,18 @@ class WinAction(WinActionBase):
                 parent=self.main
 
             )
+            if dialog.exec():
+                self.set_djs_timeout()
+            else:
+                self.update_status('stop')
+            return
+        if d['type'] == 'edit_subtitle_bilingual':
+            # 经典页面没有内嵌工作区时，仍要给双字幕任务一个可恢复的
+            # 编辑入口；目标字幕编辑器只改译文，不触碰时间轴。
+            from videotrans.component.onlyone_set_recogn2 import EditRecognResultDialog2
+            dialog = EditRecognResultDialog2(
+                target_sub=app_cfg.onlyone_target_sub,
+                parent=self.main)
             if dialog.exec():
                 self.set_djs_timeout()
             else:

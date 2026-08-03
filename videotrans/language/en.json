@@ -927,6 +927,8 @@
     "flow_proof_next": "Save & Continue",
     "flow_proof_next_source": "Save & Continue Translation",
     "flow_proof_next_target": "Save & Continue Dubbing",
+    "flow_proof_next_subtitle": "Save & Continue Subtitle Video",
+    "flow_subtitle_review": "Bilingual subtitles are ready. Review the translation, or save and continue to render.",
     "flow_voice_required": "Chinese dubbing needs a Chinese voice. Wait for the voice list to load, then choose one before starting.",
     "flow_translation_to_dubbing": "Translation complete. Preparing Chinese dubbing…",
     "flow_translation_to_render": "Translation complete. Rendering the subtitled video…",

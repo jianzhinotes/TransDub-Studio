@@ -16,6 +16,23 @@ from videotrans.util.tools import vail_file
 from videotrans.configure.excepts import DubbingTextReviewRequired
 
 
+def should_pause_for_subtitle_proof(trk) -> bool:
+    """Whether a translated, non-dubbed video needs the subtitle editor.
+
+    The old pipeline only opened ``edit_subtitle_target`` inside the dubbing
+    branch.  A bilingual subtitle-only job therefore went straight from
+    translation to FFmpeg, leaving no way to correct the translated lines
+    before the final video was rendered.
+    """
+    return bool(
+        getattr(trk, 'should_trans', False)
+        and not getattr(trk, 'should_dubbing', False)
+        and getattr(trk, 'should_hebing', False)
+        and getattr(getattr(trk, 'cfg', None), 'target_sub', '')
+        and Path(trk.cfg.target_sub).is_file()
+    )
+
+
 class Worker(QThread):
     uito = Signal(str, SignMsg)
 
@@ -210,6 +227,24 @@ class Worker(QThread):
                 run_stage('translate', trk.trans)
 
             if self._exit(): return
+
+            # Subtitle-only translated videos (including the bilingual
+            # delivery mode) must have the same recoverable proof step as a
+            # dubbed video.  Previously this editor lived only inside the
+            # ``should_dubbing`` branch, so the job appeared to complete but
+            # its translation could not be edited before assembly.
+            if should_pause_for_subtitle_proof(trk):
+                self._post(text=tr('flow_subtitle_review'), type='logs')
+                self._post(text=Path(trk.cfg.target_sub).read_text(
+                    encoding='utf-8', errors='ignore'), type='replace_subtitle')
+                app_cfg.set_countdown(86400)
+                self._post(text=trk.cfg.target_sub,
+                           type='edit_subtitle_bilingual')
+                self._post(text=tr('The subtitle editing interface is rendering'))
+                while app_cfg.task_countdown > 0:
+                    if self._exit(): return
+                    time.sleep(1)
+                    app_cfg.set_countdown(app_cfg.task_countdown - 1)
 
             # 需要配音时
             if trk.should_dubbing:

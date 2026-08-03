@@ -84,6 +84,7 @@ class WorkspacePage(QWidget):
         t = d.get('type')
         # 分步内嵌校对：识别后/翻译后/二次识别后校字幕，配音后校对齐
         if t in ('edit_subtitle_source', 'edit_subtitle_target',
+                 'edit_subtitle_bilingual',
                  'edit_recogn2_subtitle', 'edit_dubbing'):
             # Keep an honest persistent status on the task card as well as
             # opening the editor. Users who return to progress can then see
@@ -158,14 +159,15 @@ class WorkspacePage(QWidget):
         elif mtype == 'edit_recogn2_subtitle':
             self._proof = InlineSubtitleEditor(
                 mode=MODE_SOURCE, sub_path=app_cfg.onlyone_target_sub)
-        else:  # edit_subtitle_target
+        else:  # edit_subtitle_target / edit_subtitle_bilingual
             main = self.flow.main
             self._proof = InlineSubtitleEditor(
                 mode=MODE_TARGET, sub_path=app_cfg.onlyone_target_sub,
                 source_sub=app_cfg.onlyone_source_sub if app_cfg.onlyone_trans else None,
                 translate_type=main.translate_type.currentIndex(),
                 source_code=main.source_language.currentText(),
-                target_code=main.target_language.currentText())
+                target_code=main.target_language.currentText(),
+                subtitle_only=(mtype == 'edit_subtitle_bilingual'))
         self._proof.proofDone.connect(self._resume_pipeline)
         self._proof.proofTerminate.connect(self._terminate_pipeline)
         self._top.addWidget(self._proof)

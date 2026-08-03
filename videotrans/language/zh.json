@@ -927,6 +927,8 @@
     "flow_proof_next": "保存并继续",
     "flow_proof_next_source": "保存并继续翻译",
     "flow_proof_next_target": "保存并继续配音",
+    "flow_proof_next_subtitle": "保存并继续合成字幕视频",
+    "flow_subtitle_review": "双语字幕已生成，请检查译文；无需修改也可直接保存并继续合成。",
     "flow_voice_required": "中文配音版需要选择一个中文音色。请稍候音色列表加载完成后再开始。",
     "flow_translation_to_dubbing": "翻译完成，正在准备中文配音…",
     "flow_translation_to_render": "翻译完成，正在合成带字幕视频…",

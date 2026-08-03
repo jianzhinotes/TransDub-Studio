@@ -38,7 +38,8 @@ class InlineSubtitleEditor(QWidget):
 
     def __init__(self, *, mode: str, sub_path: str, source_sub: str = None,
                  translate_type: int = 0, source_code: str = None,
-                 target_code: str = None, parent=None):
+                 target_code: str = None, subtitle_only: bool = False,
+                 parent=None):
         super().__init__(parent)
         self.mode = mode
         self.sub_path = sub_path
@@ -46,6 +47,7 @@ class InlineSubtitleEditor(QWidget):
         self.translate_type = translate_type
         self.source_code = source_code
         self.target_code = target_code
+        self.subtitle_only = bool(subtitle_only)
         self.setObjectName('inlineProof')
         self.setStyleSheet(_QSS)
 
@@ -86,7 +88,10 @@ class InlineSubtitleEditor(QWidget):
         term.clicked.connect(self._on_terminate)
         bottom.addWidget(term)
         bottom.addStretch(1)
-        next_key = ('flow_proof_next_target' if mode == MODE_TARGET
+        if mode == MODE_TARGET and self.subtitle_only:
+            next_key = 'flow_proof_next_subtitle'
+        else:
+            next_key = ('flow_proof_next_target' if mode == MODE_TARGET
                     else 'flow_proof_next_source')
         self.next_btn = QPushButton(tr(next_key))
         self.next_btn.setObjectName('proofNext')

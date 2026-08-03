@@ -17,7 +17,7 @@ from videotrans.configure.config import TEMP_ROOT, logger, tr
 from videotrans.flowui import recent_tasks, stages
 
 _EDIT_TYPES = {'edit_dubbing', 'edit_subtitle_source', 'edit_subtitle_target',
-               'edit_recogn2_subtitle'}
+               'edit_subtitle_bilingual', 'edit_recogn2_subtitle'}
 
 _QSS = """
 #pageProgress QFrame#taskCard { border: 1px solid #2E3947; border-radius: 8px; background: #1C232D; }
