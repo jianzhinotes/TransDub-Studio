@@ -34,6 +34,18 @@ def test_dubbed_or_untranslated_job_skips_subtitle_only_proof(tmp_path):
     assert should_pause_for_subtitle_proof(untranslated) is False
 
 
+def test_source_signature_ignores_srt_formatting_only(tmp_path):
+    from videotrans.task.only_one import _subtitle_signature
+
+    path = tmp_path / 'source.srt'
+    path.write_text(
+        '1\n00:00:00,000 --> 00:00:01,000\nHello  \n\n', encoding='utf-8')
+    first = _subtitle_signature(str(path))
+    path.write_text(
+        '1\n00:00:00,000 --> 00:00:01,000\nHello\n', encoding='utf-8')
+    assert _subtitle_signature(str(path)) == first
+
+
 def test_no_voice_skips_tts_provider_validation(monkeypatch):
     """Subtitle-only videos must not depend on a configured TTS backend."""
     main = SimpleNamespace(

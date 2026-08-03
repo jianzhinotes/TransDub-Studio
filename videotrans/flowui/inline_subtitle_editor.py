@@ -210,15 +210,18 @@ class InlineSubtitleEditor(QWidget):
         # and reruns translation when necessary.
         if self.mode == MODE_TARGET and self.subtitle_only and self.source_sub:
             source_lines = []
+            source_changed = False
             for line, source in sorted(self._src_items_by_line.items()):
                 row = self._target_row_by_line.get(int(line))
                 source_cell = self.table.item(row, 1) if row is not None else None
                 source_text = (source_cell.text() if source_cell
                                else str(source['text'])).strip()
+                source_changed = source_changed or (
+                    source_text != str(source['text'] or '').strip())
                 source_lines.append(
                     f"{source['line']}\n{source['startraw']} --> {source['endraw']}\n"
                     f"{source_text}")
-            if source_lines:
+            if source_lines and source_changed:
                 Path(self.source_sub).write_text(
                     "\n\n".join(source_lines), encoding='utf-8')
 

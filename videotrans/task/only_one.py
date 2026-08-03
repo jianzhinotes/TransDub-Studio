@@ -14,6 +14,7 @@ from videotrans.configure.config import tr, settings, app_cfg, logger
 from videotrans.task.taskcfg import TaskCfgVTT, SignMsg, InputFile
 from videotrans.task.trans_create import TransCreate
 from videotrans.util.tools import vail_file
+from videotrans.util.help_srt import get_subtitle_from_srt
 from videotrans.configure.excepts import DubbingTextReviewRequired
 
 
@@ -28,8 +29,17 @@ def is_translated_subtitle_only(trk) -> bool:
 
 def _subtitle_signature(path: str) -> str:
     try:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    except OSError:
+        rows = get_subtitle_from_srt(path, is_file=True)
+        canonical = [{
+            'line': int(row.get('line', 0) or 0),
+            'start': int(row.get('start_time', 0) or 0),
+            'end': int(row.get('end_time', 0) or 0),
+            'text': str(row.get('text') or '').strip(),
+        } for row in rows]
+        return hashlib.sha256(
+            json.dumps(canonical, ensure_ascii=False, sort_keys=True).encode('utf-8')
+        ).hexdigest()
+    except (OSError, TypeError, ValueError):
         return ''
 
 
