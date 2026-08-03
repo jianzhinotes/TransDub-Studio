@@ -61,10 +61,12 @@ class InlineSubtitleEditor(QWidget):
             self.items = []
         # target 模式并排显示原文：按行号取原文
         self._src_by_line = {}
+        self._src_items_by_line = {}
         if mode == MODE_TARGET and source_sub and Path(source_sub).exists():
             try:
                 for it in tools.get_subtitle_from_srt(source_sub):
                     self._src_by_line[int(it['line'])] = it['text']
+                    self._src_items_by_line[int(it['line'])] = it
             except Exception:
                 pass
 
@@ -134,7 +136,14 @@ class InlineSubtitleEditor(QWidget):
                 self._set_ro(r, 1, f"{it['startraw']} --> {it['endraw']}")
                 self.table.setItem(r, 2, QTableWidgetItem(str(it['text'])))
             else:
-                self._set_ro(r, 1, self._src_by_line.get(int(it['line']), ''))
+                source_text = self._src_by_line.get(int(it['line']), '')
+                if self.subtitle_only:
+                    # Subtitle-only jobs have no dubbing text contract to
+                    # protect, so the source column can be corrected in the
+                    # same three-way comparison view.
+                    self.table.setItem(r, 1, QTableWidgetItem(source_text))
+                else:
+                    self._set_ro(r, 1, source_text)
                 self.table.setItem(r, 2, QTableWidgetItem(str(it['text'])))
                 btn = QPushButton(tr('flow_retranslate'))
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -164,7 +173,11 @@ class InlineSubtitleEditor(QWidget):
     def _retranslate_row(self, row: int):
         if not (0 <= row < len(self.items)):
             return
-        src = self._src_by_line.get(int(self.items[row]['line']), '')
+        if self.subtitle_only:
+            source_cell = self.table.item(row, 1)
+            src = source_cell.text().strip() if source_cell else ''
+        else:
+            src = self._src_by_line.get(int(self.items[row]['line']), '')
         if not src:
             return
         from videotrans import translator
@@ -188,6 +201,25 @@ class InlineSubtitleEditor(QWidget):
             text = (cell.text() if cell else str(it['text'])).strip()
             lines.append(f"{it['line']}\n{it['startraw']} --> {it['endraw']}\n{text}")
         Path(self.sub_path).write_text("\n\n".join(lines), encoding='utf-8')
+
+        # In the subtitle-only comparison view the source column is also
+        # editable. Persist it separately; the worker compares its signature
+        # and reruns translation when necessary.
+        if self.mode == MODE_TARGET and self.subtitle_only and self.source_sub:
+            source_lines = []
+            for r, it in enumerate(self.items):
+                source = self._src_items_by_line.get(int(it['line']))
+                if source is None:
+                    continue
+                source_cell = self.table.item(r, 1)
+                source_text = (source_cell.text() if source_cell
+                               else str(source['text'])).strip()
+                source_lines.append(
+                    f"{source['line']}\n{source['startraw']} --> {source['endraw']}\n"
+                    f"{source_text}")
+            if source_lines:
+                Path(self.source_sub).write_text(
+                    "\n\n".join(source_lines), encoding='utf-8')
 
     def _on_next(self):
         try:

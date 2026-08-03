@@ -262,17 +262,26 @@ class Worker(QThread):
             # ``should_dubbing`` branch, so the job appeared to complete but
             # its translation could not be edited before assembly.
             if should_pause_for_subtitle_proof(trk):
-                self._post(text=tr('flow_subtitle_review'), type='logs')
-                self._post(text=Path(trk.cfg.target_sub).read_text(
-                    encoding='utf-8', errors='ignore'), type='replace_subtitle')
-                app_cfg.set_countdown(86400)
-                self._post(text=f'{trk.cfg.target_sub}<|>{trk.cfg.name}',
-                           type='edit_subtitle_bilingual')
-                self._post(text=tr('The subtitle editing interface is rendering'))
-                while app_cfg.task_countdown > 0:
-                    if self._exit(): return
-                    time.sleep(1)
-                    app_cfg.set_countdown(app_cfg.task_countdown - 1)
+                # Keep the three-way editor as the source of truth. If the
+                # user changes the source column, retranslate first and open
+                # the editor again so a stale target can never be rendered.
+                while True:
+                    source_before = _subtitle_signature(trk.cfg.source_sub)
+                    self._post(text=tr('flow_subtitle_review'), type='logs')
+                    self._post(text=Path(trk.cfg.target_sub).read_text(
+                        encoding='utf-8', errors='ignore'), type='replace_subtitle')
+                    app_cfg.set_countdown(86400)
+                    self._post(text=f'{trk.cfg.target_sub}<|>{trk.cfg.name}',
+                               type='edit_subtitle_bilingual')
+                    self._post(text=tr('The subtitle editing interface is rendering'))
+                    while app_cfg.task_countdown > 0:
+                        if self._exit(): return
+                        time.sleep(1)
+                        app_cfg.set_countdown(app_cfg.task_countdown - 1)
+                    if _subtitle_signature(trk.cfg.source_sub) == source_before:
+                        break
+                    Path(trk.cfg.target_sub).unlink(missing_ok=True)
+                    run_stage('translate', trk.trans)
 
             # 需要配音时
             if trk.should_dubbing:

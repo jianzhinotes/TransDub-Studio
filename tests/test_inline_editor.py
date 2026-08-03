@@ -44,6 +44,20 @@ def test_target_mode_shows_source_and_saves(qapp, tmp_path):
     assert ed.next_btn.text()
 
 
+def test_subtitle_only_target_mode_saves_source_and_translation(qapp, tmp_path):
+    from videotrans.flowui.inline_subtitle_editor import InlineSubtitleEditor, MODE_TARGET
+    src = tmp_path / 'src.srt'; src.write_text(_SRT, encoding='utf-8')
+    tgt = tmp_path / 'tgt.srt'; tgt.write_text(_TGT, encoding='utf-8')
+    ed = InlineSubtitleEditor(mode=MODE_TARGET, sub_path=str(tgt),
+                              source_sub=str(src), subtitle_only=True)
+    assert ed.table.item(0, 1).flags() & 2  # source cell remains editable
+    ed.table.item(0, 1).setText('hello corrected')
+    ed.table.item(0, 2).setText('你好，修正')
+    ed._collect_and_save()
+    assert 'hello corrected' in src.read_text(encoding='utf-8')
+    assert '你好，修正' in tgt.read_text(encoding='utf-8')
+
+
 def test_proof_signals(qapp, tmp_path):
     from videotrans.flowui.inline_subtitle_editor import InlineSubtitleEditor, MODE_SOURCE
     p = tmp_path / 's.srt'; p.write_text(_SRT, encoding='utf-8')

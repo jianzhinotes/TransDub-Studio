@@ -923,7 +923,7 @@
     "flow_export": "导出成品",
     "flow_proof_source": "校对识别字幕",
     "flow_proof_target": "校对翻译译文",
-    "flow_proof_hint": "左侧视频可直接播放；双击右侧字幕行跳到对应画面。原文修改后点击继续会自动重新翻译。",
+    "flow_proof_hint": "左侧视频可直接播放；双击右侧字幕行跳到对应画面。原文和译文都可编辑，原文修改后保存会自动重新翻译。",
     "flow_proof_next": "保存并继续",
     "flow_proof_next_source": "保存并继续翻译",
     "flow_proof_next_target": "保存并继续配音",
