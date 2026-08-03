@@ -69,6 +69,9 @@ class InlineSubtitleEditor(QWidget):
                     self._src_items_by_line[int(it['line'])] = it
             except Exception:
                 pass
+        self._target_row_by_line = {
+            int(it['line']): row for row, it in enumerate(self.items)
+        }
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 18, 24, 18)
@@ -207,11 +210,9 @@ class InlineSubtitleEditor(QWidget):
         # and reruns translation when necessary.
         if self.mode == MODE_TARGET and self.subtitle_only and self.source_sub:
             source_lines = []
-            for r, it in enumerate(self.items):
-                source = self._src_items_by_line.get(int(it['line']))
-                if source is None:
-                    continue
-                source_cell = self.table.item(r, 1)
+            for line, source in sorted(self._src_items_by_line.items()):
+                row = self._target_row_by_line.get(int(line))
+                source_cell = self.table.item(row, 1) if row is not None else None
                 source_text = (source_cell.text() if source_cell
                                else str(source['text'])).strip()
                 source_lines.append(
