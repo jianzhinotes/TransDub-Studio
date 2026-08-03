@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from videotrans.configure.config import logger, params, tr
+from videotrans.flowui.video_preview_panel import VideoPreviewPanel
 from videotrans.styles import tokens
 from videotrans.util import tools
 
@@ -39,6 +40,7 @@ class InlineSubtitleEditor(QWidget):
     def __init__(self, *, mode: str, sub_path: str, source_sub: str = None,
                  translate_type: int = 0, source_code: str = None,
                  target_code: str = None, subtitle_only: bool = False,
+                 video_path: str = None,
                  parent=None):
         super().__init__(parent)
         self.mode = mode
@@ -48,6 +50,7 @@ class InlineSubtitleEditor(QWidget):
         self.source_code = source_code
         self.target_code = target_code
         self.subtitle_only = bool(subtitle_only)
+        self.video_path = str(video_path or '')
         self.setObjectName('inlineProof')
         self.setStyleSheet(_QSS)
 
@@ -76,10 +79,21 @@ class InlineSubtitleEditor(QWidget):
         hint.setObjectName('proofHint')
         layout.addWidget(hint)
 
+        self.video_preview = VideoPreviewPanel()
+        if self.video_path and Path(self.video_path).is_file():
+            self.video_preview.load([self.video_path])
+        else:
+            self.video_preview.setVisible(False)
+
         self.table = QTableWidget()
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.cellDoubleClicked.connect(self._seek_to_row)
         self._build_table()
-        layout.addWidget(self.table, stretch=1)
+        content = QHBoxLayout()
+        content.setSpacing(12)
+        content.addWidget(self.video_preview, stretch=4)
+        content.addWidget(self.table, stretch=6)
+        layout.addLayout(content, stretch=1)
 
         bottom = QHBoxLayout()
         term = QPushButton(tr('Terminate this mission'))
@@ -135,6 +149,16 @@ class InlineSubtitleEditor(QWidget):
         item = QTableWidgetItem(text)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(r, c, item)
+
+    def _seek_to_row(self, row: int, _column: int):
+        """Seek the comparison video to the selected subtitle's start time."""
+        if not (0 <= row < len(self.items)) or not self.video_preview.isVisible():
+            return
+        try:
+            start_ms = int(self.items[row].get('start_time', 0) or 0)
+            self.video_preview.player.seek(start_ms)
+        except (TypeError, ValueError):
+            return
 
     # ---- 单句重译 ----
     def _retranslate_row(self, row: int):

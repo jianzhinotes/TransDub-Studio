@@ -152,13 +152,26 @@ class WorkspacePage(QWidget):
         # 字幕/译文校对
         from videotrans.flowui.inline_subtitle_editor import (
             InlineSubtitleEditor, MODE_SOURCE, MODE_TARGET)
+        # macOS QVideoWidget is a native surface; detach the always-on
+        # workspace preview before creating the comparison preview inside the
+        # editor, otherwise two live video outputs can render over each other.
+        self.preview.release_video()
         self._destroy_proof()
+        proof_parts = str(d.get('text') or '').split('<|>')
+        # 校对消息的最后一段是输入视频路径。旧消息没有该字段时，
+        # 回退到当前工作区的首个文件，保证老任务仍能打开编辑器。
+        video_path = proof_parts[-1] if len(proof_parts) > 1 else ''
+        if not Path(video_path).is_file():
+            files = getattr(self.preview, 'files', []) or []
+            video_path = files[0] if len(files) == 1 else ''
         if mtype == 'edit_subtitle_source':
             self._proof = InlineSubtitleEditor(
-                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_source_sub)
+                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_source_sub,
+                video_path=video_path)
         elif mtype == 'edit_recogn2_subtitle':
             self._proof = InlineSubtitleEditor(
-                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_target_sub)
+                mode=MODE_SOURCE, sub_path=app_cfg.onlyone_target_sub,
+                video_path=video_path)
         else:  # edit_subtitle_target / edit_subtitle_bilingual
             main = self.flow.main
             self._proof = InlineSubtitleEditor(
@@ -167,7 +180,8 @@ class WorkspacePage(QWidget):
                 translate_type=main.translate_type.currentIndex(),
                 source_code=main.source_language.currentText(),
                 target_code=main.target_language.currentText(),
-                subtitle_only=(mtype == 'edit_subtitle_bilingual'))
+                subtitle_only=(mtype == 'edit_subtitle_bilingual'),
+                video_path=video_path)
         self._proof.proofDone.connect(self._resume_pipeline)
         self._proof.proofTerminate.connect(self._terminate_pipeline)
         self._top.addWidget(self._proof)
@@ -184,12 +198,14 @@ class WorkspacePage(QWidget):
         """校对完：结束 worker 的 countdown 等待，切回进度态。"""
         self._destroy_proof()
         self._destroy_editor()
+        self.preview.resume_video()
         self.show_processing()
         self.flow.win_action.set_djs_timeout()
 
     def _terminate_pipeline(self):
         self._destroy_proof()
         self._destroy_editor()
+        self.preview.resume_video()
         self.flow.win_action.update_status('stop')
         self.show_processing()
 

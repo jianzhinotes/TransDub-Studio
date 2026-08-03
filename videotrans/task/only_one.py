@@ -232,7 +232,8 @@ class Worker(QThread):
                                  if subtitle_only_translation else '')
                 app_cfg.set_countdown(86400)
                 # 等待修改识别出的字幕
-                self._post(text=trk.cfg.source_sub, type='edit_subtitle_source')
+                self._post(text=f'{trk.cfg.source_sub}<|>{trk.cfg.name}',
+                           type='edit_subtitle_source')
                 self._post(tr('The subtitle editing interface is rendering'))
                 while app_cfg.task_countdown > 0:
                     time.sleep(1)
@@ -265,7 +266,7 @@ class Worker(QThread):
                 self._post(text=Path(trk.cfg.target_sub).read_text(
                     encoding='utf-8', errors='ignore'), type='replace_subtitle')
                 app_cfg.set_countdown(86400)
-                self._post(text=trk.cfg.target_sub,
+                self._post(text=f'{trk.cfg.target_sub}<|>{trk.cfg.name}',
                            type='edit_subtitle_bilingual')
                 self._post(text=tr('The subtitle editing interface is rendering'))
                 while app_cfg.task_countdown > 0:
@@ -280,7 +281,9 @@ class Worker(QThread):
                 if manual_proof:
                     app_cfg.set_countdown(86400)
                     # 传递过去临时目录，用于获取 speaker.json，等待修改待配音的字幕
-                    self._post(text=f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}<|>{trk.cfg.tts_type}', type="edit_subtitle_target")
+                    self._post(text=(f'{trk.cfg.cache_folder}<|>{trk.cfg.target_language_code}'
+                                     f'<|>{trk.cfg.tts_type}<|>{trk.cfg.name}'),
+                               type="edit_subtitle_target")
                     self._post(tr('The subtitle editing interface is rendering'))
                     while app_cfg.task_countdown > 0:
                         if self._exit(): return
@@ -369,7 +372,8 @@ class Worker(QThread):
             if trk.should_recogn2 and manual_proof:
                 app_cfg.set_countdown(86400)
                 # 等待修改二次识别出的字幕
-                self._post(text=f'{trk.cfg.target_sub}', type="edit_recogn2_subtitle")
+                self._post(text=f'{trk.cfg.target_sub}<|>{trk.cfg.name}',
+                           type="edit_recogn2_subtitle")
                 self._post(text=tr('The subtitle editing interface is rendering'))
                 while app_cfg.task_countdown > 0:
                     if self._exit(): return
