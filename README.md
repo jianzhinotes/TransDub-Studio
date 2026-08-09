@@ -123,13 +123,13 @@ Grab the latest installer from the [**Releases**](https://github.com/jianzhinote
 
 The build is unsigned, so macOS shows *"Apple could not verify … is free of malware"*. Allow it once:
 
-**macOS 15 Sequoia and later** (including macOS 26) — the old Control-click → Open trick no longer works:
+**Try this first:** Control-click (right-click) the app → **Open** → **Open**.
+
+**If that doesn't offer an Open button** — macOS 15 Sequoia and later restricted this path:
 
 1. Double-click the app and dismiss the warning.
 2. **System Settings → Privacy & Security**, scroll down.
 3. Next to *"TransDub Studio was blocked…"* click **Open Anyway**, authenticate, then confirm **Open**.
-
-**macOS 14 and earlier:** Control-click the app → **Open** → **Open**.
 
 Either way it is a one-time step. Terminal equivalent, if you prefer:
 

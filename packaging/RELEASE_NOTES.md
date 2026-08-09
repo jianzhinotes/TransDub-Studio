@@ -121,15 +121,16 @@ consistent, recoverable and easier to verify.
 The build is unsigned, so macOS says *"Apple could not verify … is free of malware"*.
 构建未签名，macOS 会提示"Apple 无法验证……是否包含恶意软件"。
 
-**macOS 15 Sequoia and later (incl. macOS 26)** — Control-click → Open no longer works:
-**macOS 15 Sequoia 及以后（含 macOS 26）** —— 旧的「右键 → 打开」已失效：
+**Try first / 先试这个:** Control-click (right-click) the app → **Open** → **Open**.
+右键（Control 点按）应用 → **打开** → **打开**。
+
+**If no Open button appears / 如果右键菜单里没有「打开」** — macOS 15 Sequoia and later
+restricted this path / macOS 15 Sequoia 之后收紧了这条路径：
 
 1. Double-click the app, dismiss the warning. / 双击应用，关掉警告。
 2. **System Settings → Privacy & Security**, scroll down. / **系统设置 → 隐私与安全性**，往下滚。
 3. Click **Open Anyway** next to the blocked-app notice, authenticate, then **Open**.
    在"已阻止使用 TransDub Studio…"旁点 **「仍要打开」**，验证后再点 **「打开」**。
-
-**macOS 14 and earlier / macOS 14 及更早:** Control-click the app → **Open** → **Open**.
 
 One-time only. Terminal equivalent / 命令行等价写法：
 
