@@ -2,7 +2,7 @@
 
 # ✨ TransDub Studio
 
-### Open-source, local-first Chinese video dubbing & bilingual-subtitle studio — **models are replaceable backends.**
+### Open-source, local-first Chinese dubbing & bilingual subtitles for long-form video — **every line stays editable.**
 
 A **free, local, open-source** alternative to CapCut dubbing &amp; ElevenLabs Dubbing Studio.
 
