@@ -1,16 +1,68 @@
-## TransDub Studio v1.1.2 — Honest exports, clearer continuation
+## TransDub Studio v1.1.2 — Honest exports, and an app that tells you what it's doing
+
+**Trustworthy completion**
 
 - A task is now marked as video-complete only after its actual render is verified on disk.
 - Queue-end and 100% progress messages can no longer create a false “completed” video.
 - Subtitle-only jobs are explicitly labelled as such, rather than pretending a video was created.
 - Translation review now makes the right-bottom **Save & Continue Dubbing** action unambiguous.
 
-## TransDub Studio v1.1.2 — 成品可核验、下一步更清楚
+**You can finally see what's happening**
+
+- Dubbing shows a real segment counter and time remaining (`87/213`, `about 21 min left`),
+  computed from your machine's actual throughput rather than guessed. The progress bar now
+  moves during dubbing, which used to be the longest stage with nothing on screen changing.
+- The config page shows which recognition, translation and dubbing engine will run, with a
+  status dot and a direct **Configure** button for any missing API key.
+- Reference preparation, speaker grouping and anchor selection announce themselves. These
+  can take a minute before the first clip is synthesised and previously looked like a hang.
+- Recent tasks are cards with coloured status badges and real buttons. A task whose process
+  died no longer sits at “running” forever.
+- Fixed: a log message arriving after a task finished wiped its completion banner, its 100%
+  progress and its action buttons.
+
+**One dial instead of twenty-two**
+
+- Dubbing quality is now a single **Fast / Balanced / High quality** choice. Balanced matches
+  the previous defaults exactly, so upgrading changes nothing unless you ask it to. Expert
+  settings in `cfg.json` still work via the **Custom** option.
+
+**Reliability**
+
+- The dubbing quality gate was rebuilt into verifiable steps, and mutation testing along the
+  way found three real gaps: a rejected retry candidate could overwrite good original audio,
+  the “defer repair under memory pressure” path was not actually being verified, and a
+  validator backend fallback could be recorded under the wrong backend name.
+
+## TransDub Studio v1.1.2 — 成品可核验，而且程序会告诉你它在干什么
+
+**完成状态可信**
 
 - 只有在实际成品视频落盘并通过核验后，任务才会显示视频完成。
 - 队列结束和 100% 进度不再会造成“假完成”。
 - 仅字幕任务会明确标识，不再误显示为视频成品。
 - 翻译校对页将右下角操作明确为“保存并继续配音”。
+
+**终于看得见它在做什么**
+
+- 配音显示真实的段数与剩余时间（`87/213`、`预计剩余 21 分`），按你机器的实际速度算，不是估的。
+  进度条在配音期间真的会动——那是最长的阶段，此前屏幕上什么都不变。
+- 配置页直接显示本次用的识别 / 翻译 / 配音引擎，带状态点；缺 API key 的行有「去配置」按钮。
+- 参考挑选、说话人归属、锚点选择现在都会报进度。这几步在第一句合成前可能要花上一分钟，
+  过去看起来就像卡死了。
+- 最近任务改成卡片，带彩色状态徽章和真按钮。进程已经死掉的任务不再永远停在「进行中」。
+- 修复：任务完成后飘来一条日志会抹掉完成横幅、100% 进度和三个操作按钮。
+
+**22 个开关收敛成 1 个**
+
+- 配音质量现在是**快速 / 均衡 / 高质量**一个选择。均衡档与此前的默认完全一致，升级不会改变行为。
+  cfg.json 里的专家配置选「自定义」仍然有效。
+
+**可靠性**
+
+- 配音质量门禁重构为可验证的步骤。过程中的变异测试发现了三个真实缺口：被拒的返工候选可能覆盖
+  原本可用的音频、「内存紧张时延后返工」这条路径实际没被验证到、核验后端回退后可能记成错误的
+  后端名。
 
 ## TransDub Studio v1.1.1 — More natural, speaker-stable Chinese dubbing
 
