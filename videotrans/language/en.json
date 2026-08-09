@@ -994,5 +994,8 @@
     "f5_stage_reference": "Selecting and validating the cloning reference…",
     "f5_stage_speakers": "Grouping lines by speaker…",
     "f5_stage_anchors": "Picking Chinese voice anchors from finished clips…",
-    "f5_ref_checking": "Reference read-back {0}/{1} (passed {2}/{3})"
+    "f5_ref_checking": "Reference read-back {0}/{1} (passed {2}/{3})",
+    "flow_switch_lang": "Interface language",
+    "flow_switch_lang_tip": "Switch interface language (中文 / English)",
+    "flow_switch_lang_restart": "Saved. Restart the app to apply."
 }

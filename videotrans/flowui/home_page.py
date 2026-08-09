@@ -4,13 +4,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from videotrans import VERSION
 from videotrans.configure import contants
-from videotrans.configure.config import params, tr
+from videotrans.configure.config import logger, params, tr
 from videotrans.flowui import recent_tasks
 from videotrans.flowui.recent_card import RecentCard
 from videotrans.styles import tokens
@@ -140,6 +140,13 @@ class HomePage(QWidget):
         title.setObjectName('appTitle')
         head.addWidget(title)
         head.addStretch(1)
+        # 界面语言此前只能靠手改 cfg.json 或环境变量，没有任何入口
+        self.lang_btn = QPushButton(self._lang_btn_text())
+        self.lang_btn.setObjectName('linkBtn')
+        self.lang_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lang_btn.setToolTip(tr('flow_switch_lang_tip'))
+        self.lang_btn.clicked.connect(self._toggle_language)
+        head.addWidget(self.lang_btn)
         adv = QPushButton(tr('flow_advanced_mode'))
         adv.setObjectName('linkBtn')
         adv.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -192,6 +199,27 @@ class HomePage(QWidget):
         layout.addWidget(author_bar)
 
         self.refresh_recent()
+
+    # ---- 界面语言 ----
+    @staticmethod
+    def _lang_btn_text() -> str:
+        from videotrans.configure.config import defaulelang
+        # 按钮显示的是"切换到哪个语言"，不是当前语言
+        return 'English' if defaulelang == 'zh' else '中文'
+
+    def _toggle_language(self):
+        from videotrans.configure.config import defaulelang, settings
+        target = 'en' if defaulelang == 'zh' else 'zh'
+        try:
+            settings.parse_init({'lang': target})
+        except Exception as error:
+            logger.warning(f'保存界面语言失败: {error}')
+            return
+        # 控件文本在构造时就已由 tr() 定下，热切换需要整页重建；
+        # 提示重启是最可靠的做法，也避免半中半英的中间态。
+        QMessageBox.information(
+            self, tr('flow_switch_lang'), tr('flow_switch_lang_restart'))
+        self.lang_btn.setText(self._lang_btn_text())
 
     def _browse(self):
         format_str = ' '.join('*.' + e for e in _ALLOWED_EXTS)

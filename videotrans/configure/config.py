@@ -124,17 +124,30 @@ def _get_langjson_list():
     return _SUPPORT_LANG
 
 # 主进程初始化语言和翻译字典，使用 settings数据
+def _detect_ui_language() -> str:
+    """首次启动的界面语言：中文。
+
+    此前取系统 locale 前两位，于是每一个把 Mac/Windows 设成英文的中文用户
+    （开发者里非常普遍）第一次打开都是英文界面。而这是一个把外语视频配成
+    **中文**的工具，用户默认就是中文使用者——按系统语言猜，猜错的概率远大于猜对。
+
+    英文用户点首页右上角标着「English」的按钮即可切换，选择会持久保存；
+    也可用 PYVIDEOTRANS_LANG 环境变量覆盖。
+    """
+    return 'zh'
+
+
 def _init_language():
     SUPPORT_LANG=_get_langjson_list()
     try:
         _defaulelang = os.environ.get('PYVIDEOTRANS_LANG', settings.lang)
         if not _defaulelang:
-            _defaulelang = QLocale.system().name()[:2].lower()
+            _defaulelang = _detect_ui_language()
     except Exception:
-        _defaulelang = "en"
+        _defaulelang = "zh"
 
     if _defaulelang not in SUPPORT_LANG:
-        _defaulelang = "en"
+        _defaulelang = "zh"
     if not settings.lang:
         settings.lang = _defaulelang
         settings.save()

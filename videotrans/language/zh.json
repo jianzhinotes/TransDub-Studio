@@ -994,5 +994,8 @@
     "f5_stage_reference": "正在挑选并校验克隆参考音频…",
     "f5_stage_speakers": "正在按声纹归属说话人…",
     "f5_stage_anchors": "正在从现有成品挑选中文音色锚点…",
-    "f5_ref_checking": "参考音频回读校验 {0}/{1}（已通过 {2}/{3}）"
+    "f5_ref_checking": "参考音频回读校验 {0}/{1}（已通过 {2}/{3}）",
+    "flow_switch_lang": "界面语言",
+    "flow_switch_lang_tip": "切换界面语言（中文 / English）",
+    "flow_switch_lang_restart": "已保存。重启应用后生效。"
 }
