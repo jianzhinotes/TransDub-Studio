@@ -14,7 +14,6 @@
 *.app.noindex/Contents/_CodeSignature/
 .agree.txt
 .git
-.github
 .idea
 .venv
 .pytest_cache

@@ -1,0 +1,134 @@
+name: Bug report / 问题反馈
+description: Something crashed, hung, or produced a wrong result / 崩溃、卡住或结果不对
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. 感谢反馈。
+
+        The fields below exist so we can usually diagnose without a round trip —
+        the stage and the log file matter most.
+        下面几项是为了**一次就能定位问题**，其中「哪一步出错」和「日志」最关键。
+
+  - type: input
+    id: version
+    attributes:
+      label: App version / 应用版本
+      description: Shown at the top of the home page, e.g. `v1.1.2` / 首页顶部显示
+      placeholder: v1.1.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS / 系统
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 11
+        - Windows 10
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: RAM and GPU / 内存与显卡
+      description: >
+        Apple Silicon with 18 GB or less switches to a low-memory dubbing profile,
+        so this changes behaviour. / Apple 芯片 ≤18GB 会自动切低内存模式，行为不同。
+      placeholder: "e.g. M2 Pro / 16 GB  ·  or: Windows, RTX 4060, 32 GB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it? / 安装方式
+      options:
+        - Installer (.dmg / .exe) / 安装包
+        - One-command script (install.sh / install.ps1) / 一键脚本
+        - From source (uv sync) / 源码
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage failed? / 哪一步出错
+      description: The stepper on the task card / 任务卡片上的六阶段步进器
+      options:
+        - Prepare / 准备
+        - Recognition / 识别
+        - Translation / 翻译
+        - Dubbing / 配音
+        - Align / 对齐
+        - Merge / 合成
+        - App did not start / 应用起不来
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: input
+    id: engines
+    attributes:
+      label: Engines used / 使用的引擎
+      description: From the "Engines for this run" strip on the config page / 配置页「本次将使用」那一栏
+      placeholder: "faster-whisper large-v3-turbo · DeepSeek · F5-TTS"
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect? / 发生了什么，你期望的是什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: |
+        1. Dropped a 20-minute English mp4 on the home page
+        2. Kept the defaults, clicked Start
+        3. At the dubbing stage it stopped with ...
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log / 日志
+      description: |
+        Paste the tail of today's log, or attach the file.
+        贴出今天日志的末尾，或直接把文件拖进来。
+
+        **Where it is / 日志位置:** `logs/YYYYMMDD.log` inside the install directory
+        (`~/TransDub-Studio/logs/` for the one-command script; for the macOS app,
+        `~/Library/Application Support/pyVideoTrans/runtime/logs/`).
+
+        Windows install problems: `install-log.txt` in
+        `%LOCALAPPDATA%\Programs\TransDub Studio`.
+      render: shell
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional) / 诊断信息（可选）
+      description: |
+        For dubbing problems the **Diagnostics** button on the finished task card
+        shows a resource and quality summary — paste it here.
+        配音相关问题：完成后的任务卡片上有「诊断信息」按钮，把内容贴过来。
+
+        Even more useful, if you can find them in the project folder:
+        `run_state.json`, `performance_report.json`, `quality_manifest.json`.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you post / 提交前
+      options:
+        - label: >
+            I removed any API keys from the log before pasting it.
+            我已从日志中删除 API key。
+          required: true

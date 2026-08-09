@@ -1,0 +1,13 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and hardware questions / 安装与硬件问题
+    url: https://github.com/jianzhinotes/TransDub-Studio#-faq
+    about: >
+      RAM, GPU, model sizes, commercial use and uninstall are answered in the README FAQ.
+      内存、显卡、模型体积、商用、卸载等问题，README 的常见问题里已有解答。
+  - name: Upstream pyVideoTrans / 上游项目
+    url: https://github.com/jianchang512/pyvideotrans/issues
+    about: >
+      This is a downstream build. If the problem also happens in upstream pyVideoTrans,
+      reporting it there reaches more maintainers.
+      本项目是下游分支。如果上游 pyVideoTrans 也有同样问题，报到上游会有更多人看到。

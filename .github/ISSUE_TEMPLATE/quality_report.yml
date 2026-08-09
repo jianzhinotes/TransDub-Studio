@@ -1,0 +1,83 @@
+name: Dubbing quality / 配音质量问题
+description: It ran fine but the audio is wrong — wrong voice, leaked source language, bad timing / 跑通了但配音不对
+labels: ["quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quality problems are different from crashes: the pipeline succeeded, but the
+        result is not usable. These need a different set of details.
+        质量问题和崩溃不同——流程跑通了，但结果不能用，需要的信息也不一样。
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What's wrong with the audio? / 具体是什么问题
+      options:
+        - Cloned voice doesn't sound like the speaker / 克隆音色不像
+        - Source language leaked into the dub (English words in Chinese audio) / 配音里混进了原声语言
+        - Wrong speaker's voice was cloned (e.g. the host, not the guest) / 克隆错了人
+        - Timing is off — audio too long/short for the subtitle / 时长对不上
+        - Robotic or distorted / 机械音、失真
+        - Translation is wrong rather than the audio / 是翻译不对，不是配音
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: input
+    id: preset
+    attributes:
+      label: Dubbing quality preset / 配音质量档位
+      description: Advanced settings → Dubbing quality / 高级设置 →「配音质量」
+      placeholder: "Balanced / 均衡"
+
+  - type: input
+    id: languages
+    attributes:
+      label: Source → target language / 源语言 → 目标语言
+      placeholder: "English → 简体中文"
+    validations:
+      required: true
+
+  - type: textarea
+    id: lines
+    attributes:
+      label: Which lines? / 哪几句
+      description: >
+        Line numbers from the Dubbing Studio, and what you heard vs. expected.
+        配音工作台里的行号，以及你听到的 vs 期望的。
+      placeholder: |
+        Line 87: expected 「我们需要更多人参与」, but it says "first you've got" in English first
+    validations:
+      required: true
+
+  - type: textarea
+    id: flagged
+    attributes:
+      label: Did the app flag it itself? / 程序自己标记了吗
+      description: >
+        Lines the quality gate suspected carry a red "⚠ suspected original audio"
+        badge in the Dubbing Studio. Say whether the bad lines had one — it tells us
+        whether detection or repair is the part that failed.
+        质量门禁怀疑的句子会有红色「⚠ 疑似混入原声」徽标。说明出问题的句子有没有这个标记——
+        这能区分是**没检测到**还是**检测到了但没修好**。
+
+  - type: textarea
+    id: source
+    attributes:
+      label: About the source video / 关于源视频
+      description: >
+        Background music? Multiple speakers? Heavy accent? Overlapping speech?
+        These are the usual causes.
+        有背景音乐吗？几个人说话？口音重吗？有抢话吗？这些是常见诱因。
+
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: Already tried / 已经试过
+      options:
+        - label: >
+            Ticked "Keep background music" so the reference is cut from separated vocals
+            / 勾选了「保留背景音」（参考音频会从分离后的人声里切）
+        - label: Re-dubbed the line from the Dubbing Studio / 在配音工作台里单句重配过
+        - label: Switched the dubbing quality preset to High quality / 把配音质量切到「高质量」

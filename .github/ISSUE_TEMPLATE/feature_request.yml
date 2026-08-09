@@ -1,0 +1,47 @@
+name: Idea or request / 功能建议
+description: Something you wish it did / 希望它能做到的事
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do? / 你想完成什么
+      description: >
+        Describe the situation rather than the solution — it often turns out there's
+        already a way, or a better one.
+        先描述场景而不是方案——常常已经有办法，或者有更好的办法。
+      placeholder: >
+        I dub 40-minute interviews weekly and re-check the same terminology every time...
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help? / 你希望怎么解决
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 涉及范围
+      options:
+        - Dubbing quality / 配音质量
+        - Editing workflow (proofreading, timeline) / 编辑流程（校对、时间轴）
+        - Speed / 速度
+        - Subtitles / 字幕
+        - Install and packaging / 安装与打包
+        - Engines and models / 引擎与模型
+        - Other / 其他
+
+  - type: markdown
+    attributes:
+      value: |
+        Worth knowing: this is a personal downstream build of
+        [pyVideoTrans](https://github.com/jianchang512/pyvideotrans), maintained by one
+        person. Breadth is deliberately limited — it aims to do long-form Chinese
+        dubbing well rather than everything. Requests outside that will get an honest
+        no rather than a silent backlog.
+
+        说明：这是一个人维护的 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans)
+        下游分支，**刻意不铺功能面积**，目标是把中文长视频配音做好。超出这个范围的需求
+        我会直接说做不了，而不是放进永远不动的待办里。
