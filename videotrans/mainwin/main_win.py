@@ -57,12 +57,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         }
 
         # 检测GPU
-        s = AiLoaderThread(self)
-        s.gpu_io.connect(self._start_workers)
+        self._workers_status = ''
+        self.restart_ai_loader()
+        self._set_default()
+
+    def restart_ai_loader(self):
+        """启动（或失败后重启）AI 运行时检测线程。"""
+        loader = AiLoaderThread(self)
+        loader.gpu_io.connect(self._start_workers)
+        self._ai_loader = loader          # 保住引用，避免线程对象被回收
         self.startbtn.setDisabled(True)
         self.startbtn.setText(tr('Checking GPUs...'))
-        s.start()
-        self._set_default()
+        loader.start()
 
     def _set_default(self):
         self.callback('import recognition ...')
@@ -369,6 +375,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ui_stack.addWidget(self.flow)
         self.ui_stack.addWidget(classic)
         self.setCentralWidget(self.ui_stack)
+        # AI 运行时检测早于本方法启动，结果可能已经到达。补发一次缓存状态，
+        # 免得 Flow 页错过它、永远停在"正在初始化"。
+        if self._workers_status == 'end':
+            self.flow.set_workers_ready(True)
+        elif self._workers_status:
+            self.flow.set_workers_failed(self._workers_status)
         # 始终以新界面(Flow)启动：高级模式仅在会话内临时切换，不作为启动默认持久化，
         # 避免历史模式值把用户永久粘在旧界面
         self.set_ui_mode('flow')
@@ -390,6 +402,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.flow.show_home()
     # 检测GPU完成后，启动子线程
     def _start_workers(self, status):
+        self._workers_status = status
         if status == 'end':
             from videotrans.task.job import start_thread
             self.worker_threads = start_thread()
@@ -399,6 +412,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.flow.set_workers_ready(True)
         else:
             show_error(status)
+            # 失败也必须通知 Flow：否则开始按钮永久停在"正在初始化"，
+            # 用户既看不到真实原因，也没有恢复入口。
+            self.startbtn.setText(tr("Start"))
+            if hasattr(self, 'flow'):
+                self.flow.set_workers_failed(status)
 
     # 打开缓慢
     def open_winform(self, name):

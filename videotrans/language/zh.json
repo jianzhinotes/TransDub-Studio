@@ -966,5 +966,22 @@
     "Strong quality review failed": "强模型质量复核失败",
     "Recheck this legacy project before exporting.": "这是旧版工程，请先完成强模型质量复核再导出。",
     "Resuming from source-aligned translation": "正在恢复与原文可靠对齐的翻译缓存",
-    "Existing dubbed subtitle is not a translation cache; retranslating": "检测到成品字幕不能作为翻译缓存，正在重新翻译以修复中英文错位"
+    "Existing dubbed subtitle is not a translation cache; retranslating": "检测到成品字幕不能作为翻译缓存，正在重新翻译以修复中英文错位",
+    "flow_engine_summary": "本次将使用",
+    "flow_engine_row_tip": "点击展开高级设置以更换引擎",
+    "flow_workers_failed": "AI 运行时启动失败",
+    "flow_retry_workers": "重试初始化",
+    "flow_first_boot_slow": "首次启动需加载模型运行时，可能 20-40 秒",
+    "flow_stage_quality": "质量核对",
+    "flow_elapsed": "已用",
+    "flow_eta_prefix": "预计剩余",
+    "flow_eta_measuring": "正在测算剩余时间…",
+    "flow_eta_finishing": "即将完成",
+    "flow_done_segments": "已完成",
+    "flow_progress_empty": "还没有任务，回首页拖入视频即可开始",
+    "flow_dub_faults": "配音期发生 {0} 次超时 / {1} 次服务重启，剩余时间可能变长",
+    "flow_recent_rerun": "重跑",
+    "flow_recent_remove": "从列表移除",
+    "flow_recent_clear": "清除已完成",
+    "flow_status_stale_tip": "该任务的进程已不存在，状态已自动修正"
 }

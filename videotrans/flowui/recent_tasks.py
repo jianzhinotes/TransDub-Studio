@@ -15,6 +15,11 @@ STATUS_SUCCEED = 'succeed'
 STATUS_ERROR = 'error'
 STATUS_STOPPED = 'stopped'
 
+# 既无耐久日志、又无 pid 的遗留记录，超过这个时长仍是 running 就判为已中断。
+# 现实中最长的单任务（长访谈 + 本地串行配音 + 质量返工）在 1-2 小时量级，
+# 留 3 倍余量。新记录都带 pid，走精确判定，不依赖这个阈值。
+STALE_RUNNING_S = 6 * 3600
+
 
 def _default_path() -> str:
     from videotrans.configure.config import ROOT_DIR
@@ -42,7 +47,16 @@ def append(entry: dict, path: str = None) -> list:
     entry = dict(entry)
     entry.setdefault('ts', int(time.time()))
     entry.setdefault('status', STATUS_RUNNING)
-    entries = [e for e in load(path) if e.get('video_path') != entry.get('video_path')]
+    existing = load(path)
+    previous = next(
+        (e for e in existing if e.get('video_path') == entry.get('video_path')), None)
+    if previous:
+        # 重跑同一个视频不该丢掉上一轮回填的工程定位信息，
+        # 否则"重新编辑"入口和状态自愈都会失效
+        for key in ('project_dir', 'run_state_file', 'target_dir'):
+            if not entry.get(key) and previous.get(key):
+                entry[key] = previous[key]
+    entries = [e for e in existing if e.get('video_path') != entry.get('video_path')]
     entries.insert(0, entry)
     entries = entries[:MAX_ENTRIES]
     try:
@@ -72,14 +86,59 @@ def update_fields(video_path: str, path: str = None, **fields) -> None:
             pass
 
 
-def reconcile_run_states(path: str = None) -> list:
+def remove(video_path: str, path: str = None) -> list:
+    """删除一条最近任务记录。"""
+    path = path or _default_path()
+    entries = [e for e in load(path) if e.get('video_path') != video_path]
+    try:
+        _write(entries, path)
+    except OSError:
+        pass
+    return entries
+
+
+def prune(statuses=(STATUS_SUCCEED,), path: str = None) -> list:
+    """清理指定状态的记录（默认清掉已完成的）。"""
+    path = path or _default_path()
+    targets = set(statuses)
+    entries = [e for e in load(path) if e.get('status') not in targets]
+    try:
+        _write(entries, path)
+    except OSError:
+        pass
+    return entries
+
+
+def _backfill_paths(entry: dict) -> bool:
+    """补全空的 target_dir，让三级查找重新能命中。
+
+    早期写入路径会留下 target_dir='' 的记录，导致 run_state 找不到、
+    状态永远冻结在"进行中"，"重新编辑"也永远出不来。
+    """
+    if entry.get('target_dir'):
+        return False
+    if entry.get('project_dir'):
+        entry['target_dir'] = str(Path(entry['project_dir']).parent)
+    elif entry.get('run_state_file'):
+        entry['target_dir'] = str(Path(entry['run_state_file']).parent.parent)
+    elif entry.get('video_path'):
+        entry['target_dir'] = (Path(entry['video_path']).parent / '_video_out').as_posix()
+    else:
+        return False
+    return True
+
+
+def reconcile_run_states(path: str = None, now: float = None) -> list:
     """Refresh stale recent-task status from durable per-project journals."""
     path = path or _default_path()
+    now = int(now if now is not None else time.time())
     entries = load(path)
     changed = False
-    from videotrans.dub.run_state import effective_status, find_run_state, load_run_state
+    from videotrans.dub.run_state import (
+        effective_status, find_run_state, load_run_state, process_is_alive)
     for entry in entries:
         video_path = entry.get('video_path') or ''
+        changed = _backfill_paths(entry) or changed
         # Fast paths first; recursive discovery is only needed once for old or
         # early records whose predicted project location was not exact.
         state_file = entry.get('run_state_file')
@@ -105,6 +164,18 @@ def reconcile_run_states(path: str = None) -> list:
         if state_file and entry.get('run_state_file') != state_file:
             entry['run_state_file'] = state_file
             changed = True
+        # 没有耐久日志可查时的僵尸兜底：应用崩溃在 begin_run 之前，
+        # 或历史脏记录。优先用条目自带的 pid 精确判定。
+        if not payload and entry.get('status') == STATUS_RUNNING:
+            pid = entry.get('pid')
+            if pid is not None and not process_is_alive(pid):
+                entry['status'] = STATUS_STOPPED
+                entry['stale_reason'] = 'owner_gone'
+                changed = True
+            elif pid is None and (now - int(entry.get('ts') or 0)) > STALE_RUNNING_S:
+                entry['status'] = STATUS_STOPPED
+                entry['stale_reason'] = 'timeout'
+                changed = True
     if changed:
         try:
             _write(entries, path)

@@ -16,6 +16,8 @@ from videotrans.util.help_misc import vail_file,pygameaudio,get_tts_type,get_md5
 
 # 跨运行配音缓存：同一句话+同音色+同参数的合成结果直接复用，重跑不再全量重配。
 # 键含参考音频内容指纹，参考变了自动失效。
+from videotrans.dub.performance_report import TTS_PROGRESS_FILE
+
 DUBB_CACHE_DIR = f'{config.TEMP_ROOT}/dubb_cache'
 _DUBB_CACHE_MAX_AGE_S = 30 * 86400
 _dubb_cache_pruned = False
@@ -285,6 +287,40 @@ class BaseTTS(BaseCon):
                 "已停止合成，避免生成夹杂英文或静音的成品。"
             )
 
+    # ---- 配音进度埋点（供 UI 计算真实 ETA） ----
+    def _tts_progress_path(self):
+        first = next((it for it in self.queue_tts if it.get('filename')), None)
+        return Path(first['filename']).parent / TTS_PROGRESS_FILE if first else None
+
+    def _publish_tts_progress(self, completed, prefilled, started, *, status='running'):
+        """逐段落盘配音进度。
+
+        既有的结构化数据源都拿不到"live 的分母"：synthesis_supervisor 只有
+        已完成段数，run_state 的 segments_total 要等阶段结束才写。UI 想显示
+        87/213 和预计剩余时间，就需要这里的分子+分母。
+        任何异常都吞掉：埋点绝不能影响配音本身。
+        """
+        try:
+            path = self._tts_progress_path()
+            if not path:
+                return
+            from videotrans.dub.store import atomic_write_json
+            atomic_write_json(path, {
+                'schema_version': 1,
+                'status': status,
+                'uuid': getattr(self, 'uuid', '') or '',
+                'tts_type': self.tts_type,
+                'total': int(self.len),
+                'completed': int(completed),
+                # 缓存命中/空文本的行耗时≈0，算速率时必须剔除，否则严重低估
+                'prefilled': int(prefilled),
+                'cache_hits': int(getattr(self, '_dubb_cache_hits', 0) or 0),
+                'elapsed_s': round(time.monotonic() - started, 3),
+                'updated_at': int(time.time()),
+            })
+        except Exception as error:
+            logger.debug(f'写配音进度失败,忽略: {error}')
+
     # 若子类未重写  _exec(), 则默认调用该方法
     # 此方法内判断返回的错误是否 StopTask 类型，若是则直接终止任务
     def _local_mul_thread(self) -> None:
@@ -299,6 +335,9 @@ class BaseTTS(BaseCon):
             )
             pending_done = 0
             progress_started = time.monotonic()
+            prefilled = max(self.len - pending_total, 0)
+            # 开局就落一次盘：UI 立刻拿到分母，不必等第一段合成完
+            self._publish_tts_progress(prefilled, prefilled, progress_started)
             for k, item in enumerate(self.queue_tts):
                 if self._exit(): return
                 if not item.get('text').strip() or vail_file(item['filename']):
@@ -311,6 +350,8 @@ class BaseTTS(BaseCon):
                     raise error
 
                 pending_done += 1
+                self._publish_tts_progress(
+                    prefilled + pending_done, prefilled, progress_started)
                 formatter = getattr(self, '_format_tts_progress', None)
                 if callable(formatter):
                     progress_text = formatter(
@@ -321,6 +362,8 @@ class BaseTTS(BaseCon):
                     progress_text = f'TTS[{k + 1}/{self.len}]'
                 self.signal(text=progress_text)
                 time.sleep(self.wait_sec)
+            self._publish_tts_progress(
+                prefilled + pending_done, prefilled, progress_started, status='finished')
             self.signal(text=f'TTS ended')
             return
 
@@ -328,15 +371,20 @@ class BaseTTS(BaseCon):
         _wok=max(min(self.dub_nums, len(self.queue_tts)),2)
         pool = ThreadPoolExecutor(max_workers=_wok)
         logger.debug(f'设定配音最大线程数: {self.dub_nums},实际 {_wok} 线程配音, 待配音字幕长度: {self.len}')
+        progress_started = time.monotonic()
+        completed_tasks = 0
+        prefilled = 0
         try:
-            completed_tasks = 0
             for k, item in enumerate(self.queue_tts):
                 if self._exit(): return
                 if not item.get('text').strip() or vail_file(item['filename']):
                     completed_tasks += 1
+                    prefilled += 1
                     continue
                 future = pool.submit(self._item_task, item, k)
                 all_task.append(future)
+            # 埋点只在 as_completed 这条单线程上写，无需加锁
+            self._publish_tts_progress(completed_tasks, prefilled, progress_started)
 
             if all_task:
                 for task in as_completed(all_task):
@@ -348,9 +396,13 @@ class BaseTTS(BaseCon):
                         # 发送终止信号，终止时会将 uuid 加入 app_cfg.stop_uid
                         raise error
                     completed_tasks += 1
+                    self._publish_tts_progress(
+                        completed_tasks, prefilled, progress_started)
                     self.signal(text=f"TTS: [{completed_tasks}/{self.len}] ...")
             self.signal(text=f"TTS ended ...")
         finally:
+            self._publish_tts_progress(
+                completed_tasks, prefilled, progress_started, status='finished')
             # 只能取消排队的任务，并让主线程不再等待。
             pool.shutdown(wait=False)
 

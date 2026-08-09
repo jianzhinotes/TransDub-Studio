@@ -50,7 +50,9 @@ def test_subtitle_only_target_mode_saves_source_and_translation(qapp, tmp_path):
     tgt = tmp_path / 'tgt.srt'; tgt.write_text(_TGT, encoding='utf-8')
     ed = InlineSubtitleEditor(mode=MODE_TARGET, sub_path=str(tgt),
                               source_sub=str(src), subtitle_only=True)
-    assert ed.table.item(0, 1).flags() & 2  # source cell remains editable
+    from PySide6.QtCore import Qt
+    # PySide6 6.x 的 ItemFlag 是强类型枚举，不能与裸 int 做位运算
+    assert ed.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable
     ed.table.item(0, 1).setText('hello corrected')
     ed.table.item(0, 2).setText('你好，修正')
     ed._collect_and_save()

@@ -52,5 +52,9 @@ class FlowWidget(QStackedWidget):
         self._workers_ready = ready
         self.workspace.set_workers_ready(ready)
 
+    def set_workers_failed(self, message: str):
+        self._workers_ready = False
+        self.workspace.set_workers_failed(message)
+
     def workers_ready(self) -> bool:
         return self._workers_ready

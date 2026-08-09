@@ -58,6 +58,8 @@ class WorkspacePage(QWidget):
 
     # ---- 载入 ----
     def load(self, files: list):
+        # 选新文件时清掉上一轮已完成的卡片，否则同一会话内会无限累积
+        self.progress_page.clear_done()
         self._top.setCurrentWidget(self._normal)
         self.preview.load(files)
         self.config_page.load(files)
@@ -65,6 +67,9 @@ class WorkspacePage(QWidget):
 
     def set_workers_ready(self, ready: bool):
         self.config_page.set_workers_ready(ready)
+
+    def set_workers_failed(self, message: str):
+        self.config_page.set_workers_failed(message)
 
     # ---- normal 视图三态 ----
     def show_configure(self):

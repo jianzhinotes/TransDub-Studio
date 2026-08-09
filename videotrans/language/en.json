@@ -966,5 +966,22 @@
     "Strong quality review failed": "Strong quality review failed",
     "Recheck this legacy project before exporting.": "Recheck this legacy project before exporting.",
     "Resuming from source-aligned translation": "Resuming from source-aligned translation",
-    "Existing dubbed subtitle is not a translation cache; retranslating": "Existing dubbed subtitle is not a translation cache; retranslating"
+    "Existing dubbed subtitle is not a translation cache; retranslating": "Existing dubbed subtitle is not a translation cache; retranslating",
+    "flow_engine_summary": "Engines for this run",
+    "flow_engine_row_tip": "Click to open advanced settings and switch engine",
+    "flow_workers_failed": "AI runtime failed to start",
+    "flow_retry_workers": "Retry initialization",
+    "flow_first_boot_slow": "first launch loads the model runtime, may take 20-40s",
+    "flow_stage_quality": "Quality check",
+    "flow_elapsed": "elapsed",
+    "flow_eta_prefix": "about",
+    "flow_eta_measuring": "Estimating time left…",
+    "flow_eta_finishing": "Finishing up",
+    "flow_done_segments": "done",
+    "flow_progress_empty": "No tasks yet — drop a video on the home page to start",
+    "flow_dub_faults": "{0} timeout(s) / {1} service restart(s) during dubbing; may take longer",
+    "flow_recent_rerun": "Run again",
+    "flow_recent_remove": "Remove from list",
+    "flow_recent_clear": "Clear finished",
+    "flow_status_stale_tip": "Owning process is gone; status was corrected automatically"
 }

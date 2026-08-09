@@ -1,37 +1,52 @@
 """Flow UI 首页：拖放/浏览导入 + 最近任务 + 高级模式入口。"""
-import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QVBoxLayout, QWidget,
+    QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 from videotrans import VERSION
 from videotrans.configure import contants
 from videotrans.configure.config import params, tr
 from videotrans.flowui import recent_tasks
+from videotrans.flowui.recent_card import RecentCard
+from videotrans.styles import tokens
 
 _ALLOWED_EXTS = contants.VIDEO_EXTS + contants.AUDIO_EXITS
 
-_QSS = """
-#pageHome QFrame#dropZone {
-    border: 2px dashed #2E3947; border-radius: 14px;
+_QSS = f"""
+#pageHome QFrame#dropZone {{
+    border: 2px dashed {tokens.BORDER}; border-radius: 14px;
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #1C232D, stop:0.5 #1C2A3A, stop:1 #201F38);
-}
-#pageHome QFrame#dropZone[drag="1"] { border-color: #2E7CF6; background: #1E2C3A; }
-#pageHome QLabel#heroTitle { font-size: 24px; color: #E6E9EC; font-weight: bold; }
-#pageHome QLabel#heroSub { font-size: 13px; color: #9AA7B4; }
-#pageHome QLabel#heroStar { color: #6C7FD8; font-size: 15px; }
-#pageHome QLabel#appTitle { font-size: 16px; color: #E6E9EC; font-weight: bold; }
-#pageHome QPushButton#linkBtn {
-    border: none; background: transparent; color: #2E7CF6; text-align: left;
-}
-#pageHome QPushButton#linkBtn:hover { text-decoration: underline; }
-#pageHome QLabel#authorBar { color: #60798B; font-size: 12px; }
+        stop:0 {tokens.SURFACE}, stop:0.5 #1C2A3A, stop:1 #201F38);
+}}
+#pageHome QFrame#dropZone[drag="1"] {{ border-color: {tokens.ACCENT}; background: #1E2C3A; }}
+#pageHome QLabel#heroTitle {{ font-size: 24px; color: {tokens.TEXT}; font-weight: bold; }}
+#pageHome QLabel#heroSub {{ font-size: 13px; color: {tokens.TEXT_SECONDARY}; }}
+#pageHome QLabel#heroStar {{ color: #6C7FD8; font-size: 15px; }}
+#pageHome QLabel#appTitle {{ font-size: 16px; color: {tokens.TEXT}; font-weight: bold; }}
+#pageHome QLabel#recentTitle {{ color: {tokens.TEXT}; font-size: 14px; font-weight: bold; }}
+#pageHome QPushButton#linkBtn {{
+    border: none; background: transparent; color: {tokens.ACCENT}; text-align: left;
+}}
+#pageHome QPushButton#linkBtn:hover {{ text-decoration: underline; }}
+#pageHome QLabel#authorBar {{ color: #60798B; font-size: 12px; }}
+#pageHome QScrollArea#recentScroll {{ background: transparent; border: none; }}
+#pageHome QFrame#recentCard {{ border: 1px solid {tokens.BORDER}; border-radius: 8px;
+    background: {tokens.SURFACE}; }}
+#pageHome QFrame#recentCard:hover {{ border-color: {tokens.ACCENT}; }}
+#pageHome QLabel#recentName {{ color: {tokens.TEXT}; font-size: 13px; font-weight: bold; }}
+#pageHome QLabel#recentMeta {{ color: {tokens.TEXT_SECONDARY}; font-size: 12px; }}
+#pageHome QLabel#recentEmpty {{ color: {tokens.TEXT_SECONDARY}; font-size: 13px; }}
+#pageHome QPushButton#recentBtn {{ background: {tokens.ELEVATED}; color: {tokens.TEXT};
+    border: 1px solid {tokens.BORDER}; border-radius: 6px; padding: 3px 10px; font-size: 12px; }}
+#pageHome QPushButton#recentBtn:hover {{ border-color: {tokens.ACCENT}; }}
+#pageHome QPushButton#recentPrimaryBtn {{ background: {tokens.ACCENT}; color: #fff;
+    border: none; border-radius: 6px; padding: 3px 10px; font-size: 12px; }}
+#pageHome QPushButton#recentPrimaryBtn:hover {{ background: {tokens.ACCENT_HOVER}; }}
 """
 
 
@@ -108,6 +123,8 @@ class HomePage(QWidget):
     files_chosen = Signal(list)
     edit_requested = Signal(str)   # 最近任务里可编辑工程 → 打开工作台重新编辑
     open_advanced = Signal()
+    # 后台解析完成（reconcile + find_project 都会扫盘，不能占 UI 线程）
+    _recentResolved = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -133,15 +150,35 @@ class HomePage(QWidget):
         self.drop_zone = DropZone()
         self.drop_zone.dropped.connect(self.files_chosen)
         self.drop_zone.clicked.connect(self._browse)
-        layout.addWidget(self.drop_zone, stretch=1)
+        # 3:4 让最近任务拿到更多空间；原先拖放区是唯一 stretch 项，
+        # 窗口越高它占比越大（实测 55%），最近任务却被 200px 硬顶住
+        layout.addWidget(self.drop_zone, stretch=3)
 
-        recent_head = QLabel(tr('flow_recent_tasks'))
-        recent_head.setStyleSheet('color:#E6E9EC;font-size:14px;font-weight:bold;')
-        layout.addWidget(recent_head)
-        self.recent_list = QListWidget()
-        self.recent_list.setMaximumHeight(200)
-        self.recent_list.itemClicked.connect(self._on_recent_clicked)
-        layout.addWidget(self.recent_list)
+        recent_head = QHBoxLayout()
+        recent_title = QLabel(tr('flow_recent_tasks'))
+        recent_title.setObjectName('recentTitle')
+        recent_head.addWidget(recent_title)
+        recent_head.addStretch(1)
+        self.clear_done_btn = QPushButton(tr('flow_recent_clear'))
+        self.clear_done_btn.setObjectName('linkBtn')
+        self.clear_done_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_done_btn.clicked.connect(self._clear_done)
+        recent_head.addWidget(self.clear_done_btn)
+        layout.addLayout(recent_head)
+
+        self.recent_scroll = QScrollArea()
+        self.recent_scroll.setObjectName('recentScroll')
+        self.recent_scroll.setWidgetResizable(True)
+        self.recent_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.recent_scroll.setMinimumHeight(160)
+        container = QWidget()
+        self.recent_box = QVBoxLayout(container)
+        self.recent_box.setContentsMargins(0, 0, 0, 0)
+        self.recent_box.setSpacing(8)
+        self.recent_box.addStretch(1)
+        self.recent_scroll.setWidget(container)
+        layout.addWidget(self.recent_scroll, stretch=4)
+        self._recentResolved.connect(self._render_recent)
 
         # 作者声明页脚
         from videotrans.component.about_dialog import AUTHOR, EMAIL, GITHUB_URL
@@ -167,34 +204,54 @@ class HomePage(QWidget):
             self.files_chosen.emit(files)
 
     # ---- 最近任务 ----
-    _STATUS_TEXT = {
-        recent_tasks.STATUS_RUNNING: ('flow_status_running', '#f39c12'),
-        recent_tasks.STATUS_SUCCEED: ('flow_status_succeed', '#2ecc71'),
-        recent_tasks.STATUS_ERROR: ('flow_status_error', '#ff4d4d'),
-        recent_tasks.STATUS_STOPPED: ('flow_status_stopped', '#9AA7B4'),
-    }
-
     def refresh_recent(self):
-        self.recent_list.clear()
-        entries = recent_tasks.reconcile_run_states()
+        """先用已知字段秒画一版，再把扫盘工作放后台，避免首页卡顿。"""
+        self._render_recent(recent_tasks.load())
+        from videotrans.task.simple_runnable_qt import run_in_threadpool
+        run_in_threadpool(self._resolve_recent)
+
+    def _resolve_recent(self):
+        """后台线程：状态自愈 + 工程定位（两者都会递归扫盘）。"""
+        try:
+            entries = recent_tasks.reconcile_run_states()
+            for entry in entries:
+                project = self._find_project(entry)
+                entry['_project'] = project or ''
+                if project and entry.get('project_dir') != project:
+                    recent_tasks.update_fields(entry['video_path'], project_dir=project)
+            self._recentResolved.emit(entries)
+        except RuntimeError:
+            pass          # 页面已销毁（应用退出），丢弃结果
+
+    def _render_recent(self, entries):
+        while self.recent_box.count() > 1:
+            item = self.recent_box.takeAt(0)
+            widget = item.widget()
+            if widget:
+                # 只 deleteLater 不够：控件在事件循环处理删除前仍挂在容器上并
+                # 继续绘制，会和新卡片叠在一起
+                widget.setParent(None)
+                widget.deleteLater()
         if not entries:
-            item = QListWidgetItem(tr('flow_no_recent'))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.recent_list.addItem(item)
+            hint = QLabel(tr('flow_no_recent'))
+            hint.setObjectName('recentEmpty')
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.recent_box.insertWidget(0, hint)
             return
-        for e in entries:
-            name = Path(e.get('video_path', '')).name
-            key, _color = self._STATUS_TEXT.get(e.get('status'), ('flow_status_running', '#f39c12'))
-            when = time.strftime('%m-%d %H:%M', time.localtime(e.get('ts', 0)))
-            label = f"{name}   →{e.get('target_language', '')}   {when}   [{tr(key)}]"
-            # 有可重开工程的任务，明确标注可点击重新编辑
-            editable = bool(self._find_project(e))
-            if editable:
-                label += f"   ✏️ {tr('flow_reedit')}"
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, e)
-            item.setToolTip(tr('flow_reedit_hint') if editable else e.get('video_path', ''))
-            self.recent_list.addItem(item)
+        for index, entry in enumerate(entries):
+            project = entry.get('_project')
+            if project is None:
+                # 首帧只信任已回填的路径，扫盘留给后台
+                project = entry.get('project_dir') or ''
+                if project and not Path(project).is_dir():
+                    project = ''
+            card = RecentCard(entry, project_dir=project)
+            card.editRequested.connect(self.edit_requested)
+            card.rerunRequested.connect(lambda p: self.files_chosen.emit([p]))
+            card.openRequested.connect(
+                lambda d: QDesktopServices.openUrl(QUrl.fromLocalFile(d)))
+            card.removeRequested.connect(self._remove_recent)
+            self.recent_box.insertWidget(index, card)
 
     def _find_project(self, e) -> str:
         # 优先用回填的真实工程路径；否则在输出目录按视频名实时查找（兜底）
@@ -204,16 +261,8 @@ class HomePage(QWidget):
         from videotrans.task.project import find_project
         return find_project(e.get('target_dir', ''), Path(e.get('video_path', '')).stem)
 
-    def _on_recent_clicked(self, item):
-        e = item.data(Qt.ItemDataRole.UserRole)
-        if not e:
-            return
-        # 有可编辑工程 → 打开工作台重新编辑；成功任务 → 打开输出目录；否则重新发起
-        proj = self._find_project(e)
-        if proj:
-            self.edit_requested.emit(proj)
-        elif e.get('status') == recent_tasks.STATUS_SUCCEED and e.get('target_dir') \
-                and Path(e['target_dir']).is_dir():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(e['target_dir']))
-        elif e.get('video_path') and Path(e['video_path']).exists():
-            self.files_chosen.emit([e['video_path']])
+    def _remove_recent(self, video_path: str):
+        self._render_recent(recent_tasks.remove(video_path))
+
+    def _clear_done(self):
+        self._render_recent(recent_tasks.prune())

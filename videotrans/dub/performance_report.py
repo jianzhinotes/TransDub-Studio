@@ -19,6 +19,8 @@ from videotrans.dub.store import atomic_write_json
 
 PERFORMANCE_FILE = "performance_report.json"
 TTS_RUN_STATS_FILE = "tts_run_stats.json"
+# 配音期逐段落盘的 live 进度（分子+分母），供 UI 计算真实 ETA
+TTS_PROGRESS_FILE = "tts_progress.json"
 PERFORMANCE_SCHEMA_VERSION = 2
 
 

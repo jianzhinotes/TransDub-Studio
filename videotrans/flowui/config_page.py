@@ -3,17 +3,20 @@
 桥接策略 apply-on-start：仅在点「开始」时把选择回填进隐藏的旧主界面控件，
 再调 win_action.check_start() 复用全部校验/持久化/Worker 启动/暂停路由。
 """
+import os
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from videotrans.configure.config import app_cfg, logger, params, tr
 from videotrans.flowui import curated, recent_tasks
 from videotrans.flowui.channel_card import ChannelCard
+from videotrans.flowui.engine_summary import EngineSummary
 from videotrans.styles import tokens
 from videotrans.task.simple_runnable_qt import run_in_threadpool
 
@@ -30,7 +33,11 @@ _QSS = f"""
 }}
 #pageConfig QPushButton#startBtn:disabled {{ background: {tokens.BORDER}; color: #788D9C; }}
 #pageConfig QLabel#startHint {{ color: {tokens.WARNING}; font-size: 12px; }}
+#pageConfig QLabel#startHint[level="error"] {{ color: {tokens.ERROR}; }}
 #pageConfig QPushButton#linkBtn {{ border:none; background:transparent; color:{tokens.ACCENT}; }}
+#pageConfig QFrame#engineRow:hover {{ background: {tokens.ELEVATED}; border-radius: 6px; }}
+#pageConfig QLabel#engineKind {{ color: {tokens.TEXT_SECONDARY}; font-size: 12px; }}
+#pageConfig QLabel#engineName {{ color: {tokens.TEXT}; font-size: 13px; }}
 """
 
 
@@ -48,6 +55,8 @@ class ConfigPage(QWidget):
         self.flow = flow
         self.files = []
         self._workers_ready = False
+        self._workers_error = ''
+        self._boot_started = time.monotonic()
         self._voice_request_serial = 0
         self.setObjectName('pageConfig')
         self.setStyleSheet(_QSS)
@@ -76,16 +85,26 @@ class ConfigPage(QWidget):
         top.addWidget(self.outdir_btn)
         layout.addLayout(top)
 
+        # 三渠道卡先构造（此处不设父子，下面 clay.addWidget 时才 reparent），
+        # 以便主面板的只读摘要条能镜像它们的状态。
+        self.recogn_card = ChannelCard(kind=curated.KIND_RECOGN, curated_ids=curated.CURATED_RECOGN)
+        self.trans_card = ChannelCard(kind=curated.KIND_TRANS, curated_ids=curated.CURATED_TRANS)
+        self.tts_card = ChannelCard(kind=curated.KIND_TTS, curated_ids=curated.CURATED_TTS)
+
         # 默认只展示用户必须理解的两个选择；模型和工程参数全部折叠。
         quick_panel = self._panel()
+        # 面板按内容收紧：否则隐藏高级区时它会分走一半的富余空间被撑成大片留白
+        quick_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         quick = QVBoxLayout(quick_panel)
-        quick.setContentsMargins(20, 20, 20, 20)
-        quick.setSpacing(12)
+        quick.setContentsMargins(20, 18, 20, 18)
+        quick.setSpacing(10)
         quick_title = QLabel('✨ ' + tr('flow_smart_ready_title'))
-        quick_title.setStyleSheet('font-size:20px;font-weight:bold;color:#E6E9EC;')
+        quick_title.setStyleSheet(f'font-size:20px;font-weight:bold;color:{tokens.TEXT};')
+        quick_title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         quick.addWidget(quick_title)
         self.quick_summary = QLabel(tr('flow_smart_ready_summary'))
         self.quick_summary.setWordWrap(True)
+        self.quick_summary.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self.quick_summary.setStyleSheet(f'color:{tokens.TEXT_SECONDARY};')
         quick.addWidget(self.quick_summary)
         delivery_row = QHBoxLayout()
@@ -102,6 +121,11 @@ class ConfigPage(QWidget):
         self.target_lang.addItems(list(LANGNAME_DICT.values()))
         target_row.addWidget(self.target_lang, stretch=1)
         quick.addLayout(target_row)
+        # 引擎可见性：一眼看到本次用什么引擎、配好没有；点行展开高级设置更换
+        self.engine_summary = EngineSummary(
+            cards=(self.recogn_card, self.trans_card, self.tts_card))
+        self.engine_summary.expandRequested.connect(self._expand_advanced_to)
+        quick.addWidget(self.engine_summary)
         layout.addWidget(quick_panel)
 
         self.advanced_btn = QPushButton(tr('flow_show_advanced'))
@@ -135,10 +159,7 @@ class ConfigPage(QWidget):
         lp.addLayout(src_col, stretch=1)
         clay.addWidget(lang_panel)
 
-        # 三渠道卡竖排（全宽，舒展）
-        self.recogn_card = ChannelCard(kind=curated.KIND_RECOGN, curated_ids=curated.CURATED_RECOGN)
-        self.trans_card = ChannelCard(kind=curated.KIND_TRANS, curated_ids=curated.CURATED_TRANS)
-        self.tts_card = ChannelCard(kind=curated.KIND_TTS, curated_ids=curated.CURATED_TTS)
+        # 三渠道卡竖排（全宽，舒展）；实例已在主面板摘要条之前构造
         for c in (self.recogn_card, self.trans_card, self.tts_card):
             clay.addWidget(c)
 
@@ -174,14 +195,31 @@ class ConfigPage(QWidget):
         self.advanced_scroll = scroll
         layout.addWidget(scroll, stretch=1)
 
+        # 高级区隐藏时它的 maximumSize 归零、吃不到 stretch，富余空间会被 Qt
+        # 均分给其余项（实测把卡片和提示各撑到 362px）。用一个可切换的填充件
+        # 明确接住这块空间。
+        self._filler = QWidget()
+        self._filler.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self._filler)
+
         # 开始（固定底部）
         self.start_hint = QLabel('')
         self.start_hint.setObjectName('startHint')
         self.start_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.start_hint.setWordWrap(True)
+        self.start_hint.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.start_hint.setMinimumHeight(20)   # 有无提示都不让主按钮上下跳动
         layout.addWidget(self.start_hint)
+        self.retry_workers_btn = QPushButton(tr('flow_retry_workers'))
+        self.retry_workers_btn.setObjectName('linkBtn')
+        self.retry_workers_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.retry_workers_btn.clicked.connect(self._retry_workers)
+        self.retry_workers_btn.setVisible(False)
+        layout.addWidget(self.retry_workers_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         self.start_btn = QPushButton('✨ ' + tr('flow_smart_start'))
         self.start_btn.setObjectName('startBtn')
         self.start_btn.setMinimumHeight(50)
+        self.start_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         # Only an intentional click starts paid/local work; a leftover Enter key
         # from launching the app must not activate the primary action.
         self.start_btn.setAutoDefault(False)
@@ -202,6 +240,11 @@ class ConfigPage(QWidget):
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(1000)
         self._status_timer.timeout.connect(self._refresh_all_status)
+        # 初始化等待计时：让"正在初始化"能显示已等待多久，而不是一句永恒的静态提示
+        self._boot_timer = QTimer(self)
+        self._boot_timer.setInterval(1000)
+        self._boot_timer.timeout.connect(self._update_start_enabled)
+        self._boot_timer.start()
 
         self._load_defaults()
 
@@ -223,9 +266,12 @@ class ConfigPage(QWidget):
         super().showEvent(event)
         self._refresh_all_status()
         self._status_timer.start()
+        if not self._workers_ready and not self._workers_error:
+            self._boot_timer.start()
 
     def hideEvent(self, event):
         self._status_timer.stop()
+        self._boot_timer.stop()
         super().hideEvent(event)
 
     def load(self, files: list):
@@ -242,7 +288,31 @@ class ConfigPage(QWidget):
 
     def set_workers_ready(self, ready: bool):
         self._workers_ready = ready
+        if ready:
+            self._workers_error = ''
+            self._boot_timer.stop()
         self._update_start_enabled()
+
+    def set_workers_failed(self, message: str):
+        """AI 运行时启动失败：说清真实原因，并给一个重试入口。
+
+        原先失败分支只弹一次 show_error 就再不通知本页，按钮会永久停在
+        "正在初始化，请稍候"——用户既不知道坏了，也无从恢复。
+        """
+        self._workers_ready = False
+        self._workers_error = str(message or '')[:300]
+        self._boot_timer.stop()
+        self._update_start_enabled()
+
+    def _retry_workers(self):
+        main = getattr(self.flow, 'main', None)
+        if main is None or not hasattr(main, 'restart_ai_loader'):
+            return
+        self._workers_error = ''
+        self._boot_started = time.monotonic()
+        self._boot_timer.start()
+        self._update_start_enabled()
+        main.restart_ai_loader()
 
     # ---- 默认值 ----
     def _load_defaults(self):
@@ -282,6 +352,7 @@ class ConfigPage(QWidget):
         """将“只做双语字幕”变成明确的成片模式，而非隐含的 No 音色。"""
         bilingual = self._is_bilingual_delivery()
         self.tts_card.setVisible(not bilingual)
+        self.engine_summary.set_kind_visible(curated.KIND_TTS, not bilingual)
         self.auto_align.setVisible(not bilingual)
         self.keep_bgm.setVisible(not bilingual)
         if bilingual:
@@ -372,17 +443,27 @@ class ConfigPage(QWidget):
             self.tts_card.set_warning('' if warn2 is True else str(warn2))
         else:
             self.tts_card.set_warning('')
+        self.engine_summary.refresh()
 
     # ---- 状态与开始门控 ----
     def _refresh_all_status(self):
         for c in (self.recogn_card, self.trans_card, self.tts_card):
             c.refresh_status()
+        self.engine_summary.refresh()
         self._update_start_enabled()
 
     def _update_start_enabled(self):
         reasons = []
-        if not self._workers_ready:
-            reasons.append(tr('flow_waiting_workers'))
+        critical = False
+        if self._workers_error:
+            reasons.append(tr('flow_workers_failed') + '：' + self._workers_error)
+            critical = True
+        elif not self._workers_ready:
+            # 真实成因是首次 import torch，冷启动可能几十秒。给出已等待秒数，
+            # 用户才能区分"正在加载"和"卡死了"。
+            waited = int(time.monotonic() - self._boot_started)
+            reasons.append(
+                f"{tr('flow_waiting_workers')}（{waited}s · {tr('flow_first_boot_slow')}）")
         cards = (self.recogn_card, self.trans_card)
         if not self._is_bilingual_delivery():
             cards += (self.tts_card,)
@@ -390,13 +471,24 @@ class ConfigPage(QWidget):
             if not c.is_ready():
                 reasons.append(tr('flow_need_key') + ': ' + c.provider().name)
         self.start_hint.setText('；'.join(reasons))
+        self.start_hint.setProperty('level', 'error' if critical else 'warn')
+        self.start_hint.style().unpolish(self.start_hint)
+        self.start_hint.style().polish(self.start_hint)
+        self.retry_workers_btn.setVisible(critical)
         self.start_btn.setDisabled(bool(reasons))
 
     def _toggle_advanced(self):
         self._advanced_visible = not self._advanced_visible
         self.advanced_scroll.setVisible(self._advanced_visible)
+        self._filler.setVisible(not self._advanced_visible)
         self.advanced_btn.setText(tr(
             'flow_hide_advanced' if self._advanced_visible else 'flow_show_advanced'))
+
+    def _expand_advanced_to(self, card):
+        """点摘要行 → 展开高级设置并滚到对应渠道卡。"""
+        if not self._advanced_visible:
+            self._toggle_advanced()
+        self.advanced_scroll.ensureWidgetVisible(card)
 
     def _pick_outdir(self):
         self.flow.win_action.get_save_dir()
@@ -494,6 +586,8 @@ class ConfigPage(QWidget):
                 'project_dir': project_dir_for(target_dir, _P(f).stem) if target_dir else '',
                 'source_language': self.source_lang.currentText(),
                 'target_language': self.target_lang.currentText(),
+                # 记录发起进程：应用崩溃后可据此精确判定"进行中"是否已成僵尸
+                'pid': os.getpid(),
             })
 
         self.started.emit()
