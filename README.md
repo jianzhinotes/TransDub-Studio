@@ -28,6 +28,26 @@ https://github.com/user-attachments/assets/f23aae53-6d21-432a-9ab0-a5589af0a1bd
 
 </div>
 
+## 📸 Inside the app
+
+The video above shows the output. These show the part that actually matters when the output is *almost* right — **every line stays editable**.
+
+**Per-line dubbing review** — source and translation side by side, per-line voice, audition and re-dub. Nothing is a black box you can only re-run.
+
+<img src="docs/assets/screenshot-lines.png" alt="Per-line dubbing review: source and translation side by side, audition and re-dub per line" width="620">
+
+**Editable timeline** — original and dubbed waveforms on one ruler; drag a subtitle block to move it, drag its edge to change duration.
+
+<img src="docs/assets/screenshot-timeline.png" alt="Editable timeline with original and dubbed waveforms and draggable subtitle blocks" width="880">
+
+**Live progress with a real ETA** — segment counter, elapsed time and remaining estimate come from the dubbing pipeline itself, not from guessing.
+
+<img src="docs/assets/screenshot-progress.png" alt="Task card showing stage stepper, 87/213 segments and estimated time remaining" width="700">
+
+**Reopenable projects** — every finished job stays on the home page; reopen it to re-edit and re-export without re-running recognition or translation.
+
+<img src="docs/assets/screenshot-home.png" alt="Home page with drag-and-drop import and recent tasks with status badges" width="880">
+
 ## What is TransDub Studio?
 
 **TransDub Studio** is an open-source, local-first studio for Chinese long-form video, built on [pyVideoTrans](https://github.com/jianchang512/pyvideotrans). It offers two clear deliverables: a Chinese-dubbed version, or an original-audio video with English-above-Chinese bilingual subtitles. Instead of treating recognition, translation and TTS as disconnected model calls, it coordinates whole-context translation, semantic segmentation, target duration, synthesis, language checks and local repair as one resumable workflow. ASR, LLM and TTS models remain replaceable backends rather than defining the product.

@@ -28,6 +28,26 @@ https://github.com/user-attachments/assets/f23aae53-6d21-432a-9ab0-a5589af0a1bd
 
 </div>
 
+## 📸 界面一览
+
+上面的视频展示的是成品。下面这些展示的是——当成品**差一点点**的时候，你能怎么办：**每一句都还能改**。
+
+**逐句配音校对** —— 原文与译文并排、逐句音色、试听、单句重配。没有"只能整个重跑"的黑盒。
+
+<img src="assets/screenshot-lines.png" alt="逐句配音校对：原文译文并排，可试听、可单句重配" width="620">
+
+**可编辑时间轴** —— 原声与配音双波形同尺；拖动字幕块改位置，拖动边缘改时长。
+
+<img src="assets/screenshot-timeline.png" alt="可编辑时间轴：原声/配音双波形与可拖拽字幕块" width="880">
+
+**真实的进度与剩余时间** —— 段数、已用时间和预计剩余来自配音流水线本身，不是估的。
+
+<img src="assets/screenshot-progress.png" alt="任务卡片：阶段步进器、87/213 段与预计剩余时间" width="700">
+
+**工程可重开** —— 完成的任务留在首页，随时重新打开继续改、重新导出，不必重跑识别和翻译。
+
+<img src="assets/screenshot-home.png" alt="首页：拖放导入与带状态徽章的最近任务" width="880">
+
 ## TransDub Studio 是什么？
 
 **TransDub Studio** 是基于 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans) 构建的开源、本地优先中文长视频工作台。它提供两条明确的成片路径：生成中文配音版，或保留原声并生成中英文双语字幕版。它不再把识别、翻译和 TTS 当成互不相干的模型调用，而是把全文翻译、语义分段、目标时长、配音生成、语言质检和局部返工组织成一条可断点恢复的工作流。ASR、LLM、TTS 都只是可替换后端，不绑定任何单一厂商或模型。
