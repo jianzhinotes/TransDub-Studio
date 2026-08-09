@@ -56,6 +56,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             "tiqu": self.action_tiquzimu
         }
 
+        # 配音质量预设 → 内存 settings（此后 _f5tts 的既有读取点自动拿到预设值）
+        from videotrans.configure.config import apply_dub_preset
+        apply_dub_preset()
         # 检测GPU
         self._workers_status = ''
         self.restart_ai_loader()

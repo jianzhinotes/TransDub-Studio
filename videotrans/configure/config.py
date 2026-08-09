@@ -379,6 +379,11 @@ class AppSettings:
             "dubb_cache": True,
             # DeepSeek 整字幕翻译单批最大行数
             "deepseek_srt_batch": 100,
+            # 配音质量预设：fast / balanced / quality / custom。
+            # 非 custom 时会覆盖下面几个"时间↔质量"开关（见 videotrans/dub/presets.py）
+            "f5tts_preset": "balanced",
+            # 说话人一致性门禁：此前漏注册，导致 cfg.json 里写了也会被合并过滤掉
+            "f5tts_speaker_identity_gate": True,
             # F5-TTS 扩散步数：32=原始质量（默认），16=省一半时间但音质细节下降
             "f5tts_nfe": 32,
             # F5-TTS 随机种子：固定值保证全片音色一致；负数=逐句随机（旧行为）
@@ -615,6 +620,7 @@ class AppSettings:
                 "f5tts_item_timeout_multiplier",
                 "f5tts_max_slot_ratio",
                 "f5tts_max_backend_speed",
+                "f5tts_ref_similarity",
             ]
         # 对数字类型进行处理
         int_type=[
@@ -649,6 +655,13 @@ class AppSettings:
                 "f5tts_item_timeout_s",
                 "f5tts_min_available_mb",
                 "f5tts_resource_wait_s",
+                # 未登记的键 get() 一律返回 str，调用点必须自己 int()。
+                # 预设会写入这些键，登记类型后取值行为可预期。
+                "f5tts_nfe",
+                "f5tts_seed",
+                "f5tts_preflight_samples",
+                "f5tts_validation_batch_size",
+                "f5tts_validation_gap_ms",
             ]
         try:
             if key in int_type:
@@ -986,6 +999,20 @@ params: AppParams = AppParams()
 
 HOME_DIR = settings.homedir  # 更新全局 HOME_DIR
 Path(HOME_DIR).mkdir(parents=True, exist_ok=True)
+
+
+def apply_dub_preset(name=None) -> dict:
+    """把配音质量预设写进内存 settings。
+
+    放在这里而不是 import 期直接执行：videotrans.dub 会反向 import config，
+    模块级调用会形成循环导入。由 main_win 启动时与 UI 切换时调用。
+    """
+    try:
+        from videotrans.dub import presets
+        return presets.apply(name, settings)
+    except Exception as error:      # 预设失效绝不能挡住启动
+        logger.warning(f'应用配音预设失败,沿用 cfg.json 原值: {error}')
+        return {}
 
 defaulelang,_transobj=_init_language()
 

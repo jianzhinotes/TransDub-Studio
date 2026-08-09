@@ -983,5 +983,12 @@
     "flow_recent_rerun": "重跑",
     "flow_recent_remove": "从列表移除",
     "flow_recent_clear": "清除已完成",
-    "flow_status_stale_tip": "该任务的进程已不存在，状态已自动修正"
+    "flow_status_stale_tip": "该任务的进程已不存在，状态已自动修正",
+    "dub_preset_label": "配音质量",
+    "dub_preset_fast": "快速（出小样）",
+    "dub_preset_balanced": "均衡（推荐）",
+    "dub_preset_quality": "高质量（成品交付）",
+    "dub_preset_custom": "自定义（用 cfg.json 中的专家配置）",
+    "dub_preset_tip": "一次设定扩散步数、预飞抽检、多说话人分离等质量开关",
+    "dub_preset_custom_tip": "不干预 cfg.json 中的专家配置"
 }

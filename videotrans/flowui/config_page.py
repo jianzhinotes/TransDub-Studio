@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from videotrans.configure.config import app_cfg, logger, params, tr
+from videotrans.configure.config import app_cfg, logger, params, settings, tr
+from videotrans.dub import presets
 from videotrans.flowui import curated, recent_tasks
 from videotrans.flowui.channel_card import ChannelCard
 from videotrans.flowui.engine_summary import EngineSummary
@@ -169,6 +170,16 @@ class ConfigPage(QWidget):
         op.setContentsMargins(16, 14, 16, 14)
         op.setSpacing(10)
         op.addWidget(self._sec_title(tr('flow_options')))
+        # 配音质量预设：把 6 个"时间↔质量"开关收敛成一个选择
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel(tr('dub_preset_label')))
+        self.preset_box = QComboBox()
+        for name in (presets.PRESET_FAST, presets.PRESET_BALANCED,
+                     presets.PRESET_QUALITY, presets.PRESET_CUSTOM):
+            self.preset_box.addItem(tr(presets.PRESET_LABELS[name]), name)
+        self.preset_box.currentIndexChanged.connect(lambda _i: self._on_preset_changed())
+        preset_row.addWidget(self.preset_box, stretch=1)
+        op.addLayout(preset_row)
         sub_row = QHBoxLayout()
         sub_row.addWidget(QLabel(tr('flow_subtitle_label')))
         self.subtitle_box = QComboBox()
@@ -340,10 +351,35 @@ class ConfigPage(QWidget):
         # 会把人声分离残留无声地混进每一个新项目。需要背景音乐时由用户
         # 在本次任务中显式开启。
         self.keep_bgm.setChecked(False)
+        self._load_preset()
 
         self._reload_models()
         self._reload_voices()
         self._update_delivery_mode()
+
+    def _load_preset(self):
+        name = presets.current(settings)
+        index = self.preset_box.findData(name)
+        self.preset_box.blockSignals(True)
+        self.preset_box.setCurrentIndex(index if index >= 0 else 0)
+        self.preset_box.blockSignals(False)
+        self._update_preset_tip()
+
+    def _on_preset_changed(self):
+        """立即落盘并写进内存 settings，本次任务即可生效。"""
+        name = self.preset_box.currentData() or presets.DEFAULT_PRESET
+        try:
+            settings.parse_init({'f5tts_preset': name})
+        except Exception as error:
+            logger.warning(f'保存配音预设失败: {error}')
+        presets.apply(name, settings)
+        self._update_preset_tip()
+
+    def _update_preset_tip(self):
+        name = self.preset_box.currentData() or presets.DEFAULT_PRESET
+        detail = presets.describe(name)
+        self.preset_box.setToolTip(
+            f"{tr('dub_preset_tip')}\n{detail}" if detail else tr('dub_preset_custom_tip'))
 
     def _is_bilingual_delivery(self) -> bool:
         return self.delivery_box.currentData() == 'bilingual'

@@ -983,5 +983,12 @@
     "flow_recent_rerun": "Run again",
     "flow_recent_remove": "Remove from list",
     "flow_recent_clear": "Clear finished",
-    "flow_status_stale_tip": "Owning process is gone; status was corrected automatically"
+    "flow_status_stale_tip": "Owning process is gone; status was corrected automatically",
+    "dub_preset_label": "Dubbing quality",
+    "dub_preset_fast": "Fast (draft)",
+    "dub_preset_balanced": "Balanced (recommended)",
+    "dub_preset_quality": "High quality (final)",
+    "dub_preset_custom": "Custom (use expert cfg.json values)",
+    "dub_preset_tip": "Sets diffusion steps, preflight sampling and speaker separation together",
+    "dub_preset_custom_tip": "Leaves your expert cfg.json values untouched"
 }
