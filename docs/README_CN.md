@@ -116,9 +116,30 @@ https://github.com/user-attachments/assets/f23aae53-6d21-432a-9ab0-a5589af0a1bd
 到 [**Releases**](https://github.com/jianzhinotes/TransDub-Studio/releases) 页面下载对应安装器:
 
 - **Windows:** `TransDub-Studio-Setup-<版本>.exe` → 双击,按向导走。
-- **macOS:** `TransDub-Studio-<版本>.dmg` → 打开,拖进 Applications,首次**右键 → 打开**(未签名版)。
+- **macOS:** `TransDub-Studio-<版本>.dmg` → 打开,拖进 Applications,首次需要放行一次(见下,未签名版)。
 
-安装器很小;首次启动时下载运行环境 + 模型(几个 GB),之后完全本地运行。构建**未签名**,所以 Windows SmartScreen 会提示"更多信息 → 仍要运行",macOS 首次需要右键打开。
+<details>
+<summary><b>macOS 首次会拦截 —— 如何放行</b></summary>
+
+构建未签名，macOS 会提示 *"Apple 无法验证……是否包含恶意软件"*。放行一次即可：
+
+**macOS 15 Sequoia 及以后（含 macOS 26）** —— 旧的「右键 → 打开」已经不再有效：
+
+1. 双击应用，把警告关掉。
+2. 打开 **系统设置 → 隐私与安全性**，往下滚。
+3. 在 *"已阻止使用 TransDub Studio…"* 旁边点 **「仍要打开」**，验证身份后再点 **「打开」**。
+
+**macOS 14 及更早：** 右键点应用 → **打开** → **打开**。
+
+两种情况都只需做这一次。习惯命令行的话：
+
+```bash
+xattr -d com.apple.quarantine "/Applications/TransDub Studio.app"
+```
+
+</details>
+
+安装器很小;首次启动时下载运行环境 + 模型(几个 GB),之后完全本地运行。构建**未签名**,所以 Windows SmartScreen 会提示"更多信息 → 仍要运行",macOS 需要按上面的步骤放行一次。
 
 > 更喜欢命令行,或你的版本还没发布安装器?用下面的一行命令。
 

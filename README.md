@@ -116,9 +116,30 @@ The classic full-featured UI (batch processing, all 79 channels, advanced parame
 Grab the latest installer from the [**Releases**](https://github.com/jianzhinotes/TransDub-Studio/releases) page:
 
 - **Windows:** `TransDub-Studio-Setup-<version>.exe` → double-click, follow the wizard.
-- **macOS:** `TransDub-Studio-<version>.dmg` → open, drag to Applications, then **right-click → Open** the first time (unsigned build).
+- **macOS:** `TransDub-Studio-<version>.dmg` → open, drag to Applications, then allow it once — see below (unsigned build).
 
-The installer is small; on first launch it downloads the runtime + models (a few GB) and then runs fully local. Builds are **unsigned**, so Windows SmartScreen shows *More info → Run anyway* and macOS needs the right-click-Open once.
+<details>
+<summary><b>macOS blocks it the first time — how to allow it</b></summary>
+
+The build is unsigned, so macOS shows *"Apple could not verify … is free of malware"*. Allow it once:
+
+**macOS 15 Sequoia and later** (including macOS 26) — the old Control-click → Open trick no longer works:
+
+1. Double-click the app and dismiss the warning.
+2. **System Settings → Privacy & Security**, scroll down.
+3. Next to *"TransDub Studio was blocked…"* click **Open Anyway**, authenticate, then confirm **Open**.
+
+**macOS 14 and earlier:** Control-click the app → **Open** → **Open**.
+
+Either way it is a one-time step. Terminal equivalent, if you prefer:
+
+```bash
+xattr -d com.apple.quarantine "/Applications/TransDub Studio.app"
+```
+
+</details>
+
+The installer is small; on first launch it downloads the runtime + models (a few GB) and then runs fully local. Builds are **unsigned**, so Windows SmartScreen shows *More info → Run anyway*, and macOS needs the one-time approval above.
 
 > Prefer the command line, or no installer published yet for your version? Use the one-liners below.
 

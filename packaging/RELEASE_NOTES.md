@@ -114,7 +114,28 @@ consistent, recoverable and easier to verify.
 | Your OS | File | How to install |
 |---|---|---|
 | **Windows 10/11** | `TransDub-Studio-Setup-*.exe` | Double-click → follow the wizard. If SmartScreen warns, click **More info → Run anyway**. |
-| **macOS 11+** | `TransDub-Studio-*.dmg` | Open the dmg → drag **TransDub Studio** to Applications → **right-click the app → Open** the first time. |
+| **macOS 11+** | `TransDub-Studio-*.dmg` | Open the dmg → drag **TransDub Studio** onto the **Applications** folder → allow it once (see below). |
+
+### macOS blocks it the first time / macOS 首次会拦截
+
+The build is unsigned, so macOS says *"Apple could not verify … is free of malware"*.
+构建未签名，macOS 会提示"Apple 无法验证……是否包含恶意软件"。
+
+**macOS 15 Sequoia and later (incl. macOS 26)** — Control-click → Open no longer works:
+**macOS 15 Sequoia 及以后（含 macOS 26）** —— 旧的「右键 → 打开」已失效：
+
+1. Double-click the app, dismiss the warning. / 双击应用，关掉警告。
+2. **System Settings → Privacy & Security**, scroll down. / **系统设置 → 隐私与安全性**，往下滚。
+3. Click **Open Anyway** next to the blocked-app notice, authenticate, then **Open**.
+   在"已阻止使用 TransDub Studio…"旁点 **「仍要打开」**，验证后再点 **「打开」**。
+
+**macOS 14 and earlier / macOS 14 及更早:** Control-click the app → **Open** → **Open**.
+
+One-time only. Terminal equivalent / 命令行等价写法：
+
+```bash
+xattr -d com.apple.quarantine "/Applications/TransDub Studio.app"
+```
 
 > **First launch downloads a few GB** (PyTorch + models) and sets things up — this is normal and only happens once. A window/terminal stays open showing progress; leave it until it finishes, then the app opens by itself. After that it runs **fully local**.
 
@@ -134,7 +155,7 @@ Prefer the command line? See the [one-line installers and source setup](https://
 | 系统 | 文件 | 安装方法 |
 |---|---|---|
 | **Windows 10/11** | `TransDub-Studio-Setup-*.exe` | 双击 → 按向导走。若 SmartScreen 拦截,点**更多信息 → 仍要运行**。 |
-| **macOS 11+** | `TransDub-Studio-*.dmg` | 打开 dmg → 把 **TransDub Studio** 拖进 Applications → 首次**右键点应用 → 打开**。 |
+| **macOS 11+** | `TransDub-Studio-*.dmg` | 打开 dmg → 把 **TransDub Studio** 拖到 **Applications** 文件夹图标上 → 首次需放行一次（见下）。 |
 
 > **首次启动会下载几个 GB**(PyTorch + 模型)并完成初始化——属正常,只发生一次。会有个窗口/终端显示进度,等它跑完应用会自动打开。之后**完全本地运行**。
 
