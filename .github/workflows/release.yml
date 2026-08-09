@@ -49,13 +49,6 @@ jobs:
           name: windows-installer
           path: dist/*.exe
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.exe
-          body_path: packaging/RELEASE_NOTES.md
-
   # ----------------------------------------------------------------- macOS ---
   macos:
     runs-on: macos-latest
@@ -77,9 +70,32 @@ jobs:
           name: macos-dmg
           path: dist/*.dmg
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
+  # ---------------------------------------------------------------- Release ---
+  # Publishing is a separate job on purpose. When both build jobs attached the
+  # release themselves they raced to create the same one: whichever lost gave up
+  # with "Too many retries", and a half-populated release still went public
+  # (v1.1.2 shipped with only the .exe). Building and publishing are now
+  # separate, so a failed build blocks the release instead of truncating it.
+  release:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # for packaging/RELEASE_NOTES.md
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify both installers are present
+        run: |
+          ls -la dist
+          test -n "$(find dist -name '*.exe' -print -quit)" || { echo '::error::missing .exe'; exit 1; }
+          test -n "$(find dist -name '*.dmg' -print -quit)" || { echo '::error::missing .dmg'; exit 1; }
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          files: dist/*
           body_path: packaging/RELEASE_NOTES.md
