@@ -990,5 +990,9 @@
     "dub_preset_quality": "High quality (final)",
     "dub_preset_custom": "Custom (use expert cfg.json values)",
     "dub_preset_tip": "Sets diffusion steps, preflight sampling and speaker separation together",
-    "dub_preset_custom_tip": "Leaves your expert cfg.json values untouched"
+    "dub_preset_custom_tip": "Leaves your expert cfg.json values untouched",
+    "f5_stage_reference": "Selecting and validating the cloning reference…",
+    "f5_stage_speakers": "Grouping lines by speaker…",
+    "f5_stage_anchors": "Picking Chinese voice anchors from finished clips…",
+    "f5_ref_checking": "Reference read-back {0}/{1} (passed {2}/{3})"
 }

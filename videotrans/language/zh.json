@@ -990,5 +990,9 @@
     "dub_preset_quality": "高质量（成品交付）",
     "dub_preset_custom": "自定义（用 cfg.json 中的专家配置）",
     "dub_preset_tip": "一次设定扩散步数、预飞抽检、多说话人分离等质量开关",
-    "dub_preset_custom_tip": "不干预 cfg.json 中的专家配置"
+    "dub_preset_custom_tip": "不干预 cfg.json 中的专家配置",
+    "f5_stage_reference": "正在挑选并校验克隆参考音频…",
+    "f5_stage_speakers": "正在按声纹归属说话人…",
+    "f5_stage_anchors": "正在从现有成品挑选中文音色锚点…",
+    "f5_ref_checking": "参考音频回读校验 {0}/{1}（已通过 {2}/{3}）"
 }

@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from gradio_client import  handle_file
-from videotrans.configure.config import ROOT_DIR, logger, settings
+from videotrans.configure.config import ROOT_DIR, logger, settings, tr
 from videotrans.configure.excepts import DubbingSrtError
 from videotrans.tts._gradio import GradioBase
 from videotrans.util.help_misc import vail_file
@@ -78,9 +78,14 @@ class F5TTS(GradioBase):
         # 只有显式允许时才退回 tiny，避免弱模型漏掉短促英文。
         validator = self._load_validator()
         try:
+            # 这三步会做几十次回读转写，最长可达数分钟。不报进度的话，
+            # 用户会看到"配音"阶段亮着却毫无动静，误以为卡死。
+            self.signal(text=tr('f5_stage_reference'))
             self.safe_ref_wav, self.safe_ref_text = self._select_safe_reference(validator)
+            self.signal(text=tr('f5_stage_speakers'))
             self._build_cluster_refs(validator)
             self.resume_chinese_anchors = {}
+            self.signal(text=tr('f5_stage_anchors'))
             (
                 self.resume_chinese_anchor_ref,
                 self.resume_chinese_anchor_text,
@@ -297,7 +302,8 @@ class F5TTS(GradioBase):
         from videotrans.dub.quality_manifest import ReferenceValidationCache
 
         passed = []
-        for cand in ranked[:max_try]:
+        pool = ranked[:max_try]
+        for position, cand in enumerate(pool, 1):
             threshold = float(settings.get('f5tts_ref_similarity', 0.75) or 0.75)
             cached = ReferenceValidationCache.lookup(
                 cand[1], cand[2], self.VALIDATOR_MODEL
@@ -306,6 +312,10 @@ class F5TTS(GradioBase):
                 transcript = str(cached.get("transcript") or "")
                 sim = float(cached.get("similarity") or 0)
             else:
+                # 每段回读要秒级，逐段报进度，否则这里是一段无声的长等待
+                self.signal(text=tr('f5_ref_checking')
+                            .replace('{0}', str(position)).replace('{1}', str(len(pool)))
+                            .replace('{2}', str(len(passed))).replace('{3}', str(need)))
                 try:
                     transcript = self._transcribe_one_for_validation(validator, cand[1])
                 except Exception as e:

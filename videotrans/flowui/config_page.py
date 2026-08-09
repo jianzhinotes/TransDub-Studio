@@ -43,6 +43,10 @@ _QSS = f"""
 
 
 class ConfigPage(QWidget):
+    # 等待初始化多久后才显示秒数 / 才追加"首次启动慢"的解释
+    SHOW_BOOT_SECONDS_S = 3
+    SLOW_BOOT_EXPLAIN_S = 10
+
     back_requested = Signal()
     started = Signal()
     start_failed = Signal()              # check_start 未进入运行态时发出，工作区据此切回配置
@@ -495,11 +499,15 @@ class ConfigPage(QWidget):
             reasons.append(tr('flow_workers_failed') + '：' + self._workers_error)
             critical = True
         elif not self._workers_ready:
-            # 真实成因是首次 import torch，冷启动可能几十秒。给出已等待秒数，
-            # 用户才能区分"正在加载"和"卡死了"。
+            # 渐进披露：实测热启动约 1 秒就绪，一上来就写"可能 20-40 秒"
+            # 会让快启动看起来像慢启动。只有真的等久了才追加解释。
             waited = int(time.monotonic() - self._boot_started)
-            reasons.append(
-                f"{tr('flow_waiting_workers')}（{waited}s · {tr('flow_first_boot_slow')}）")
+            hint = tr('flow_waiting_workers')
+            if waited >= self.SLOW_BOOT_EXPLAIN_S:
+                hint = f"{hint}（{waited}s · {tr('flow_first_boot_slow')}）"
+            elif waited >= self.SHOW_BOOT_SECONDS_S:
+                hint = f"{hint}（{waited}s）"
+            reasons.append(hint)
         cards = (self.recogn_card, self.trans_card)
         if not self._is_bilingual_delivery():
             cards += (self.tts_card,)
