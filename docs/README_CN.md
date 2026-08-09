@@ -163,7 +163,23 @@ uv sync              # 首次，自动装 Python 3.10 + 依赖
 uv run python sp.py
 ```
 
-**环境要求：** macOS（Apple 芯片或 Intel）或 Windows 10/11，预留 5–8 GB 给依赖和模型。
+## 🖥️ 环境要求
+
+`uv` 会自动装好并锁定 Python 3.10，无需手动准备别的。
+
+| | 最低 | 推荐 |
+|---|---|---|
+| **系统** | macOS 11+（Apple 芯片或 Intel）· Windows 10/11 | macOS 13+ Apple 芯片 · Windows 11 |
+| **内存** | 8 GB | 16 GB 以上 |
+| **磁盘** | 约 8 GB（依赖 + 一个识别模型） | 想留多个模型则 15 GB 以上 |
+| **显卡** | 不需要，CPU 可跑 | NVIDIA（Windows 自动装 CUDA 版）· Apple 芯片（Metal） |
+
+**说明**
+
+- **Apple 芯片且内存 ≤18 GB** 会自动切到低内存配音模式：串行合成、识别与配音模型错峰加载。慢一些，但不会把统一内存吃穿。
+- **Apple 芯片的识别**可走 Metal GPU（可选的 `mlx-whisper` 后端，在 `videotrans/cfg.json` 里设 `use_mlx_whisper: true`）。同一段素材实测 `large-v3-turbo`：**23.6 秒 → 9.8 秒**。
+- **Windows** 会装 CUDA 版 PyTorch：有 N 卡加新驱动就自动加速，没有则回退 CPU。
+- **模型体积参考**：`faster-whisper large-v3-turbo` 约 2.8 GB，其 MLX 版约 1.5 GB，`tiny` 约 75 MB。首次用到时才下载。
 
 在此基础上，TransDub Studio 针对本地部署、DeepSeek 翻译质量、F5-TTS 原声克隆稳定性、macOS 应用体验和最终配音可靠性做了改进。
 
@@ -269,6 +285,83 @@ TransDub Studio 继承 pyVideoTrans 的主要能力，包括：
 
 - [pyVideoTrans 仓库](https://github.com/jianchang512/pyvideotrans)
 - [pyVideoTrans 文档](https://pyvideotrans.com)
+
+## 🗺️ 路线图
+
+这是个人维护的下游版本，下面是方向，不是承诺。
+
+**接下来在看的**
+
+- 在真实 Windows 机器上验证安装包（目前只在 CI 里构建过，没有真机跑通端到端）
+- CosyVoice2 与 F5-TTS 的跨语言克隆 A/B 对比
+- 单个任务取消（现在只能取消整个队列）
+- 首页最近任务的视频缩略图
+
+<details>
+<summary><b>已完成</b></summary>
+
+- **工作流** —— 剪映式 Flow 界面（首页 → 单页配置 → 分阶段进度）；识别后、翻译后、配音后的分步内嵌校对；工程可重开，只重跑对齐与合成
+- **配音工作台** —— 逐句卡片（原文译文并排）、双波形可编辑时间轴、单句重配与换音色、原声/配音 A/B 试听
+- **音色质量** —— 参考音频自动回读质检、复合参考、声纹聚类（访谈里克隆主讲人而非主持人）、多说话人各配各的音色、重试用中文锚点、F5 原生 32 扩散步数 + 固定种子保证全片音色一致
+- **可靠性** —— 质量门禁与自动返工、大面积失败熔断、逐段断点续配、跨运行配音缓存、合成看门狗、Apple 芯片低内存模式
+- **速度** —— 可选 `mlx-whisper` Metal 后端（`large-v3-turbo` 约 2.4 倍）、增量重跑复用识别与翻译
+- **分发** —— CI 构建的 macOS `.dmg` 与 Windows `.exe` 安装包，以及两个平台的一键安装脚本
+
+</details>
+
+## ❓ 常见问题
+
+<details>
+<summary><b>音色质量比得上 ElevenLabs 吗？</b></summary>
+
+同语言合成上差距不大。但**跨语言克隆**（英文说话人配成中文）ElevenLabs 的云端模型仍然更强——这是本地模型最难的场景，如实说。
+
+换来的是：结果不是黑盒。每一句都能试听、换音色重配、在时间轴上重新对时，或者改完重新导出，不必重跑整条流水线。当成品**差一点点**的时候，这比首次生成的分数更重要。
+</details>
+
+<details>
+<summary><b>我的 Mac 跑得动吗？</b></summary>
+
+能，8 GB 也能跑，只是配音会慢。Apple 芯片内存 ≤18 GB 时会自动切到低内存模式，不会把统一内存吃穿。16 GB 比较从容，24 GB 以上走正常模式。
+</details>
+
+<details>
+<summary><b>必须有显卡吗？</b></summary>
+
+不需要，全部可以 CPU 跑。显卡只影响速度：Windows 上的 N 卡（自动装 CUDA 版），或 Apple 芯片上识别走 Metal。
+</details>
+
+<details>
+<summary><b>我的视频会被上传吗？</b></summary>
+
+程序不会传。没有账号、没有遥测、没有统计——代码里根本没有任何使用数据上报。只有你**主动选了云端渠道**（比如翻译用 DeepSeek、配音用 ElevenLabs）时素材才会出网。全本地组合（faster-whisper + 本地 LLM + F5-TTS）不产生任何网络请求。
+</details>
+
+<details>
+<summary><b>支持哪些语言和引擎？</b></summary>
+
+35 种语言，79 个可互换渠道：识别 22 个、翻译 24 个、配音 33 个。Flow 界面只呈现精选子集（3 / 6 / 5），不会一上来就让你从 79 个里挑；其余在高级模式里都在。
+</details>
+
+<details>
+<summary><b>可以商用吗？</b></summary>
+
+工具是 GPL-3.0，可以商用，产出的视频也归你。义务在于**分发修改版软件**时必须同样以 GPL-3.0 开源。这是概述不是法律意见，真要紧请读 [LICENSE](../LICENSE)。
+</details>
+
+<details>
+<summary><b>配音要多久？</b></summary>
+
+高度取决于机器、引擎和视频长度，给一个具体数字反而误导。程序自己会回答这个问题：配音过程中任务卡片会按你的实际速度显示已完成段数和预计剩余时间。
+
+重跑会快得多——识别、翻译和已生成的配音都会复用，除非你勾了「重新处理」。
+</details>
+
+<details>
+<summary><b>怎么卸载？</b></summary>
+
+删掉安装目录（一键脚本装的在 `~/TransDub-Studio`，或直接删应用），macOS 上再删 `~/Library/Application Support/TransDub Studio`。下载的模型在安装目录的 `models/` 里，会一起删掉。
+</details>
 
 ## 许可证与署名
 

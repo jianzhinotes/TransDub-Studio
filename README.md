@@ -163,7 +163,23 @@ uv sync              # first time only, installs Python 3.10 + deps
 uv run python sp.py
 ```
 
-**Requirements:** macOS (Apple Silicon or Intel) or Windows 10/11, ~5–8 GB free for dependencies and models.
+## 🖥️ System requirements
+
+`uv` installs and pins Python 3.10 for you — nothing else to set up by hand.
+
+| | Minimum | Recommended |
+|---|---|---|
+| **OS** | macOS 11+ (Apple Silicon or Intel) · Windows 10/11 | macOS 13+ Apple Silicon · Windows 11 |
+| **RAM** | 8 GB | 16 GB+ |
+| **Disk** | ~8 GB (dependencies + one recognition model) | 15 GB+ if you keep several models |
+| **GPU** | none — CPU works | NVIDIA (Windows, CUDA build installed automatically) · Apple Silicon (Metal) |
+
+**Notes**
+
+- **Apple Silicon with 18 GB or less** automatically switches to a low-memory dubbing profile: synthesis runs serially and the recognition and dubbing models are loaded in turn rather than together. Slower, but it will not exhaust unified memory.
+- **Recognition on Apple Silicon** can use the Metal GPU via the optional `mlx-whisper` backend (`use_mlx_whisper: true` in `videotrans/cfg.json`). Measured on `large-v3-turbo`: **23.6 s → 9.8 s** for the same clip.
+- **Windows** installs the CUDA build of PyTorch. With an NVIDIA GPU and a recent driver you get acceleration automatically; without one it falls back to CPU.
+- **Model sizes** for reference: `faster-whisper large-v3-turbo` ≈ 2.8 GB, its MLX variant ≈ 1.5 GB, `tiny` ≈ 75 MB. They download on demand the first time you use them.
 
 ## Major improvements over the upstream project
 
@@ -272,6 +288,83 @@ See upstream pyVideoTrans documentation for the general feature set and configur
 
 - [pyVideoTrans repository](https://github.com/jianchang512/pyvideotrans)
 - [pyVideoTrans documentation](https://pyvideotrans.com)
+
+## 🗺️ Roadmap
+
+Directions, not commitments — this is a personal downstream build.
+
+**Being looked at next**
+
+- Verifying the Windows installer on real hardware (it is built in CI but has not been run end-to-end on a physical Windows machine yet)
+- A CosyVoice2 A/B against F5-TTS for cross-language voice cloning
+- Cancelling a single task instead of the whole queue
+- Video thumbnails on the home page
+
+<details>
+<summary><b>Shipped so far</b></summary>
+
+- **Workflow** — CapCut-style Flow UI (home → single-page config → staged progress); step-by-step inline proofreading after recognition, translation and dubbing; reopenable projects that re-run only alignment and merge
+- **Dubbing Studio** — per-line speaker cards with source and translation side by side, editable timeline with both waveforms, per-line re-dub and voice switching, original/dubbed A/B preview
+- **Voice quality** — automatic reference read-back validation, composite references, speaker clustering so an interview clones the main speaker rather than the host, per-speaker voices, Chinese anchors for retries, F5 native 32 diffusion steps with a fixed seed for a stable timbre
+- **Reliability** — quality gate with automatic repair and a circuit breaker, per-clip durable checkpoints, cross-run dubbing cache, synthesis watchdog, low-memory profile for Apple Silicon
+- **Speed** — optional `mlx-whisper` Metal backend (~2.4× on `large-v3-turbo`), incremental re-runs that reuse recognition and translation
+- **Packaging** — signed-free macOS `.dmg` and Windows `.exe` installers built in CI, plus one-command installers for both platforms
+
+</details>
+
+## ❓ FAQ
+
+<details>
+<summary><b>Is the voice quality as good as ElevenLabs?</b></summary>
+
+For same-language synthesis it is close. For **cross-language cloning** — an English speaker dubbed into Chinese — ElevenLabs' cloud models are still ahead; that is the hardest case for local models and it is honest to say so.
+
+What you get instead: the result is never a black box. Every line can be auditioned, re-dubbed with a different voice, retimed on the timeline, or edited and re-exported without re-running the whole pipeline. When a clip is *almost* right, that matters more than the first-pass score.
+</details>
+
+<details>
+<summary><b>Will it run on my Mac?</b></summary>
+
+Yes, including 8 GB machines, though dubbing will be slow. On Apple Silicon with 18 GB or less the app automatically switches to a low-memory profile so it does not exhaust unified memory. 16 GB is comfortable; 24 GB+ runs the normal profile.
+</details>
+
+<details>
+<summary><b>Do I need a GPU?</b></summary>
+
+No. Everything runs on CPU. A GPU only changes speed: NVIDIA on Windows (the CUDA build installs automatically) or the Metal backend on Apple Silicon for recognition.
+</details>
+
+<details>
+<summary><b>Does my video get uploaded anywhere?</b></summary>
+
+Not by the app. There is no account, no telemetry and no analytics — the codebase contains no usage-reporting code at all. Media leaves your machine **only** if you deliberately pick a cloud channel (for example DeepSeek for translation or ElevenLabs for dubbing). A fully local stack — faster-whisper + a local LLM + F5-TTS — never makes a network call.
+</details>
+
+<details>
+<summary><b>Which languages and engines are supported?</b></summary>
+
+35 languages, and 79 interchangeable channels: 22 for recognition, 24 for translation, 33 for dubbing. The Flow UI surfaces a curated subset (3 / 6 / 5) so you are not choosing from 79 things on day one; the rest stay available in Advanced Mode.
+</details>
+
+<details>
+<summary><b>Can I use it commercially?</b></summary>
+
+The tool is GPL-3.0, so yes — you can use it and the videos you produce commercially. The obligation is on *distributing modified versions of the software*, which must stay GPL-3.0. This is a summary, not legal advice; read [LICENSE](LICENSE) if it matters to you.
+</details>
+
+<details>
+<summary><b>How long does dubbing take?</b></summary>
+
+It depends heavily on the machine, the engine and the length of the video, so any single number here would be misleading. The app answers this itself: during dubbing the task card shows a live segment count and a remaining-time estimate computed from your actual throughput.
+
+Re-runs are much faster — recognition, translation and previously generated audio are all reused unless you tick **Fresh run**.
+</details>
+
+<details>
+<summary><b>How do I uninstall it?</b></summary>
+
+Delete the install directory (`~/TransDub-Studio` for the one-command installer, or the app bundle) and `~/Library/Application Support/TransDub Studio` on macOS. Downloaded models live in `models/` inside the install directory and go with it.
+</details>
 
 ## License and attribution
 
