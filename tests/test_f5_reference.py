@@ -624,6 +624,42 @@ class TestLongVideoPreflight:
         t._verify_chinese_outputs()
         assert (tmp_path / "lang_leak.json").is_file()
 
+    def test_rejected_retry_candidate_never_overwrites_original_audio(
+            self, tmp_path, monkeypatch):
+        """返工候选质量不合格时必须丢弃候选、保留原音频。
+
+        此前只覆盖了"候选根本没生成"的路径；候选生成了但验收不通过时
+        是否会误覆盖原音频，没有任何断言（变异测试发现的缺口）。
+        """
+        wav = _voice(tmp_path / "keep-me.wav", 2.0, 110, 0.7, seed=51)
+        original_audio = Path(wav).read_bytes()
+        item = {"text": "这是需要生成的中文。", "filename": wav, "role": "clone"}
+        t = _f5([item])
+        t.uuid = "reject-candidate-test"
+        t.language = "zh-cn"
+        t.is_test = False
+        t.safe_ref_text = "English reference sentence."
+        t.signal = lambda **kwargs: None
+        t._get_validator_model_path = lambda: tmp_path
+        # 原音频与每一个返工候选都判为不合格 → 应始终保留原音频
+        t._transcribe_batch_for_validation = lambda model: {0: "This is leaked English speech"}
+        t._transcribe_one_for_validation = lambda model, filename: "This is leaked English speech"
+        t._assign_chinese_anchors = lambda failed, transcripts: 0
+
+        def regenerate(data_item, idx):
+            # 候选确实生成成功（内容不同），只是验收不通过
+            _voice(Path(data_item["filename"]), 2.0, 220, 0.4, seed=60 + idx)
+            return None
+
+        t._item_task = regenerate
+        fake_fw = types.SimpleNamespace(WhisperModel=lambda *args, **kwargs: object())
+        monkeypatch.setitem(sys.modules, "faster_whisper", fake_fw)
+
+        t._verify_chinese_outputs()
+
+        assert Path(wav).read_bytes() == original_audio, '被拒的候选覆盖了原音频'
+        assert not list(tmp_path.glob(".*quality-retry-*.wav")), '候选文件未清理'
+
     def test_service_disconnect_recovers_only_failed_item_and_releases_validator(
             self, tmp_path, monkeypatch):
         wav = _voice(tmp_path / "retry.wav", 2.0, 110, 0.7, seed=40)
@@ -733,13 +769,20 @@ class TestLongVideoPreflight:
             lambda indices, backend=None: {indices[0]: "This is leaked English speech"}
         )
         t._assign_chinese_anchors = lambda failed, transcripts: 0
-        t._wait_for_f5_headroom = lambda: False
+        headroom_checks = []
+        t._wait_for_f5_headroom = lambda: headroom_checks.append(True) or False
         starts = []
         t._start_local_service = lambda recovery=False: starts.append(recovery) or True
+        regenerated = []
+        t._item_task = lambda data_item, idx: regenerated.append(idx) or None
 
         t._verify_chinese_outputs()
 
-        assert starts == []
+        # 只断言 starts == [] 不够：跳过整个资源守卫也能让它成立。
+        # 必须证明确实"检查了资源、据此放弃本轮返工"，而不是压根没走到。
+        assert headroom_checks, '资源守卫未被调用'
+        assert starts == [], '资源不足时不应启动 F5 服务'
+        assert regenerated == [], '资源不足时不应尝试返工生成'
         assert Path(wav).read_bytes() == original_audio
         assert (tmp_path / "lang_leak.json").is_file()
 

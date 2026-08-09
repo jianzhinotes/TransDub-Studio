@@ -1800,331 +1800,355 @@ class F5TTS(GradioBase):
                 remaining.append((idx, item, str(error or old_error)))
         return remaining
 
-    def _verify_chinese_outputs(self) -> None:
+    # ---- 质量门禁：一次运行的共享状态 ----
+    # 下面几个 _quality_* 步骤原本是一个 326 行方法里的闭包，彼此通过闭包变量
+    # 隐式共享状态。拆成有名字的步骤后，这些状态必须显式持有，否则耦合只是从
+    # 显眼变成了隐形。
+    class _GateRun:
+        __slots__ = ('manifest', 'isolated', 'validator_backend', 'validator_model',
+                     'rules_version', 'model', 'transcripts', 'failed', 'pending',
+                     'cache_hits')
+
+        def __init__(self, *, manifest, isolated, validator_backend,
+                     validator_model, rules_version):
+            self.manifest = manifest
+            self.isolated = isolated
+            self.validator_backend = validator_backend
+            self.validator_model = validator_model
+            self.rules_version = rules_version
+            self.model = None
+            self.transcripts = {}
+            self.failed = []
+            self.pending = []
+            self.cache_hits = 0
+
+        @property
+        def validator_args(self) -> dict:
+            # 用 property 保证 backend 回退时两处取值不会不同步
+            return {
+                'validator_backend': self.validator_backend,
+                'validator_model': self.validator_model,
+                'rules_version': self.rules_version,
+            }
+
+    def _quality_gate_begin(self) -> '_GateRun':
         from videotrans.dub.quality_manifest import QualityManifest
 
-        persist_quality = any(item.get("dub_unit_id") for item in self.queue_tts)
-        manifest = QualityManifest.for_queue(self.queue_tts) if persist_quality else None
-        isolated_validation = (
-            persist_quality
+        persist = any(item.get("dub_unit_id") for item in self.queue_tts)
+        manifest = QualityManifest.for_queue(self.queue_tts) if persist else None
+        isolated = (
+            persist
             and str(settings.get("f5tts_isolate_validator", True)).lower() != "false"
         )
-        model = None
-        validator_backend, validator_model = (
-            self._validator_identity()
-            if isolated_validation else
-            (self.VALIDATOR_BACKEND, self.VALIDATOR_MODEL)
+        backend, model_name = (
+            self._validator_identity() if isolated
+            else (self.VALIDATOR_BACKEND, self.VALIDATOR_MODEL)
         )
-        validator_args = {
-            "validator_backend": validator_backend,
-            "validator_model": validator_model,
-            "rules_version": self.QUALITY_RULES_VERSION,
-        }
+        return self._GateRun(
+            manifest=manifest, isolated=isolated, validator_backend=backend,
+            validator_model=model_name, rules_version=self.QUALITY_RULES_VERSION)
 
-        def record(idx, item, transcript, passed, *, save=False):
-            if manifest is None:
-                return
-            failures = [] if passed else self._hard_quality_failures(self._spoken_text(item), transcript)
-            manifest.record(
-                item,
-                index=idx,
-                passed=passed,
-                transcript=transcript,
-                hard_failures=failures,
-                metrics=self._quality_metrics(self._spoken_text(item), transcript),
-                save=save,
-                **validator_args,
-            )
+    def _quality_record(self, run, idx, item, transcript, passed, *, save=False):
+        if run.manifest is None:
+            return
+        spoken = self._spoken_text(item)
+        failures = [] if passed else self._hard_quality_failures(spoken, transcript)
+        run.manifest.record(
+            item, index=idx, passed=passed, transcript=transcript,
+            hard_failures=failures, metrics=self._quality_metrics(spoken, transcript),
+            save=save, **run.validator_args)
 
-        def defer_failed(failures, reason: str, *, attempts=0):
-            for idx, item, transcript in failures:
-                item["lang_leak"] = str(transcript or "")[:120]
-                item["quality_status"] = "needs_review"
-                if manifest is not None:
-                    manifest.set_disposition(
-                        item, "needs_review", index=idx, attempts=attempts,
-                        reason=reason, save=False)
-            if manifest is not None:
-                manifest.save()
-            self._write_leak_sidecar(failures)
+    def _quality_defer(self, run, failures, reason: str, *, attempts=0):
+        """把失败片段标记为待人工处理，并写出工作台可见的 sidecar。"""
+        for idx, item, transcript in failures:
+            item["lang_leak"] = str(transcript or "")[:120]
+            item["quality_status"] = "needs_review"
+            if run.manifest is not None:
+                run.manifest.set_disposition(
+                    item, "needs_review", index=idx, attempts=attempts,
+                    reason=reason, save=False)
+        if run.manifest is not None:
+            run.manifest.save()
+        self._write_leak_sidecar(failures)
 
+    def _quality_partition_cached(self, run) -> None:
+        """按质量记录分流：命中的直接采信，其余进入待核验队列。"""
+        for idx, item in enumerate(self.queue_tts):
+            if not item.get("text", "").strip() or not vail_file(item.get("filename")):
+                continue
+            cached = None
+            if run.manifest is not None and getattr(self, "use_cache", True):
+                cached = run.manifest.lookup(item, index=idx, **run.validator_args)
+            if cached:
+                run.cache_hits += 1
+                transcript = str(cached.get("transcript") or "")
+                run.transcripts[idx] = transcript
+                if not cached.get("passed"):
+                    run.failed.append((idx, item, transcript))
+                continue
+            run.pending.append(idx)
+        if run.cache_hits:
+            self.signal(text=f"质量记录复用 {run.cache_hits} 段，仅核对新增或变化片段")
+
+    def _quality_batch_size(self, run) -> int:
+        from videotrans.util.resource_governor import runtime_limits
+        configured = max(
+            4, min(int(settings.get("f5tts_validation_batch_size", 24) or 24), 40))
+        limits = runtime_limits(
+            mode=settings.get("resource_mode", "auto"),
+            validation_batch_size=configured)
+        if limits.pressure != "normal":
+            labels = {"elevated": "偏高", "high": "较高", "critical": "严重"}
+            self.signal(text=(
+                f"系统资源压力{labels.get(limits.pressure, limits.pressure)}，"
+                f"已自动降低核验线程；逐文件串行检查 {len(run.pending)} 段，"
+                "强模型只加载一次，配音质量不变"))
+        # 隔离核验的 worker 本就逐文件转写、从不拼接音频；整批只加载一次
+        # large-v3-turbo 比每个微批新起一个模型进程更省内存也更凉快。
+        return len(run.pending) if run.isolated else limits.validation_batch_size
+
+    def _quality_transcribe_chunk(self, run, indices) -> dict:
+        if run.isolated:
+            screened, used_backend = self._transcribe_isolated_with_fallback(
+                indices, backend=run.validator_backend)
+            run.validator_backend = used_backend
+            return screened
+        try:
+            return self._transcribe_batch_for_validation(run.model, indices)
+        except TypeError:
+            # 兼容仍实现单参数旧钩子的子类
+            return self._transcribe_batch_for_validation(run.model)
+
+    def _quality_screen_pending(self, run) -> None:
+        """对待核验片段分批转写、筛查、确认并落质量记录。"""
+        if not run.pending:
+            return
+        backend_label = ("MLX/Metal large-v3-turbo"
+                         if run.validator_backend == "mlx-whisper-mps"
+                         else "CPU large-v3-turbo")
+        self.signal(text=f"质量核验后端：{backend_label}，待核对 {len(run.pending)} 段")
+        if not run.isolated:
+            run.model = self._new_validator()
+        batch_size = self._quality_batch_size(run)
+        started = time.monotonic()
+        for offset in range(0, len(run.pending), batch_size):
+            indices = run.pending[offset:offset + batch_size]
+            run.transcripts.update(self._quality_transcribe_chunk(run, indices))
+            suspicious = []
+            for idx in indices:
+                item = self.queue_tts[idx]
+                transcript = run.transcripts.get(idx, "")
+                if self._hard_quality_failures(self._spoken_text(item), transcript):
+                    suspicious.append((idx, item, transcript))
+            # 微批只是高召回的初筛。单独复核可避免时间戳漂移导致的无谓返工。
+            confirmed = (suspicious if run.isolated else
+                         self._confirm_batch_failures(run.model, suspicious, run.transcripts))
+            confirmed_indices = {idx for idx, _, _ in confirmed}
+            run.failed.extend(confirmed)
+            for idx in indices:
+                self._quality_record(run, idx, self.queue_tts[idx],
+                                     run.transcripts.get(idx, ""),
+                                     idx not in confirmed_indices)
+            if run.manifest is not None:
+                run.manifest.save()
+            completed = min(offset + len(indices), len(run.pending))
+            self.signal(text=self._eta_text(
+                "F5-TTS 增量质量核对", completed, len(run.pending),
+                time.monotonic() - started))
+
+    def _quality_handle_systemic(self, run) -> bool:
+        """大面积失败时熔断。返回 True 表示调用方应直接结束。"""
+        if not self._is_systemic_language_failure(run.failed):
+            return False
+        for idx, item, transcript in run.failed:
+            item["lang_leak"] = transcript[:120]
+            item["quality_status"] = "needs_reference"
+            if run.manifest is not None:
+                run.manifest.set_disposition(
+                    item, "needs_reference", index=idx,
+                    reason="systemic content failure", save=False)
+        if run.manifest is not None:
+            run.manifest.save()
+        self._write_leak_sidecar(run.failed)
+        message = (
+            f"F5-TTS 智能熔断：逐段复核确认 {len(run.failed)} 段存在内容异常，"
+            "已停止大规模自动返工，避免继续浪费数小时。"
+            "已保留全部成功片段，并把异常片段送入工作台。")
+        logger.error(message)
+        self.signal(text=message)
+        if self._defer_clip_failures():
+            return True
+        raise DubbingSrtError(message)
+
+    def _quality_reserve_service(self, run, retry_index: int) -> bool:
+        """返工前确认资源与服务就绪。返回 True 表示调用方应直接结束。"""
+        low_memory = bool(getattr(self, "_low_memory_profile", False))
+        serialize = bool(low_memory or run.validator_backend == "mlx-whisper-mps")
+        if not serialize:
+            return False
+        if self._wait_for_f5_headroom() and self._start_local_service():
+            return False
+        detail = str(getattr(self, "_local_service_error", "") or "")
+        message = (
+            f"系统资源尚未恢复，已跳过本轮自动返工并保留 {len(run.failed)} 个"
+            f"异常片段，稍后可在工作台只重配这些片段。{detail}")
+        logger.warning(message)
+        self.signal(text=message)
+        self._quality_defer(
+            run, run.failed, "automatic repair deferred: insufficient resources",
+            attempts=retry_index)
+        if self._defer_clip_failures():
+            return True
+        raise self._service_start_error("F5-TTS 本地服务在质量复核重配前启动失败")
+
+    def _quality_regenerate(self, run, retry_index: int):
+        """生成本轮返工候选。返回 (regenerated, service_failed, service_errors)。"""
+        regenerated, service_failed, service_errors = [], [], []
+        started = time.monotonic()
+        total = len(run.failed)
+        for pos, (idx, item, old_transcript) in enumerate(run.failed, 1):
+            candidate_path = self._quality_retry_path(item["filename"], retry_index)
+            candidate_path.unlink(missing_ok=True)
+            candidate_item = copy.deepcopy(item)
+            candidate_item["filename"] = str(candidate_path)
+            # 标记重试轮次：_run 据此偏移种子（第 2 轮起换备选参考），
+            # 否则固定种子下重新生成的结果与上次完全相同
+            candidate_item['lang_leak_retry'] = retry_index + 1
+            error = self._item_task(candidate_item, idx)
+            if error or not vail_file(candidate_path):
+                candidate_path.unlink(missing_ok=True)
+                service_failed.append((idx, item, old_transcript))
+                service_errors.append((idx, str(error or "未生成候选音频")))
+            else:
+                regenerated.append((idx, item, old_transcript, candidate_path))
+            self.signal(text=self._eta_text(
+                f"F5-TTS 质量返工 {retry_index + 1}/{self.MAX_LANGUAGE_RETRIES}",
+                pos, total, time.monotonic() - started))
+        return regenerated, service_failed, service_errors
+
+    def _quality_transcribe_candidates(self, run, regenerated) -> dict:
+        """转写返工候选。隔离模式下需临时把 filename 指向候选再还原。"""
+        if not (run.isolated and regenerated):
+            if not run.isolated and regenerated:
+                run.model = self._new_validator()
+            return {}
+        indices = [idx for idx, _, _, _ in regenerated]
+        original_paths = {idx: item["filename"] for idx, item, _, _ in regenerated}
+        try:
+            for _idx, item, _, candidate_path in regenerated:
+                item["filename"] = str(candidate_path)
+            transcripts, used_backend = self._transcribe_isolated_with_fallback(
+                indices, backend=run.validator_backend)
+        finally:
+            for idx, item, _, _ in regenerated:
+                item["filename"] = original_paths[idx]
+        run.validator_backend = used_backend
+        return transcripts
+
+    def _quality_accept_candidates(self, run, regenerated, isolated_transcripts) -> list:
+        """逐个验收候选：通过则替换原音频，否则丢弃候选并留待下一轮。"""
+        retry_failed = []
+        for idx, item, old_transcript, candidate_path in regenerated:
+            transcript = (
+                isolated_transcripts.get(idx, "") if run.isolated else
+                self._transcribe_one_for_validation(run.model, str(candidate_path)))
+            if self._hard_quality_failures(self._spoken_text(item), transcript):
+                candidate_path.unlink(missing_ok=True)
+                retry_failed.append((idx, item, old_transcript))
+            else:
+                os.replace(candidate_path, item["filename"])
+                self._quality_record(run, idx, item, transcript, True)
+                item.pop("lang_leak", None)
+        if run.manifest is not None:
+            run.manifest.save()
+        return retry_failed
+
+    def _quality_retry_rounds(self, run) -> bool:
+        """自动返工循环。返回 True 表示调用方应直接结束。"""
+        for retry_index in range(self.MAX_LANGUAGE_RETRIES):
+            if not run.failed:
+                break
+            logger.warning("检测到 %s 段 F5-TTS 配音内容异常，开始第 %s 次重生成",
+                           len(run.failed), retry_index + 1)
+            self.signal(text=f"检测到 {len(run.failed)} 段内容异常，正在自动重配 "
+                             f"({retry_index + 1}/{self.MAX_LANGUAGE_RETRIES})…")
+            # CTranslate2/Whisper 与 F5 在 Apple Silicon 上共用统一内存。
+            # 让 large-v3-turbo 常驻会把服务推过 MPS 上限，返工期间先释放，
+            # 验收时再重新加载。
+            run.model = None
+            gc.collect()
+            serialize = bool(getattr(self, "_low_memory_profile", False)
+                             or run.validator_backend == "mlx-whisper-mps")
+            if self._quality_reserve_service(run, retry_index):
+                return True
+            try:
+                regenerated, service_failed, service_errors = self._quality_regenerate(
+                    run, retry_index)
+            finally:
+                if serialize:
+                    # 等 Metal 显存释放后再重新加载 Whisper
+                    self._stop_local_service()
+            if service_errors:
+                details = "；".join(f"第 {idx + 1} 段：{error[:100]}"
+                                    for idx, error in service_errors[:5])
+                message = (f"F5-TTS 有 {len(service_errors)} 个返工候选生成失败，"
+                           f"原音频未删除；{details}")
+                logger.warning(message)
+                self.signal(text=message)
+            isolated_transcripts = self._quality_transcribe_candidates(run, regenerated)
+            retry_failed = self._quality_accept_candidates(
+                run, regenerated, isolated_transcripts)
+            run.failed = retry_failed + service_failed
+        return False
+
+    def _quality_finalize(self, run) -> None:
+        if not run.failed:
+            logger.debug("F5-TTS 增量内容检查通过")
+            self.signal(text="F5-TTS 配音内容检查通过")
+            return
+        self._quality_defer(run, run.failed, "automatic retries exhausted",
+                            attempts=self.MAX_LANGUAGE_RETRIES)
+        details = "；".join(f"第 {idx + 1} 段：{transcript[:80]}"
+                           for idx, _, transcript in run.failed[:5])
+        message = (f"F5-TTS 质量门禁未通过：重试后仍有 {len(run.failed)} 段内容异常，"
+                   f"已保留成功结果，异常片段等待局部返工。{details}")
+        logger.error(message)
+        self.signal(text=message)
+        if self._defer_clip_failures():
+            return
+        if str(settings.get("f5tts_strict_language_gate", True)).lower() != "false":
+            raise DubbingSrtError(message)
+        logger.warning("严格语言门禁已被关闭，保留泄漏标记并继续流程")
+
+    def _verify_chinese_outputs(self) -> None:
+        """配音质量门禁：分流 → 核验 → 熔断 → 锚点 → 返工 → 收尾。"""
+        run = self._quality_gate_begin()
         try:
             self.signal(text="正在增量核对 F5-TTS 中文配音内容…")
-            transcripts = {}
-            failed = []
-            pending = []
-            cache_hits = 0
-            for idx, item in enumerate(self.queue_tts):
-                if not item.get("text", "").strip() or not vail_file(item.get("filename")):
-                    continue
-                cached = None
-                if manifest is not None and getattr(self, "use_cache", True):
-                    cached = manifest.lookup(item, index=idx, **validator_args)
-                if cached:
-                    cache_hits += 1
-                    transcript = str(cached.get("transcript") or "")
-                    transcripts[idx] = transcript
-                    if not cached.get("passed"):
-                        failed.append((idx, item, transcript))
-                    continue
-                pending.append(idx)
+            self._quality_partition_cached(run)
+            self._quality_screen_pending(run)
 
-            if cache_hits:
-                self.signal(text=f"质量记录复用 {cache_hits} 段，仅核对新增或变化片段")
-
-            if pending:
-                backend_label = (
-                    "MLX/Metal large-v3-turbo"
-                    if validator_backend == "mlx-whisper-mps" else
-                    "CPU large-v3-turbo"
-                )
-                self.signal(text=f"质量核验后端：{backend_label}，待核对 {len(pending)} 段")
-                if not isolated_validation:
-                    model = self._new_validator()
-                from videotrans.util.resource_governor import runtime_limits
-                configured_batch = max(
-                    4, min(int(settings.get("f5tts_validation_batch_size", 24) or 24), 40)
-                )
-                limits = runtime_limits(
-                    mode=settings.get("resource_mode", "auto"),
-                    validation_batch_size=configured_batch,
-                )
-                # The isolated worker already transcribes files one by one and
-                # never concatenates audio. Loading large-v3-turbo once for the
-                # whole pending set is both cooler and lower-memory than spawning
-                # a fresh model process for every micro-batch.
-                batch_size = len(pending) if isolated_validation else limits.validation_batch_size
-                if limits.pressure != "normal":
-                    pressure_labels = {
-                        "elevated": "偏高", "high": "较高", "critical": "严重"
-                    }
-                    self.signal(text=(
-                        f"系统资源压力{pressure_labels.get(limits.pressure, limits.pressure)}，"
-                        f"已自动降低核验线程；逐文件串行检查 {len(pending)} 段，"
-                        "强模型只加载一次，配音质量不变"
-                    ))
-                started = time.monotonic()
-                for offset in range(0, len(pending), batch_size):
-                    indices = pending[offset:offset + batch_size]
-                    if isolated_validation:
-                        screened, used_backend = self._transcribe_isolated_with_fallback(
-                            indices, backend=validator_backend
-                        )
-                        if used_backend != validator_backend:
-                            validator_backend = used_backend
-                            validator_args["validator_backend"] = used_backend
-                    else:
-                        try:
-                            screened = self._transcribe_batch_for_validation(model, indices)
-                        except TypeError:
-                            # Compatibility for subclasses implementing the former
-                            # one-argument hook.
-                            screened = self._transcribe_batch_for_validation(model)
-                    transcripts.update(screened)
-                    suspicious = []
-                    for idx in indices:
-                        item = self.queue_tts[idx]
-                        transcript = transcripts.get(idx, "")
-                        if self._hard_quality_failures(self._spoken_text(item), transcript):
-                            suspicious.append((idx, item, transcript))
-
-                    # Micro-batches are only a high-recall screen. Standalone
-                    # confirmation prevents timestamp drift causing rework.
-                    confirmed = (
-                        suspicious if isolated_validation else
-                        self._confirm_batch_failures(model, suspicious, transcripts)
-                    )
-                    confirmed_indices = {idx for idx, _, _ in confirmed}
-                    failed.extend(confirmed)
-                    for idx in indices:
-                        item = self.queue_tts[idx]
-                        transcript = transcripts.get(idx, "")
-                        record(idx, item, transcript, idx not in confirmed_indices)
-                    if manifest is not None:
-                        manifest.save()
-                    completed = min(offset + len(indices), len(pending))
-                    self.signal(text=self._eta_text(
-                        "F5-TTS 增量质量核对", completed, len(pending),
-                        time.monotonic() - started,
-                    ))
-
-            if not pending and not failed:
-                logger.info("F5-TTS 全部片段命中已通过的质量记录: %s", cache_hits)
-                self.signal(text=f"F5-TTS 配音内容检查通过（复用 {cache_hits} 段质量记录）")
+            if not run.pending and not run.failed:
+                logger.info("F5-TTS 全部片段命中已通过的质量记录: %s", run.cache_hits)
+                self.signal(
+                    text=f"F5-TTS 配音内容检查通过（复用 {run.cache_hits} 段质量记录）")
                 return
 
-            if self._is_systemic_language_failure(failed):
-                for idx, item, transcript in failed:
-                    item["lang_leak"] = transcript[:120]
-                    item["quality_status"] = "needs_reference"
-                    if manifest is not None:
-                        manifest.set_disposition(
-                            item, "needs_reference", index=idx,
-                            reason="systemic content failure", save=False)
-                if manifest is not None:
-                    manifest.save()
-                self._write_leak_sidecar(failed)
-                message = (
-                    f"F5-TTS 智能熔断：逐段复核确认 {len(failed)} 段存在内容异常，"
-                    "已停止大规模自动返工，避免继续浪费数小时。"
-                    "已保留全部成功片段，并把异常片段送入工作台。"
-                )
-                logger.error(message)
-                self.signal(text=message)
-                if self._defer_clip_failures():
-                    return
-                raise DubbingSrtError(message)
+            if self._quality_handle_systemic(run):
+                return
 
-            if failed and str(settings.get("f5tts_chinese_anchor", True)).lower() != "false":
-                self._assign_chinese_anchors(failed, transcripts)
+            if run.failed and str(
+                    settings.get("f5tts_chinese_anchor", True)).lower() != "false":
+                self._assign_chinese_anchors(run.failed, run.transcripts)
 
-            for retry_index in range(self.MAX_LANGUAGE_RETRIES):
-                if not failed:
-                    break
-                logger.warning(
-                    "检测到 %s 段 F5-TTS 配音内容异常，开始第 %s 次重生成",
-                    len(failed), retry_index + 1
-                )
-                self.signal(
-                    text=f"检测到 {len(failed)} 段内容异常，正在自动重配 "
-                         f"({retry_index + 1}/{self.MAX_LANGUAGE_RETRIES})…"
-                )
-                # CTranslate2/Whisper and F5 both use unified memory on Apple
-                # Silicon.  Keeping large-v3-turbo resident while invoking F5
-                # pushed the service over the MPS high-water mark.  Release the
-                # validator during synthesis, then reload it for verification.
-                model = None
-                gc.collect()
-                regenerated = []
-                service_failed = []
-                service_errors = []
-                low_memory = bool(getattr(self, "_low_memory_profile", False))
-                serialize_models = bool(low_memory or validator_backend == "mlx-whisper-mps")
-                if serialize_models and (
-                        not self._wait_for_f5_headroom()
-                        or not self._start_local_service()
-                ):
-                    detail = str(getattr(self, "_local_service_error", "") or "")
-                    message = (
-                        f"系统资源尚未恢复，已跳过本轮自动返工并保留 {len(failed)} 个"
-                        f"异常片段，稍后可在工作台只重配这些片段。{detail}"
-                    )
-                    logger.warning(message)
-                    self.signal(text=message)
-                    defer_failed(
-                        failed, "automatic repair deferred: insufficient resources",
-                        attempts=retry_index)
-                    if self._defer_clip_failures():
-                        return
-                    raise self._service_start_error("F5-TTS 本地服务在质量复核重配前启动失败")
-                try:
-                    retry_started = time.monotonic()
-                    retry_total = len(failed)
-                    for retry_pos, (idx, item, old_transcript) in enumerate(failed, 1):
-                        candidate_path = self._quality_retry_path(
-                            item["filename"], retry_index)
-                        candidate_path.unlink(missing_ok=True)
-                        candidate_item = copy.deepcopy(item)
-                        candidate_item["filename"] = str(candidate_path)
-                        # 标记重试轮次：_run 据此偏移种子（第 2 轮起换备选参考），
-                        # 否则固定种子下重新生成的结果与上次完全相同
-                        candidate_item['lang_leak_retry'] = retry_index + 1
-                        error = self._item_task(candidate_item, idx)
-                        if error or not vail_file(candidate_path):
-                            candidate_path.unlink(missing_ok=True)
-                            service_failed.append((idx, item, old_transcript))
-                            service_errors.append((idx, str(error or "未生成候选音频")))
-                        else:
-                            regenerated.append((idx, item, old_transcript, candidate_path))
-                        self.signal(text=self._eta_text(
-                            f"F5-TTS 质量返工 {retry_index + 1}/{self.MAX_LANGUAGE_RETRIES}",
-                            retry_pos, retry_total, time.monotonic() - retry_started,
-                        ))
-                finally:
-                    if serialize_models:
-                        # Reload Whisper only after Metal allocations are gone.
-                        self._stop_local_service()
+            if self._quality_retry_rounds(run):
+                return
 
-                if service_errors:
-                    details = "；".join(
-                        f"第 {idx + 1} 段：{error[:100]}"
-                        for idx, error in service_errors[:5]
-                    )
-                    message = (
-                        f"F5-TTS 有 {len(service_errors)} 个返工候选生成失败，"
-                        "原音频未删除；"
-                        f"{details}"
-                    )
-                    logger.warning(message)
-                    self.signal(text=message)
-
-                retry_failed = []
-                regenerated_indices = [idx for idx, _, _, _ in regenerated]
-                if isolated_validation and regenerated:
-                    original_paths = {
-                        idx: item["filename"] for idx, item, _, _ in regenerated
-                    }
-                    try:
-                        for idx, item, _, candidate_path in regenerated:
-                            item["filename"] = str(candidate_path)
-                        isolated_transcripts, used_backend = (
-                            self._transcribe_isolated_with_fallback(
-                                regenerated_indices, backend=validator_backend
-                            )
-                        )
-                    finally:
-                        for idx, item, _, _ in regenerated:
-                            item["filename"] = original_paths[idx]
-                    if used_backend != validator_backend:
-                        validator_backend = used_backend
-                        validator_args["validator_backend"] = used_backend
-                else:
-                    isolated_transcripts = {}
-                if not isolated_validation and regenerated:
-                    model = self._new_validator()
-                for idx, item, old_transcript, candidate_path in regenerated:
-                    transcript = (
-                        isolated_transcripts.get(idx, "") if isolated_validation else
-                        self._transcribe_one_for_validation(model, str(candidate_path))
-                    )
-                    failures = self._hard_quality_failures(self._spoken_text(item), transcript)
-                    if failures:
-                        candidate_path.unlink(missing_ok=True)
-                        retry_failed.append((idx, item, old_transcript))
-                    else:
-                        os.replace(candidate_path, item["filename"])
-                        record(idx, item, transcript, True)
-                        item.pop("lang_leak", None)
-                if manifest is not None:
-                    manifest.save()
-                failed = retry_failed + service_failed
-
-            if failed:
-                defer_failed(
-                    failed, "automatic retries exhausted",
-                    attempts=self.MAX_LANGUAGE_RETRIES)
-                details = "；".join(
-                    f"第 {idx + 1} 段：{transcript[:80]}"
-                    for idx, _, transcript in failed[:5]
-                )
-                message = (
-                    f"F5-TTS 质量门禁未通过：重试后仍有 {len(failed)} 段内容异常，"
-                    f"已保留成功结果，异常片段等待局部返工。{details}"
-                )
-                logger.error(message)
-                self.signal(text=message)
-                if self._defer_clip_failures():
-                    return
-                if str(settings.get("f5tts_strict_language_gate", True)).lower() != "false":
-                    raise DubbingSrtError(message)
-                logger.warning("严格语言门禁已被关闭，保留泄漏标记并继续流程")
-            else:
-                logger.debug("F5-TTS 增量内容检查通过")
-                self.signal(text="F5-TTS 配音内容检查通过")
+            self._quality_finalize(run)
         finally:
-            if manifest is not None:
-                manifest.save()
-            model = None
+            if run.manifest is not None:
+                run.manifest.save()
+            run.model = None
             gc.collect()
 
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:

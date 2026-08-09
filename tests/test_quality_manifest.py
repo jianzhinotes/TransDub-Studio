@@ -239,3 +239,40 @@ def test_reference_readback_is_content_cached(tmp_path, monkeypatch):
         lambda _model, _filename: pytest.fail('reference cache should avoid ASR')
     )
     assert second._validate_candidates([candidate], object(), need=1) == [candidate]
+
+
+def test_backend_fallback_is_recorded_in_quality_manifest(tmp_path, monkeypatch):
+    """核验后端回退后，质量记录必须写入回退后的后端名。
+
+    否则记录上写着 MLX、实际用的是 CPU，下次按后端查表就会错配，
+    要么白白重新核验，要么误采信另一后端的结论。
+    （分解质量门禁时的变异测试发现此处无覆盖。）
+    """
+    import videotrans.dub.quality_manifest as quality
+
+    monkeypatch.setattr(quality, "GLOBAL_QUALITY_DIR", tmp_path / "global")
+    item = _item(tmp_path)
+
+    task = F5TTS.__new__(F5TTS)
+    task.queue_tts = [item]
+    task.use_cache = False
+    task.safe_ref_text = ""
+    task.uuid = "backend-fallback"
+    task.signal = lambda **_kwargs: None
+    task._validator_identity = lambda: ("mlx-whisper-mps", "large-v3-turbo")
+
+    def transcribe(indices, backend=None):
+        if backend == "mlx-whisper-mps":
+            raise RuntimeError("Metal unavailable")
+        return {indices[0]: "这是需要核验的中文"}
+
+    task._transcribe_isolated_for_validation = transcribe
+    task._verify_chinese_outputs()
+
+    manifest = quality.QualityManifest.for_queue([item])
+    entry = manifest.lookup(
+        item, index=0, validator_backend="faster-whisper-cpu",
+        validator_model="large-v3-turbo",
+        rules_version=F5TTS.QUALITY_RULES_VERSION)
+    assert entry is not None, "回退后的后端未被写入质量记录"
+    assert entry["passed"] is True
