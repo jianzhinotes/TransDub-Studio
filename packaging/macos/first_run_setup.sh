@@ -1,17 +1,34 @@
 #!/bin/bash
-# First-run setup for the macOS .app. Extracts the bundled source into the
-# Application Support runtime, installs uv + ffmpeg, runs `uv sync`, then launches.
+# Setup for the macOS .app: unpacks the bundled source into the Application
+# Support runtime, ensures uv + ffmpeg, runs `uv sync`, stamps the version,
+# then launches.
+#
+# Handles both a first install and an upgrade over an existing runtime.
+# Unpacking never touches user data: the payload is `git archive` output, and
+# cfg.json / params.json / .secret_salt / recent_tasks.json are untracked, so
+# they are simply not in it.
 set -e
 APP_RES="$1"
 RUNTIME="$2"
+MODE="${3:-install}"
+APP_VER="${4:-}"
 
 echo "========================================================"
-echo "  TransDub Studio - first-time setup"
-echo "  This downloads a few GB (PyTorch + models). Please wait."
+if [ "$MODE" = "upgrade" ]; then
+    OLD_VER="$(cat "$RUNTIME/.payload-version" 2>/dev/null || echo 'older version')"
+    echo "  TransDub Studio - updating ${OLD_VER} -> ${APP_VER:-new version}"
+    echo "  Your settings and history are kept."
+else
+    echo "  TransDub Studio - first-time setup"
+    echo "  This downloads a few GB (PyTorch + models). Please wait."
+fi
 echo "========================================================"
 
 mkdir -p "$RUNTIME"
 echo "==> Unpacking application files..."
+# Clear the stamp first: if anything below fails, the next launch retries the
+# upgrade instead of running half-updated code.
+rm -f "$RUNTIME/.payload-version"
 tar -xzf "$APP_RES/payload.tar.gz" -C "$RUNTIME"
 
 # uv
@@ -34,8 +51,15 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 cd "$RUNTIME"
-echo "==> Installing dependencies (this is the long part)..."
+if [ "$MODE" = "upgrade" ]; then
+    echo "==> Checking dependencies..."
+else
+    echo "==> Installing dependencies (this is the long part)..."
+fi
 "$UV" sync
+
+# Only stamp once the runtime is fully usable.
+[ -n "$APP_VER" ] && printf '%s' "$APP_VER" > "$RUNTIME/.payload-version"
 
 echo "==> Launching TransDub Studio..."
 exec "$RUNTIME/.venv/bin/python" sp.py
