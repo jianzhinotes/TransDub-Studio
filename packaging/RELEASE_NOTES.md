@@ -1,3 +1,58 @@
+## TransDub Studio v1.1.3 — Installing an update actually updates the app
+
+**The important one**
+
+- On macOS, installing a new version over an existing install did not replace the app's code.
+  The `.app` is a launcher; the code it runs lives in
+  `~/Library/Application Support/TransDub Studio/runtime`, and the old launcher only checked
+  whether that runtime existed — never whether it was current. So anyone who installed v1.1.0
+  and later v1.1.2 kept running v1.1.0: no error, no warning, no way to tell. The runtime now
+  carries a version stamp that is compared against the app bundle on every launch, and is
+  re-unpacked when the two differ.
+  - **Existing installs repair themselves** — a runtime with no stamp is treated as out of date.
+  - Your settings, API keys and task history are not touched by the update.
+  - Everyday launches are as fast as before: the check is a string comparison, not a network call.
+  - Because this release *contains* the fix, it has to be installed once before future updates
+    can apply themselves.
+  - Windows was never affected — its installer already overwrites the program files each time.
+
+**Interface language**
+
+- The app now starts in Chinese. It previously followed the system locale, so every Chinese user
+  running an English-language Mac or PC — very common among developers — got an English interface
+  on first launch, with no obvious way back.
+- Added a language toggle to the top right of the home screen. Switching no longer means editing
+  a config file by hand.
+
+**Docs**
+
+- Corrected the macOS unblock instructions: Control-click → **Open** does still work on current
+  macOS, so it is listed first, with System Settings as the fallback.
+
+## TransDub Studio v1.1.3 — 装了新版本,才真的是新版本
+
+**这次最重要的一条**
+
+- macOS 上把新版装到已有安装之上时,**程序代码并不会被替换**。`.app` 只是个启动器,真正运行的
+  代码在 `~/Library/Application Support/TransDub Studio/runtime` 里,而旧启动器只检查这个运行时
+  存不存在,从不检查它是不是最新的。于是装过 v1.1.0 再装 v1.1.2 的人,跑的其实还是 v1.1.0——
+  不报错、不提示、也看不出来。现在运行时会带一个版本戳,每次启动与应用包比对,不一致就重新解包。
+  - **存量安装会自愈**——没有版本戳的运行时一律按过期处理。
+  - 你的设置、API key 和任务记录不会被更新动到。
+  - 日常启动速度不变:比对的是一个字符串,不联网。
+  - 修复本身就在这个版本里,所以**需要先装这一版**,之后的更新才能自动生效。
+  - Windows 不受影响——它的安装程序本来每次就会覆盖程序文件。
+
+**界面语言**
+
+- 现在默认中文启动。此前跟随系统语言,于是把 Mac / PC 设成英文的中文用户(开发者里非常普遍)
+  第一次打开看到的是英文界面,而且不容易找回来。
+- 首页右上角加了语言切换按钮,不用再手改配置文件。
+
+**文档**
+
+- 修正 macOS 放行说明:当前版本的 macOS 上右键 →「打开」仍然有效,因此放在第一步,系统设置作为备选。
+
 ## TransDub Studio v1.1.2 — Honest exports, and an app that tells you what it's doing
 
 **Trustworthy completion**
